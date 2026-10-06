@@ -13,6 +13,7 @@ import '../game/models.dart';
 import 'board_painter.dart';
 import 'card_view.dart';
 import 'fx_layer.dart';
+import 'pixel/pixel_assets.dart' show ReloadsPixelAssets;
 import 'widgets.dart';
 
 class GameScreen extends StatefulWidget {
@@ -25,7 +26,7 @@ class GameScreen extends StatefulWidget {
 }
 
 class _GameScreenState extends State<GameScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, ReloadsPixelAssets {
   late final GameController game = GameController(config: widget.config);
   late final FxLayer fx = FxLayer(game);
   late final Ticker _ticker;

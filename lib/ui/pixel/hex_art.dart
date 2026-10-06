@@ -31,7 +31,60 @@ class HexArt {
   };
 
   /// Water and lava sit in a basin: drawn flat and a little lower.
-  static bool sunk(Terrain t) => animated(t);
+  /// Tiles are flat now: a basin offset would break the seamless tiling.
+  static bool sunk(Terrain t) => false;
+
+  /// Neighbour offsets in art pixels, in the order E, W, NE, NW, SE, SW.
+  static const _nbrs = [
+    (24, 0),
+    (-24, 0),
+    (12, -21),
+    (-12, -21),
+    (12, 21),
+    (-12, 21),
+  ];
+
+  /// Which neighbouring hex owns the (outside) pixel at [x],[y] in this
+  /// tile's coordinates, as an index into [_nbrs].
+  static int _ownerOf(int x, int y) {
+    for (var i = 0; i < _nbrs.length; i++) {
+      if (inside(x - _nbrs[i].$1, y - _nbrs[i].$2)) return i;
+    }
+    return -1;
+  }
+
+  // A shared edge is drawn by exactly one of the two tiles that meet there:
+  // each tile outlines its W, NW and NE sides. That makes grid lines one pixel
+  // thick instead of two. The E, SE and SW sides are only drawn (as separate
+  // overlays, see [bakeMasks]) where there is no neighbouring tile.
+  static const _kept = {1, 2, 3};
+  static const edgeBits = {0: 1, 4: 2, 5: 4};
+
+  /// How high a terrain stands. Edges only get a cliff face where a tile
+  /// stands above its neighbour: grass beside water, mountains beside anything.
+  static int elevation(Terrain t) => switch (t) {
+    Terrain.water || Terrain.lava => 0,
+    Terrain.mountain => 2,
+    _ => 1,
+  };
+
+  /// Colour of the cliff face under a terrain.
+  static int sideOf(Terrain t) => _palette[t]![3];
+
+  /// Cliff thickness in pixels for a drop of [diff] levels.
+  static int cliffPixels(int diff) => diff >= 2 ? 4 : 2;
+
+  /// Outline colour for a terrain's tile edges.
+  static int outlineOf(Terrain t) => _darken(_palette[t]![3], 0.62);
+
+  /// Outward-facing neighbour directions of the inside pixel [x],[y].
+  static Set<int> _outsideDirs(int x, int y) {
+    final dirs = <int>{};
+    for (final (dx, dy) in const [(1, 0), (-1, 0), (0, 1), (0, -1)]) {
+      if (!inside(x + dx, y + dy)) dirs.add(_ownerOf(x + dx, y + dy));
+    }
+    return dirs;
+  }
 
   static int _hash(int x, int y, int s) {
     var v = (x * 73856093) ^ (y * 19349663) ^ (s * 83492791);
@@ -103,13 +156,12 @@ class HexArt {
                     c = pal[1];
                   }
               }
-              if (!sunk(t) && y > h ~/ 2 && !inside(x, y + 2)) c = pal[3];
-              final edge =
-                  !inside(x + 1, y) ||
-                  !inside(x - 1, y) ||
-                  !inside(x, y + 1) ||
-                  !inside(x, y - 1);
-              _put(px, x, y, edge ? outline : c);
+              final dirs = _outsideDirs(x, y);
+              if (dirs.any(_kept.contains)) {
+                _put(px, x, y, outline);
+                continue;
+              }
+              _put(px, x, y, c);
             }
           }
           out['${t.name}.$v.$f'] = await PixelAssets.decodePixels(px, w, h);
@@ -153,6 +205,40 @@ class HexArt {
       }
     }
     out['ring'] = await PixelAssets.decodePixels(ring, w, h);
+
+    // Outline pieces for the sides a tile does not draw itself (E, SE, SW),
+    // used where a tile has no neighbour there.
+    for (final entry in {0: 'edgeE', 4: 'edgeSE', 5: 'edgeSW'}.entries) {
+      final px = Uint8List(w * h * 4);
+      for (var y = 0; y < h; y++) {
+        for (var x = 0; x < w; x++) {
+          if (!inside(x, y)) continue;
+          final dirs = _outsideDirs(x, y);
+          if (dirs.any(_kept.contains)) continue;
+          if (dirs.contains(entry.key)) _put(px, x, y, white);
+        }
+      }
+      out[entry.value] = await PixelAssets.decodePixels(px, w, h);
+    }
+
+    // Cliff faces for the two south-facing sides, 2 and 4 pixels deep.
+    for (final dir in const [(4, 'SE'), (5, 'SW')]) {
+      for (final depth in const [2, 4]) {
+        final px = Uint8List(w * h * 4);
+        for (var y = 0; y < h; y++) {
+          for (var x = 0; x < w; x++) {
+            if (!inside(x, y)) continue;
+            for (var j = 1; j <= depth; j++) {
+              if (!inside(x, y + j) && _ownerOf(x, y + j) == dir.$1) {
+                _put(px, x, y, white);
+                break;
+              }
+            }
+          }
+        }
+        out['cliff${dir.$2}$depth'] = await PixelAssets.decodePixels(px, w, h);
+      }
+    }
 
     const s = 22;
     final shield = Uint8List(s * s * 4);

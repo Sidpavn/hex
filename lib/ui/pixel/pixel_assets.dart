@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 
 import '../../game/models.dart';
 import 'hex_art.dart';
@@ -11,7 +12,7 @@ import 'hex_art.dart';
 /// into small GPU images once at startup. Nothing here is drawn per-pixel at
 /// runtime: the board just blits these with nearest-neighbour sampling.
 class PixelAssets {
-  PixelAssets._(this._sprites, this._tiles, this._masks);
+  PixelAssets._(this._sprites, this._tiles, this._masks, this._blank);
 
   static PixelAssets? _instance;
 
@@ -28,9 +29,16 @@ class PixelAssets {
   final Map<String, ui.Image> _tiles;
   final Map<String, ui.Image> _masks;
 
+  /// Drawn instead of anything missing, so a stale or incomplete sheet can't
+  /// crash painting. Missing art is reported once in the console.
+  final ui.Image _blank;
+  final Set<String> _reported = {};
+
   static Future<PixelAssets> load([AssetBundle? bundle]) async {
+    // Not cached in debug, so a hot reload sees edits to the sheet.
     final text = await (bundle ?? rootBundle).loadString(
       'assets/pixel/sprites.txt',
+      cache: !kDebugMode,
     );
     final parsed = SpriteFile.parse(text);
     final sprites = <String, Map<String, ui.Image>>{};
@@ -42,29 +50,44 @@ class PixelAssets {
     }
     final tiles = await HexArt.bakeTiles();
     final masks = await HexArt.bakeMasks();
-    return _instance = PixelAssets._(sprites, tiles, masks);
+    final blank = await decodePixels(Uint8List(4), 1, 1);
+    return _instance = PixelAssets._(sprites, tiles, masks, blank);
+  }
+
+  ui.Image _missing(String what) {
+    if (_reported.add(what)) {
+      debugPrint(
+        'PixelAssets: missing "$what". The sprite sheet was loaded before it '
+        'was added; restart the app (hot reload does not reload art).',
+      );
+    }
+    return _blank;
   }
 
   /// Frames are `idle0`, `idle1` and `attack`. Falls back to `idle0`.
   ui.Image unit(UnitType type, Team team, String frame) {
     final set = _sprites[team == Team.player ? 'b' : 'r']!;
-    return set['${type.name}.$frame'] ?? set['${type.name}.idle0']!;
+    return set['${type.name}.$frame'] ??
+        set['${type.name}.idle0'] ??
+        _missing('${type.name}.$frame');
   }
 
   /// Terrain features and icons (`tree`, `mountain`, `crystal`, `flame`,
   /// `crown`, `star`, `lock`, `heart`, `cursor`).
   ui.Image sprite(String name, [String frame = 'idle0']) =>
-      _sprites['b']!['$name.$frame'] ?? _sprites['b']!['$name.idle0']!;
+      _sprites['b']!['$name.$frame'] ??
+      _sprites['b']!['$name.idle0'] ??
+      _missing('$name.$frame');
 
   /// Any icon by name: a UI icon, a terrain feature, or a unit type's idle
   /// frame (`knight`, `mage`...). Unknown names fall back to a star.
   ui.Image icon(String name) {
     final set = _sprites['b']!;
-    if (name == 'fire') return set['flame.f0']!;
+    if (name == 'fire') return set['flame.f0'] ?? _missing('flame.f0');
     for (final u in UnitType.values) {
       if (u.name == name) return unit(u, Team.player, 'idle0');
     }
-    return set['$name.idle0'] ?? set['star.idle0']!;
+    return set['$name.idle0'] ?? set['star.idle0'] ?? _missing(name);
   }
 
   bool hasIcon(String name) =>
@@ -72,12 +95,16 @@ class PixelAssets {
       UnitType.values.any((u) => u.name == name) ||
       _sprites['b']!.containsKey('$name.idle0');
 
-  ui.Image tile(Terrain t, int variant, int frame) =>
-      _tiles['${t.name}.${variant % HexArt.variants}.${frame % HexArt.framesOf(t)}']!;
+  ui.Image tile(Terrain t, int variant, int frame) {
+    final key =
+        '${t.name}.${variant % HexArt.variants}.${frame % HexArt.framesOf(t)}';
+    return _tiles[key] ?? _missing('tile $key');
+  }
 
   /// White-on-clear mask images, tinted at draw time: `fillA`, `fillB`
-  /// (checkerboard dithers), `ring`, `shield`, `shadowS`, `shadowL`.
-  ui.Image mask(String name) => _masks[name]!;
+  /// (checkerboard dithers), `ring`, `shield`, `shadowS`, `shadowL`, the edge
+  /// and cliff pieces.
+  ui.Image mask(String name) => _masks[name] ?? _missing('mask $name');
 
   static Future<ui.Image> _bake(
     List<String> rows,
@@ -208,3 +235,18 @@ class SpriteFile {
 @visibleForTesting
 Future<ui.Image> imageFromRows(List<String> rows, Map<String, int> palette) =>
     PixelAssets._bake(rows, palette, const {});
+
+/// Mix into a screen's State so a hot reload re-reads the sprite sheet (the
+/// sheet is otherwise loaded once at startup).
+mixin ReloadsPixelAssets<T extends StatefulWidget> on State<T> {
+  @override
+  void reassemble() {
+    super.reassemble();
+    assert(() {
+      PixelAssets.load().then((_) {
+        if (mounted) setState(() {});
+      });
+      return true;
+    }());
+  }
+}

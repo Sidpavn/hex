@@ -8,6 +8,7 @@ import 'campaign_screen.dart';
 import 'game_screen.dart';
 import 'setup_screen.dart';
 import 'stats_screen.dart';
+import 'zone_screen.dart';
 import 'widgets.dart';
 
 class MenuScreen extends StatefulWidget {
@@ -94,6 +95,12 @@ class _MenuScreenState extends State<MenuScreen> {
                 'Finish the first $hotseatLessons lessons to unlock Hot-seat.',
               ),
         locked: !Storage.hotseatUnlocked,
+      ),
+      _Item(
+        'tree',
+        'Explore',
+        'Prototype: wander the world',
+        () => _open(const ZoneScreen()),
       ),
       _Item(
         'chart',

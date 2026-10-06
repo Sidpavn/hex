@@ -33,6 +33,9 @@ o fa9632
 p aa6edc
 P 643c96
 e dc505a
+a be8246
+A 966034
+B 2c4a8c
 
 # ───────────────────────── units ─────────────────────────
 
@@ -828,3 +831,130 @@ kyk...kyk
 .kyk.kyk.
 kyk...kyk
 kk.....kk
+
+# ───────────────────────── world features ─────────────────────────
+
+@sprite cave idle0
+................
+....kkkkkkkk....
+...kMMMMMMMMk...
+..kMMmmmmmmMMk..
+.kMMmkkkkkkmMMk.
+.kMMkkkkkkkkMMk.
+.kMMkkkkkkkkMMk.
+.kMmkkkkkkkkmMk.
+.kMMkkkkkkkkMMk.
+.kkkkkkkkkkkkkk.
+................
+................
+
+@sprite cave_exit idle0
+................
+....kkkkkkkk....
+...kMMMMMMMMk...
+..kMMmmmmmmMMk..
+.kMMmkyyyyyYmMk.
+.kMMkyyyyyyyYMk.
+.kMMkyyyyyyyyMk.
+.kMmkyyyyyyyymk.
+.kMMkyyyyyyyYMk.
+.kkkkkkkkkkkkkk.
+................
+................
+
+# ───────────────────────── awareness marks ─────────────────────────
+
+@sprite alert idle0
+kkkk
+kyyk
+kyyk
+kyyk
+.kk.
+....
+kkkk
+kyyk
+kkkk
+
+@sprite search idle0
+.kkkk.
+kyyyyk
+kkkkyk
+...kyk
+..kyk.
+.kyk..
+.kyk..
+.kkk..
+.kyk..
+.kkk..
+
+@sprite sleep idle0
+kkkkkk
+kwwwwk
+.kkwk.
+..kwk.
+.kwkkk
+kwwwwk
+kkkkkk
+
+# ───────────────────────── world props ─────────────────────────
+
+@sprite campfire idle0
+.....k......
+....kok.....
+...koyok....
+..kooyook...
+..koyyyok...
+.kkNnnnNkk..
+kNnnkkknnNk.
+.kkkkkkkkk..
+
+@sprite lantern idle0
+...kk...
+..kyyk..
+..kYYk..
+.kkkkkk.
+kyyyyyyk
+kywwwwyk
+kywwwwyk
+kyyyyyyk
+.kkkkkk.
+
+@sprite token idle0
+..kkkk..
+.kyyyyk.
+kyywwyyk
+kywyyyyk
+kyyyyYyk
+kyyyYYyk
+.kYYYYk.
+..kkkk..
+
+@sprite bridge idle0
+........................
+........................
+kkkkkkkkkkkkkkkkkkkkkkkk
+AAAAAAAAAAAAAAAAAAAAAAAA
+....kA....kA....kA...kA.
+....kA....kA....kA...kA.
+kkkkkkkkkkkkkkkkkkkkkkkk
+yaaAyaaAyaaAyaaAyaaAyaaA
+aaaAaaaAaaaAaaaAaaaAaaaA
+aaaAaaaAaaaAaaaAaaaAaaaA
+aaaAaaaAaaaAaaaAaaaAaaaA
+AAAAAAAAAAAAAAAAAAAAAAAA
+kkkkkkkkkkkkkkkkkkkkkkkk
+.BBBBBBBBBBBBBBBBBBBBBB.
+..B.B.B.B.B.B.B.B.B.B...
+
+@sprite bridge_post idle0
+.kk.
+kaak
+kaAk
+kaAk
+kaAk
+kaAk
+kaAk
+kaAk
+kaAk
+kAAk
+kkkk

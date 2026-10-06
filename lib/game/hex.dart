@@ -125,10 +125,11 @@ class BoardLayout {
   Hex fromPixel(Offset p) {
     final r = (p.dy - origin.dy) / (scale * rowH);
     final q = (p.dx - origin.dx) / (scale * hexW) - r / 2;
-    return _round(q, r);
+    return roundHex(q, r);
   }
 
-  static Hex _round(double fq, double fr) {
+  /// Rounds fractional axial coordinates to the nearest hex.
+  static Hex roundHex(double fq, double fr) {
     final fs = -fq - fr;
     var q = fq.round();
     var r = fr.round();

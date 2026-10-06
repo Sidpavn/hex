@@ -1,0 +1,670 @@
+import 'dart:math' as math;
+import 'dart:ui';
+
+import '../game/hex.dart';
+import '../game/models.dart';
+import 'pathfinding.dart';
+import 'world_state.dart';
+import 'zone.dart';
+
+/// What an enemy is doing right now. Shown above its head.
+enum Awareness {
+  /// Asleep ("z").
+  asleep,
+
+  /// Going about its business: patrolling, guarding or wandering.
+  idle,
+
+  /// Has noticed the hero and is coming ("!").
+  alert,
+
+  /// Lost sight of the hero and is checking the last place it saw them ("?").
+  search,
+
+  /// Gave up and is walking back to its post.
+  returning,
+}
+
+class Enemy {
+  Enemy(this.id, this.key, EnemySpawn s)
+    : type = s.type,
+      home = s.hex,
+      route = s.route,
+      behavior = s.behavior,
+      hex = s.hex,
+      hp = unitStats[s.type]!.maxHp,
+      awareness = s.behavior == Behavior.sleep
+          ? Awareness.asleep
+          : Awareness.idle,
+      vis = hexWorld(s.hex);
+
+  final int id;
+
+  /// Stable id (`zone#index`) used to remember kills.
+  final String key;
+  final UnitType type;
+  final Hex home;
+  final List<Hex> route;
+  final Behavior behavior;
+
+  Hex hex;
+  int hp;
+  Awareness awareness;
+
+  /// Where it was last seen the hero, while alert or searching.
+  Hex? lastSeen;
+  int _lost = 0;
+  int _wait = 0;
+  int _routeIdx = 0;
+  double _moveAcc = 0;
+
+  /// Visual position in world pixels, eased by the view toward [hex].
+  Offset vis;
+
+  /// Seconds the hurt flash has left (view state).
+  double flash = 0;
+
+  /// A quick shove toward whatever it just hit, decaying (view state).
+  Offset kick = Offset.zero;
+
+  UnitStats get stats => unitStats[type]!;
+  bool get alive => hp > 0;
+  bool get hostile => awareness == Awareness.alert;
+}
+
+enum SimEventKind {
+  /// An enemy noticed the hero.
+  noticed,
+
+  /// An enemy gave up the chase.
+  lostTrack,
+
+  /// The hero hurt an enemy.
+  hitEnemy,
+
+  /// The hero killed an enemy.
+  killedEnemy,
+
+  /// An enemy hurt the hero.
+  hitHero,
+
+  /// The hero fell.
+  heroDown,
+
+  /// The hero recovered a little.
+  regen,
+
+  /// The hero cast a spell at [SimEvent.hex].
+  spell,
+
+  /// The hero picked something up.
+  pickup,
+
+  /// The hero swung or shot at [SimEvent.hex] (from [SimEvent.from]).
+  heroSwing,
+
+  /// An enemy attacked the hero (from [SimEvent.from]).
+  enemySwing,
+}
+
+class SimEvent {
+  const SimEvent(
+    this.kind,
+    this.hex, [
+    this.amount = 0,
+    this.sneak = false,
+    this.from,
+    this.ranged = false,
+    this.unit,
+  ]);
+
+  final SimEventKind kind;
+  final Hex hex;
+  final int amount;
+  final bool sneak;
+
+  /// Where an attack or spell came from.
+  final Hex? from;
+
+  /// A shot or thrown spell rather than a melee blow.
+  final bool ranged;
+
+  /// The enemy type involved, when there is one.
+  final UnitType? unit;
+}
+
+/// The rules of moving around a zone: turn-based, with awake enemies reacting
+/// to the hero. No drawing here, so it can be tested on its own.
+class ZoneSim {
+  ZoneSim(this.source, {WorldState? world, Hex? heroAt, math.Random? rng})
+    : zone = source.copy(),
+      world = world ?? WorldState(),
+      rng = rng ?? math.Random(),
+      hero = heroAt ?? source.spawn {
+    _spawn();
+  }
+
+  static final int heroMaxHp = WorldState.maxHp;
+
+  /// Hexes the hero can be spotted from at best.
+  static const _sight = {
+    UnitType.knight: 5,
+    UnitType.archer: 6,
+    UnitType.golem: 4,
+    UnitType.cavalry: 6,
+    UnitType.mage: 6,
+    UnitType.healer: 3,
+    UnitType.warlord: 6,
+    UnitType.pyromancer: 6,
+    UnitType.titan: 7,
+  };
+
+  /// Hexes per turn.
+  static const _speed = {
+    UnitType.golem: 0.5,
+    UnitType.titan: 0.5,
+    UnitType.cavalry: 2.0,
+  };
+
+  /// Sleepers only notice you this close.
+  static const wakeRadius = 2;
+
+  /// Turns without line of sight before an alert enemy starts searching.
+  static const loseSightAfter = 4;
+
+  /// Turns an enemy waits at the last known position.
+  static const searchWait = 2;
+
+  /// A noticed enemy alerts friends this close to it.
+  static const packRadius = 5;
+
+  /// Turns of calm needed to recover one HP.
+  static const regenEvery = 6;
+
+  /// Turns per point of mana.
+  static const manaEvery = 2;
+
+  static const fireballCost = 2;
+  static const fireballRange = 4;
+
+  /// Turns a hex keeps burning.
+  static const burnTurns = 2;
+
+  /// Chance a burning forest lights a neighbouring forest each turn.
+  static const fireSpread = 0.5;
+
+  /// The zone as loaded; [zone] is this session's copy (forests can burn).
+  final Zone source;
+  final Zone zone;
+  final WorldState world;
+  final math.Random rng;
+
+  Hex hero;
+  int turn = 0;
+  final List<Enemy> enemies = [];
+  final List<SimEvent> events = [];
+
+  /// Burning hexes and the turns they have left.
+  final Map<Hex, int> fire = {};
+  int _calm = 0;
+
+  int get heroHp => world.hp;
+  set heroHp(int v) => world.hp = v;
+  int get mana => world.mana;
+
+  bool get heroDown => world.hp <= 0;
+  bool get danger => enemies.any((e) => e.alive && e.hostile);
+
+  void _spawn() {
+    enemies.clear();
+    for (final (i, s) in source.enemies.indexed) {
+      final key = '${source.id}#$i';
+      if (world.slain.contains(key)) continue;
+      enemies.add(Enemy(i, key, s));
+    }
+  }
+
+  /// Back at [at] with full health and mana, everything respawned.
+  void rest(Hex at) {
+    hero = at;
+    world
+      ..hp = WorldState.maxHp
+      ..mana = WorldState.maxMana
+      ..slain.clear();
+    fire.clear();
+    zone.tiles
+      ..clear()
+      ..addAll(source.tiles);
+    _calm = 0;
+    events.clear();
+    _spawn();
+  }
+
+  /// Falls back to the zone start (used when there is no campsite yet).
+  void respawn() => rest(source.spawn);
+
+  NpcSpawn? npcAt(Hex h) {
+    for (final n in source.npcs) {
+      if (n.hex == h) return n;
+    }
+    return null;
+  }
+
+  /// Whether [h] has a campsite.
+  bool isCamp(Hex h) => source.camps.contains(h);
+
+  /// Items on the ground here that haven't been taken yet.
+  Iterable<ItemSpawn> get groundItems => source.items.where(
+    (i) => !world.collected.contains('${source.id}#${i.id}'),
+  );
+
+  ItemSpawn? itemAt(Hex h) {
+    for (final i in groundItems) {
+      if (i.hex == h) return i;
+    }
+    return null;
+  }
+
+  Enemy? enemyAt(Hex h) {
+    for (final e in enemies) {
+      if (e.alive && e.hex == h) return e;
+    }
+    return null;
+  }
+
+  // ───────────────────────── perception ─────────────────────────
+
+  /// Whether a straight line from [a] to [b] is clear of mountains and (unless
+  /// [treesBlock] is false, as for arcing spells) forests in between.
+  bool lineOfSight(Hex a, Hex b, {bool treesBlock = true}) {
+    final n = a.distanceTo(b);
+    for (var i = 1; i < n; i++) {
+      final t = i / n;
+      // The tiny nudge keeps the line off hex edges so rounding is stable.
+      final h = BoardLayout.roundHex(
+        a.q + (b.q - a.q) * t + 1e-6,
+        a.r + (b.r - a.r) * t + 2e-6,
+      );
+      final tile = zone.tiles[h];
+      if (tile == null ||
+          tile.terrain == Terrain.mountain ||
+          (treesBlock && tile.terrain == Terrain.forest)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// How far [e] can spot the hero right now.
+  int sightOf(Enemy e) {
+    var r = _sight[e.type] ?? 5;
+    // Hiding in a forest or in a dark place shortens it.
+    if (zone.tiles[hero]?.terrain == Terrain.forest) r -= 2;
+    if (zone.dark) r -= 1;
+    return math.max(1, r);
+  }
+
+  bool sees(Enemy e) =>
+      e.hex.distanceTo(hero) <= sightOf(e) && lineOfSight(e.hex, hero);
+
+  // ───────────────────────── hero actions ─────────────────────────
+
+  /// Moves the hero one hex. Returns false if something is in the way.
+  bool moveHero(Hex to) {
+    if (hero.distanceTo(to) != 1) return false;
+    final tile = zone.tiles[to];
+    if (tile == null ||
+        !tile.walkable ||
+        enemyAt(to) != null ||
+        npcAt(to) != null) {
+      return false;
+    }
+    hero = to;
+    final item = itemAt(to);
+    if (item != null) {
+      world.collected.add('${source.id}#${item.id}');
+      world.inventory.add(item.id);
+      events.add(SimEvent(SimEventKind.pickup, to));
+    }
+    tick();
+    return true;
+  }
+
+  /// Spends a turn doing nothing.
+  void wait() => tick();
+
+  /// Whether the equipped weapon can hit [e] from where the hero stands.
+  bool reaches(Enemy e) {
+    final w = world.weapon;
+    final d = hero.distanceTo(e.hex);
+    if (!e.alive || d < w.minRange || d > w.maxRange) return false;
+    return d <= 1 || lineOfSight(hero, e.hex);
+  }
+
+  /// Strikes [e] with the equipped weapon if it is in reach. Unaware enemies
+  /// take double damage.
+  bool attack(Enemy e) {
+    if (!reaches(e)) return false;
+    events.add(
+      SimEvent(
+        SimEventKind.heroSwing,
+        e.hex,
+        0,
+        false,
+        hero,
+        world.weapon.maxRange > 1,
+      ),
+    );
+    _damageEnemy(e, world.damageOf(world.equipped), sneakable: true);
+    tick();
+    return true;
+  }
+
+  void _damageEnemy(Enemy e, int dmg, {bool sneakable = false}) {
+    final sneak = sneakable && !e.hostile;
+    final total = dmg * (sneak ? 2 : 1);
+    e.hp -= total;
+    if (!e.alive) world.slain.add(e.key);
+    events.add(
+      SimEvent(
+        e.alive ? SimEventKind.hitEnemy : SimEventKind.killedEnemy,
+        e.hex,
+        total,
+        sneak,
+        null,
+        false,
+        e.type,
+      ),
+    );
+    if (e.alive) _noticeHero(e);
+  }
+
+  /// Whether Fireball can be thrown at [target] right now.
+  bool canCastFireball(Hex target) {
+    if (mana < fireballCost) return false;
+    final d = hero.distanceTo(target);
+    if (d < 1 || d > fireballRange || !zone.tiles.containsKey(target)) {
+      return false;
+    }
+    return d <= 1 || lineOfSight(hero, target, treesBlock: false);
+  }
+
+  bool _burnable(Hex h) {
+    final t = zone.tiles[h]?.terrain;
+    return t != null &&
+        t != Terrain.water &&
+        t != Terrain.lava &&
+        t != Terrain.mountain;
+  }
+
+  /// Blasts [target] for 2 and its ring for 1, and sets the ground alight.
+  /// Anyone caught in it is hurt, the hero included.
+  bool castFireball(Hex target) {
+    if (!canCastFireball(target)) return false;
+    world.mana -= fireballCost;
+    events.add(SimEvent(SimEventKind.spell, target, 0, false, hero, true));
+    for (final h in [target, ...target.neighbors]) {
+      if (!zone.tiles.containsKey(h)) continue;
+      if (_burnable(h)) fire[h] = burnTurns;
+      final dmg = h == target ? 2 : 1;
+      final e = enemyAt(h);
+      if (e != null && !e.stats.fireImmune) _damageEnemy(e, dmg);
+      if (h == hero) _hurtHero(dmg);
+    }
+    tick();
+    return true;
+  }
+
+  void _hurtHero(int dmg) {
+    world.hp -= dmg;
+    events.add(SimEvent(SimEventKind.hitHero, hero, dmg));
+    if (heroDown) events.add(SimEvent(SimEventKind.heroDown, hero));
+  }
+
+  // ───────────────────────── the enemy turn ─────────────────────────
+
+  void tick() {
+    turn++;
+    for (final e in List.of(enemies)) {
+      if (!e.alive) continue;
+      _act(e);
+      if (heroDown) break;
+    }
+    _fireStep();
+    enemies.removeWhere((e) => !e.alive);
+    _regen();
+  }
+
+  /// Fire hurts what stands in it, spreads through forests and burns them
+  /// down to grass.
+  void _fireStep() {
+    if (fire.isEmpty) return;
+    final burning = fire.keys.toList();
+    for (final h in burning) {
+      final e = enemyAt(h);
+      if (e != null && !e.stats.fireImmune) _damageEnemy(e, 1);
+      if (h == hero && !heroDown) _hurtHero(1);
+    }
+    final lit = <Hex>[];
+    for (final h in burning) {
+      if (zone.tiles[h]?.terrain != Terrain.forest) continue;
+      for (final n in h.neighbors) {
+        if (zone.tiles[n]?.terrain == Terrain.forest &&
+            !fire.containsKey(n) &&
+            rng.nextDouble() < fireSpread) {
+          lit.add(n);
+        }
+      }
+    }
+    for (final h in burning) {
+      final left = fire[h]! - 1;
+      if (left <= 0) {
+        fire.remove(h);
+        if (zone.tiles[h]?.terrain == Terrain.forest) {
+          zone.tiles[h] = const ZoneTile(Terrain.grass);
+        }
+      } else {
+        fire[h] = left;
+      }
+    }
+    for (final h in lit) {
+      fire[h] = burnTurns;
+    }
+  }
+
+  void _regen() {
+    if (heroDown) return;
+    if (turn % manaEvery == 0 && world.mana < WorldState.maxMana) {
+      world.mana++;
+    }
+    if (danger) {
+      _calm = 0;
+      return;
+    }
+    if (heroHp >= heroMaxHp) return;
+    if (++_calm >= regenEvery) {
+      _calm = 0;
+      heroHp++;
+      events.add(SimEvent(SimEventKind.regen, hero, 1));
+    }
+  }
+
+  void _noticeHero(Enemy e) {
+    if (e.awareness != Awareness.alert) {
+      e.awareness = Awareness.alert;
+      events.add(SimEvent(SimEventKind.noticed, e.hex));
+      // A pack moves together.
+      for (final o in enemies) {
+        if (o == e || !o.alive || o.awareness == Awareness.alert) continue;
+        if (o.hex.distanceTo(e.hex) <= packRadius) {
+          o.awareness = Awareness.alert;
+          events.add(SimEvent(SimEventKind.noticed, o.hex));
+        }
+      }
+    }
+    e.lastSeen = hero;
+    e._lost = 0;
+  }
+
+  void _act(Enemy e) {
+    final sawHero = sees(e);
+    switch (e.awareness) {
+      case Awareness.asleep:
+        if (hero.distanceTo(e.hex) <= wakeRadius && sawHero) _noticeHero(e);
+      case Awareness.idle:
+      case Awareness.returning:
+        if (sawHero) {
+          _noticeHero(e);
+          _fight(e);
+        } else if (e.awareness == Awareness.returning) {
+          _returnHome(e);
+        } else {
+          _behave(e);
+        }
+      case Awareness.alert:
+        if (sawHero) {
+          e.lastSeen = hero;
+          e._lost = 0;
+        } else if (++e._lost >= loseSightAfter) {
+          e.awareness = Awareness.search;
+          e._wait = searchWait;
+          events.add(SimEvent(SimEventKind.lostTrack, e.hex));
+          return;
+        }
+        _fight(e);
+      case Awareness.search:
+        if (sawHero) {
+          _noticeHero(e);
+          _fight(e);
+          return;
+        }
+        final spot = e.lastSeen ?? e.home;
+        if (e.hex != spot) {
+          _walk(e, spot);
+        } else if (--e._wait <= 0) {
+          e.awareness = Awareness.returning;
+        }
+    }
+  }
+
+  /// Attack if in reach, otherwise close the distance.
+  void _fight(Enemy e) {
+    final s = e.stats;
+    final d = e.hex.distanceTo(hero);
+    final inReach = d >= s.minRange && d <= s.maxRange;
+    final clear = d <= 1 || lineOfSight(e.hex, hero);
+    if (inReach && clear) {
+      _hitHero(e);
+      return;
+    }
+    // Ranged units back off when too close.
+    if (d < s.minRange) {
+      _stepAway(e);
+      return;
+    }
+    _walk(e, hero);
+  }
+
+  /// Whether [e] could hit the hero this very turn, so the screen can warn.
+  bool threatens(Enemy e) {
+    if (!e.alive || !e.hostile) return false;
+    final s = e.stats;
+    final d = e.hex.distanceTo(hero);
+    return d >= s.minRange &&
+        d <= s.maxRange &&
+        (d <= 1 || lineOfSight(e.hex, hero));
+  }
+
+  void _hitHero(Enemy e) {
+    events.add(
+      SimEvent(
+        SimEventKind.enemySwing,
+        hero,
+        0,
+        false,
+        e.hex,
+        e.stats.maxRange > 1,
+        e.type,
+      ),
+    );
+    _hurtHero(e.stats.damage);
+  }
+
+  void _stepAway(Enemy e) {
+    Hex? best;
+    var bestD = e.hex.distanceTo(hero);
+    for (final n in e.hex.neighbors) {
+      final tile = zone.tiles[n];
+      if (tile == null || !tile.walkable || enemyAt(n) != null || n == hero) {
+        continue;
+      }
+      final d = n.distanceTo(hero);
+      if (d > bestD) {
+        bestD = d;
+        best = n;
+      }
+    }
+    if (best != null) e.hex = best;
+  }
+
+  /// Moves up to its speed in hexes toward [goal].
+  void _walk(Enemy e, Hex goal) {
+    e._moveAcc += _speed[e.type] ?? 1.0;
+    while (e._moveAcc >= 1) {
+      e._moveAcc -= 1;
+      if (e.hex == goal) return;
+      final path = findPath(
+        zone,
+        e.hex,
+        goal,
+        blocked: (h) =>
+            h == hero ||
+            enemyAt(h) != null ||
+            npcAt(h) != null ||
+            (fire.containsKey(h) && !e.stats.fireImmune),
+      );
+      if (path == null || path.isEmpty) return;
+      final next = path.first;
+      if (next == hero || enemyAt(next) != null || npcAt(next) != null) return;
+      e.hex = next;
+    }
+  }
+
+  void _returnHome(Enemy e) {
+    if (e.hex == e.home) {
+      e.awareness = e.behavior == Behavior.sleep
+          ? Awareness.asleep
+          : Awareness.idle;
+      e.lastSeen = null;
+      return;
+    }
+    _walk(e, e.home);
+  }
+
+  void _behave(Enemy e) {
+    switch (e.behavior) {
+      case Behavior.sleep:
+      case Behavior.guard:
+        if (e.hex != e.home) _walk(e, e.home);
+      case Behavior.patrol:
+        if (e.route.length < 2) return;
+        final goal = e.route[e._routeIdx % e.route.length];
+        if (e.hex == goal) {
+          e._routeIdx = (e._routeIdx + 1) % e.route.length;
+        } else {
+          _walk(e, goal);
+        }
+      case Behavior.wander:
+        if (rng.nextDouble() > 0.35) return;
+        final options = [
+          for (final n in e.hex.neighbors)
+            if ((zone.tiles[n]?.walkable ?? false) &&
+                enemyAt(n) == null &&
+                n != hero &&
+                n.distanceTo(e.home) <= 3)
+              n,
+        ];
+        if (options.isNotEmpty) e.hex = options[rng.nextInt(options.length)];
+    }
+  }
+}

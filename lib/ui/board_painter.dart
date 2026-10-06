@@ -10,13 +10,7 @@ import '../game/models.dart';
 import 'fx_layer.dart';
 import 'pixel/hex_art.dart';
 import 'pixel/pixel_assets.dart';
-
-double _hash(int a, int b, int k) {
-  var x = (a * 374761393 + b * 668265263 + k * 2147483647) & 0x7FFFFFFF;
-  x = ((x ^ (x >> 13)) * 1274126177) & 0x7FFFFFFF;
-  x ^= x >> 16;
-  return (x & 0xFFFF) / 65535.0;
-}
+import 'pixel/terrain_draw.dart';
 
 final Map<String, TextPainter> _textCache = {};
 
@@ -58,6 +52,7 @@ class BoardPainter extends CustomPainter {
   final Paint _fill = Paint()..isAntiAlias = false;
 
   late PixelAssets _art;
+  late TerrainDraw _terrain;
   late BoardLayout _l;
 
   @override
@@ -129,6 +124,7 @@ class BoardPainter extends CustomPainter {
     final art = PixelAssets.instance;
     if (art == null) return;
     _art = art;
+    _terrain = TerrainDraw(art);
     final layout = _l = BoardLayout.fit(size);
 
     canvas.save();
@@ -174,49 +170,31 @@ class BoardPainter extends CustomPainter {
     if (intro <= 0) return;
     final e = Curves.easeOutCubic.transform(intro);
     final c = L.snap(L.hexCenter(h) + Offset(0, (1 - e) * -L.scale * 90));
-    final variant = (_hash(h.q, h.r, 7) * HexArt.variants).floor();
-    final frames = HexArt.framesOf(t.terrain);
-    final frame = frames == 1 ? 0 : _tick(3, _hash(h.q, h.r, 8) * frames);
-    final sunk = HexArt.sunk(t.terrain);
-
-    _blitAt(
+    final (cliffSE, cliffSW) = cliffsFor(
+      (q, r) => game.tiles[Hex(q, r)]?.terrain,
+      h.q,
+      h.r,
+      t.terrain,
+    );
+    _terrain.draw(
       canvas,
-      _art.tile(t.terrain, variant, frame),
       c,
-      -HexArt.w / 2,
-      -HexArt.h / 2 + (sunk ? 2 : 0),
+      L.scale,
+      t.terrain,
+      h.q,
+      h.r,
+      fx.time,
+      cliffSE: cliffSE,
+      cliffSW: cliffSW,
+      openEdges: openEdgesFor(
+        (q, r) => game.tiles.containsKey(Hex(q, r)),
+        h.q,
+        h.r,
+      ),
       filter: t.fire > 0
           ? ColorFilter.mode(const Color(0x995B3A2A), BlendMode.srcATop)
           : null,
     );
-
-    switch (t.terrain) {
-      case Terrain.forest:
-        final sway = _tick(1.6, _hash(h.q, h.r, 9) * 2).isEven
-            ? 'idle0'
-            : 'idle1';
-        final other = _tick(1.6, _hash(h.q, h.r, 10) * 2 + 1).isEven
-            ? 'idle0'
-            : 'idle1';
-        _blitAt(canvas, _art.sprite('tree', other), c, -11, -9);
-        _blitAt(canvas, _art.sprite('tree', sway), c, -1, -4);
-      case Terrain.mountain:
-        _blitAt(canvas, _art.sprite('mountain'), c, -13, -6);
-        _blitAt(canvas, _art.sprite('mountain'), c, -2, -1);
-      case Terrain.crystal:
-        final f = _tick(1.5, _hash(h.q, h.r, 11) * 2).isEven
-            ? 'idle0'
-            : 'idle1';
-        _blitAt(canvas, _art.sprite('crystal', f), c, -8, -9);
-        if (_tick(2.5, _hash(h.q, h.r, 12) * 4) % 4 == 0) {
-          _rect(canvas, c, 4, -9, 1, 3, Colors.white);
-          _rect(canvas, c, 3, -8, 3, 1, Colors.white);
-        }
-      case Terrain.grass:
-      case Terrain.water:
-      case Terrain.lava:
-        break;
-    }
   }
 
   void _flames(Canvas canvas, BoardLayout L, Hex h) {
