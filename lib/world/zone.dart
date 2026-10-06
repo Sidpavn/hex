@@ -51,13 +51,14 @@ class NpcSpawn {
   final UnitType unit;
 }
 
+/// Something lying on the ground to pick up. [id] is unique within the zone;
+/// [itemId] says what it is (see `items.dart`).
 class ItemSpawn {
-  const ItemSpawn(this.id, this.hex, this.icon, this.label);
+  const ItemSpawn(this.id, this.hex, this.itemId);
 
   final String id;
   final Hex hex;
-  final String icon;
-  final String label;
+  final String itemId;
 }
 
 class ZoneTile {
@@ -233,14 +234,9 @@ class Zone {
             ),
           );
         case 'item':
-          // item <id> <col> <row> <icon> <Label_With_Underscores>
+          // item <uid> <col> <row> <itemId>
           items.add(
-            ItemSpawn(
-              p[1],
-              _hexAt(int.parse(p[2]), int.parse(p[3])),
-              p[4],
-              p[5].replaceAll('_', ' '),
-            ),
+            ItemSpawn(p[1], _hexAt(int.parse(p[2]), int.parse(p[3])), p[4]),
           );
         case 'map':
           inMap = true;

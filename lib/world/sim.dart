@@ -4,6 +4,7 @@ import 'dart:ui';
 import '../game/hex.dart';
 import '../game/models.dart';
 import 'pathfinding.dart';
+import 'items.dart';
 import 'world_state.dart';
 import 'zone.dart';
 
@@ -99,6 +100,9 @@ enum SimEventKind {
 
   /// The hero picked something up.
   pickup,
+
+  /// There was something to pick up but the bag is full.
+  bagFull,
 
   /// The hero swung or shot at [SimEvent.hex] (from [SimEvent.from]).
   heroSwing,
@@ -322,9 +326,13 @@ class ZoneSim {
     hero = to;
     final item = itemAt(to);
     if (item != null) {
-      world.collected.add('${source.id}#${item.id}');
-      world.inventory.add(item.id);
-      events.add(SimEvent(SimEventKind.pickup, to));
+      if (world.canAdd(item.itemId)) {
+        world.addItem(item.itemId);
+        world.collected.add('${source.id}#${item.id}');
+        events.add(SimEvent(SimEventKind.pickup, to));
+      } else {
+        events.add(SimEvent(SimEventKind.bagFull, to));
+      }
     }
     tick();
     return true;
@@ -352,17 +360,27 @@ class ZoneSim {
         0,
         false,
         hero,
-        world.weapon.maxRange > 1,
+        world.weapon.ranged,
       ),
     );
-    _damageEnemy(e, world.damageOf(world.equipped), sneakable: true);
+    _damageEnemy(
+      e,
+      world.damageOf(world.weaponId),
+      sneakable: true,
+      sneakMult: world.weapon.sneak,
+    );
     tick();
     return true;
   }
 
-  void _damageEnemy(Enemy e, int dmg, {bool sneakable = false}) {
+  void _damageEnemy(
+    Enemy e,
+    int dmg, {
+    bool sneakable = false,
+    int sneakMult = 2,
+  }) {
     final sneak = sneakable && !e.hostile;
-    final total = dmg * (sneak ? 2 : 1);
+    final total = dmg * (sneak ? sneakMult : 1);
     e.hp -= total;
     if (!e.alive) world.slain.add(e.key);
     events.add(
@@ -413,6 +431,41 @@ class ZoneSim {
     }
     tick();
     return true;
+  }
+
+  static const mendCost = 2;
+  static const mendHeal = 3;
+
+  /// Heals the hero. Only when hurt and with the mana for it.
+  bool castMend() {
+    if (mana < mendCost || heroHp >= heroMaxHp || heroDown) return false;
+    world.mana -= mendCost;
+    _heal(mendHeal);
+    tick();
+    return true;
+  }
+
+  /// Drinks one [id] from the bag. Does nothing if it wouldn't help.
+  bool useItem(String id) {
+    final def = itemOf(id);
+    if (!def.isConsumable || !world.hasItem(id) || heroDown) return false;
+    final helps =
+        (def.heal > 0 && heroHp < heroMaxHp) ||
+        (def.mana > 0 && world.mana < WorldState.maxMana);
+    if (!helps) return false;
+    world.removeItem(id);
+    if (def.heal > 0) _heal(def.heal);
+    if (def.mana > 0) {
+      world.mana = (world.mana + def.mana).clamp(0, WorldState.maxMana);
+    }
+    tick();
+    return true;
+  }
+
+  void _heal(int n) {
+    final before = world.hp;
+    world.hp = (world.hp + n).clamp(0, heroMaxHp);
+    events.add(SimEvent(SimEventKind.regen, hero, world.hp - before));
   }
 
   void _hurtHero(int dmg) {

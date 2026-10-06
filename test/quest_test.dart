@@ -30,20 +30,20 @@ void main() {
     expect(d.choices, isEmpty);
 
     // Pick the lantern up: she is now waiting for it.
-    w.inventory.add('lantern');
+    w.addItem('lantern');
     expect(npcMark(mara, w), 'search');
     expect(currentObjective(w)?.zone, 'meadow');
     d = talkTo(mara, w);
     d.choices.single.apply!(w);
     expect(questStage(w, 'lantern'), 2);
     expect(w.tokens, 3);
-    expect(w.inventory, isNot(contains('lantern')));
+    expect(w.hasItem('lantern'), isFalse);
     expect(currentObjective(w), isNull);
     expect(npcMark(mara, w), isNull);
   });
 
   test('finding the lantern before accepting still lets you hand it in', () {
-    final w = WorldState()..inventory.add('lantern');
+    final w = WorldState()..addItem('lantern');
     final d = talkTo(mara, w);
     d.choices.single.apply!(w);
     expect(w.quests['lantern'], 2);
@@ -61,7 +61,7 @@ void main() {
     final lantern = cave.items.firstWhere((i) => i.id == 'lantern');
     expect(markerHex(cave, goal, zones), lantern.hex);
     // Carrying it back, the cave's marker is its exit.
-    w.inventory.add('lantern');
+    w.addItem('lantern');
     final back = currentObjective(w)!;
     expect(markerHex(cave, back, zones), cave.portalHex['1']);
     expect(markerHex(meadow, back, zones), mara.hex);

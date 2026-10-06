@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 
 import '../game/hex.dart';
 import '../game/models.dart';
+import '../world/items.dart';
 import '../world/pathfinding.dart';
 import '../world/quests.dart';
 import '../world/sim.dart';
@@ -16,6 +17,7 @@ import 'pixel/hex_art.dart';
 import 'pixel/pixel_assets.dart';
 import 'pixel/terrain_draw.dart';
 import 'widgets.dart';
+import 'inventory_ui.dart';
 import 'zone_fx.dart';
 import 'zone_overlays.dart';
 
@@ -85,6 +87,8 @@ class _ZoneScreenState extends State<ZoneScreen>
   Dialogue? dialogue;
   bool campOpen = false;
   bool journalOpen = false;
+  bool packOpen = false;
+  bool packAtCamp = false;
 
   /// What the current route is for: an enemy to strike, an NPC to talk to, or
   /// a campfire to sit at.
@@ -442,9 +446,13 @@ class _ZoneScreenState extends State<ZoneScreen>
           texts.add(_FloatText(at, 'Fireball!', Pal.goldLight, delay: cursor));
         case SimEventKind.pickup:
           final item = s.source.items.firstWhere((i) => i.hex == ev.hex);
-          texts.add(_FloatText(at, 'Got ${item.label}', Pal.goldLight));
+          texts.add(
+            _FloatText(at, 'Got ${itemOf(item.itemId).name}', Pal.goldLight),
+          );
           fx.burst(at, sparkGold, 0, count: 12, speed: 55);
           HapticFeedback.selectionClick();
+        case SimEventKind.bagFull:
+          texts.add(_FloatText(at, 'Bag full', Pal.red));
         case SimEventKind.lostTrack:
           break;
       }
@@ -518,16 +526,50 @@ class _ZoneScreenState extends State<ZoneScreen>
     });
   }
 
-  void _toggleSpell() {
+  /// Spell slot tapped on the quick bar.
+  void _useSpell(int slot) {
     final s = sim;
-    if (s == null || s.heroDown) return;
+    final id = world.spellSlots[slot];
+    if (s == null || s.heroDown || id == null) return;
+    switch (id) {
+      case 'fireball':
+        setState(() {
+          targeting = !targeting && s.mana >= ZoneSim.fireballCost;
+          if (targeting) _clearRoute();
+        });
+      case 'mend':
+        setState(() => targeting = false);
+        if (s.castMend()) afterTurn(s);
+    }
+  }
+
+  bool _spellReady(String id) {
+    final s = sim;
+    if (s == null || s.heroDown) return false;
+    return switch (id) {
+      'fireball' => s.mana >= ZoneSim.fireballCost,
+      'mend' => s.mana >= ZoneSim.mendCost && s.heroHp < ZoneSim.heroMaxHp,
+      _ => false,
+    };
+  }
+
+  /// Weapon slot tapped on the quick bar.
+  void _holdWeapon(int slot) {
+    if (world.weaponSlots[slot] == null) return;
     setState(() {
-      targeting = !targeting && s.mana >= ZoneSim.fireballCost;
-      if (targeting) _clearRoute();
+      world.activeWeapon = slot;
+      targeting = false;
     });
   }
 
-  void _equip(WeaponKind k) => setState(() => world.equipped = k);
+  /// Drinks a potion through the game, so it takes a turn.
+  bool _drink(String id) {
+    final s = sim;
+    if (s == null) return false;
+    final ok = s.useItem(id);
+    if (ok) afterTurn(s);
+    return ok;
+  }
 
   void _rest() {
     final s = sim;
@@ -618,6 +660,18 @@ class _ZoneScreenState extends State<ZoneScreen>
                       const SizedBox(width: 8),
                       GestureDetector(
                         behavior: HitTestBehavior.opaque,
+                        onTap: () => setState(() {
+                          packOpen = true;
+                          packAtCamp = false;
+                        }),
+                        child: PixelBox(
+                          padding: const EdgeInsets.all(6),
+                          child: const PxIcon('pack'),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
                         onTap: () => setState(() => journalOpen = true),
                         child: PixelBox(
                           padding: const EdgeInsets.all(6),
@@ -659,8 +713,20 @@ class _ZoneScreenState extends State<ZoneScreen>
             CampOverlay(
               world: world,
               onRest: _rest,
-              onUpgrade: (k) => setState(() => world.upgrade(k)),
+              onPack: () => setState(() {
+                campOpen = false;
+                packOpen = true;
+                packAtCamp = true;
+              }),
               onClose: () => setState(() => campOpen = false),
+            ),
+          if (packOpen)
+            InventoryOverlay(
+              world: world,
+              atCamp: packAtCamp,
+              onChanged: () => setState(() {}),
+              onUse: _drink,
+              onClose: () => setState(() => packOpen = false),
             ),
           if (journalOpen)
             QuestLogOverlay(
@@ -740,29 +806,15 @@ class _ZoneScreenState extends State<ZoneScreen>
   }
 
   Widget _actionBar(ZoneSim s) {
-    final canCast = s.mana >= ZoneSim.fireballCost && !s.heroDown;
     return Padding(
       padding: const EdgeInsets.only(top: 6),
-      child: Wrap(
-        alignment: WrapAlignment.center,
-        spacing: 8,
-        runSpacing: 6,
-        children: [
-          for (final k in WeaponKind.values)
-            ActionButton(
-              icon: weapons[k]!.icon,
-              label: '${weapons[k]!.name.split(' ').last} ${world.damageOf(k)}',
-              selected: world.equipped == k && !targeting,
-              onTap: () => _equip(k),
-            ),
-          ActionButton(
-            icon: 'fire',
-            label: 'Fire ${ZoneSim.fireballCost}',
-            selected: targeting,
-            enabled: canCast,
-            onTap: _toggleSpell,
-          ),
-        ],
+      child: QuickBar(
+        world: world,
+        targeting: targeting,
+        canCast: _spellReady,
+        onWeapon: _holdWeapon,
+        onSpell: _useSpell,
+        onUse: (id) => _drink(id),
       ),
     );
   }
@@ -990,7 +1042,7 @@ class _ZonePainter extends CustomPainter {
       if (!visible.contains(item.hex)) continue;
       final c = v.toScreen(hexWorld(item.hex));
       final bob = (time * 3).floor().isEven ? 0.0 : 1.0;
-      td.blit(canvas, art.icon(item.icon), c, -4, -7 - bob, sc);
+      td.blit(canvas, art.icon(itemOf(item.itemId).icon), c, -6, -9 - bob, sc);
       if ((time * 2).floor() % 4 == 0) {
         td.rect(canvas, c, 4, -9, 1, 1, sc, Colors.white);
       }

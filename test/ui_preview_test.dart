@@ -16,6 +16,7 @@ import 'package:hex/main.dart';
 import 'package:hex/ui/campaign_screen.dart';
 import 'package:hex/ui/game_screen.dart';
 import 'package:hex/ui/menu_screen.dart';
+import 'package:hex/ui/inventory_ui.dart';
 import 'package:hex/ui/pixel/pixel_assets.dart';
 import 'package:hex/ui/setup_screen.dart';
 import 'package:hex/ui/stats_screen.dart';
@@ -153,6 +154,31 @@ void main() {
       st.setState(() {});
       await tester.pump(const Duration(milliseconds: 300));
       await grab('zone_spell');
+      st.targeting = false;
+      // The pack: give the hero some gear, then look at a weapon.
+      final world = st.world as WorldState;
+      world.tokens = 3;
+      world.addItem('axe');
+      world.addItem('spear');
+      world.addItem('dagger');
+      world.addItem('ether', 2);
+      world.addItem('lantern');
+      world.learn('mend');
+      world.hp = 5;
+      st.packOpen = true;
+      st.packAtCamp = true;
+      st.setState(() {});
+      await tester.pump(const Duration(milliseconds: 300));
+      await grab('pack_empty');
+      await tester.tap(find.byType(ItemSlot).at(10)); // first bag slot (potion)
+      await tester.pump(const Duration(milliseconds: 200));
+      await grab('pack_potion');
+      await tester.tap(find.byType(ItemSlot).at(11)); // the axe
+      await tester.pump(const Duration(milliseconds: 200));
+      await grab('pack_weapon');
+      await tester.tap(find.byType(ItemSlot).at(8)); // spell slot 1
+      await tester.pump(const Duration(milliseconds: 200));
+      await grab('pack_spell');
     }
     // Combat feedback: a sword swing, an archer's aim, a fireball in flight.
     {
@@ -195,7 +221,7 @@ void main() {
       await grab('fx_aim');
 
       // 2) a bow shot in flight.
-      st.world.equipped = WeaponKind.bow;
+      st.world.equipped = 'bow';
       final foe = (st.sim.enemies as List).firstWhere(
         (e) => e.type == UnitType.archer,
       );
@@ -206,7 +232,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 900));
 
       // 3) a sword swing at the knight.
-      st.world.equipped = WeaponKind.sword;
+      st.world.equipped = 'sword';
       for (final e in st.sim.enemies) {
         if (e.type == UnitType.knight && e.hex == knight.hex) {
           e.awareness = Awareness.alert;

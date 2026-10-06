@@ -3,7 +3,11 @@ name Hollow Deep
 dark 1
 portal 1 meadow 1 cave_exit
 camp 5 18
-item lantern 13 3 lantern Old_Lantern
+item lantern 13 3 lantern
+item axe 22 16 axe
+item longbow 9 11 longbow
+item potion1 9 15 potion
+item ether1 20 8 ether
 enemy knight 8 8 patrol 10,12
 enemy archer 20 6 guard
 enemy golem 23 11 sleep

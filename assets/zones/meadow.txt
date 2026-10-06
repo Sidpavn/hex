@@ -4,6 +4,11 @@ dark 0
 portal 1 cave 1 cave
 camp 7 23
 npc mara Old_Mara 8 22 healer
+item spear 24 12 spear
+item dagger 6 4 dagger
+item potion1 10 20 potion
+item ether1 16 6 ether
+item potion2 26 26 potion
 enemy knight 14 24 patrol 12,19
 enemy archer 22 18 guard
 enemy knight 25 22 guard

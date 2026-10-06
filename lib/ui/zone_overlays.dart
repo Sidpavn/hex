@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../game/models.dart';
 import '../world/quests.dart';
 import '../world/world_state.dart';
 import '../world/zone.dart';
@@ -155,13 +154,13 @@ class CampOverlay extends StatelessWidget {
     super.key,
     required this.world,
     required this.onRest,
-    required this.onUpgrade,
+    required this.onPack,
     required this.onClose,
   });
 
   final WorldState world;
   final VoidCallback onRest;
-  final void Function(WeaponKind) onUpgrade;
+  final VoidCallback onPack;
   final VoidCallback onClose;
 
   @override
@@ -202,20 +201,12 @@ class CampOverlay extends StatelessWidget {
                 const SizedBox(height: 12),
                 GoldButton(label: 'Rest here', onTap: onRest),
                 const SizedBox(height: 14),
-                PxText(
-                  'Upgrades  :token: ${world.tokens}',
-                  style: const TextStyle(color: Pal.gold, fontSize: 16),
+                const SizedBox(height: 8),
+                GoldButton(
+                  label: 'Open pack (upgrade weapons)',
+                  filled: false,
+                  onTap: onPack,
                 ),
-                const SizedBox(height: 6),
-                for (final k in WeaponKind.values)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: _UpgradeRow(
-                      world: world,
-                      kind: k,
-                      onTap: () => onUpgrade(k),
-                    ),
-                  ),
                 const SizedBox(height: 4),
                 GoldButton(label: 'Leave', filled: false, onTap: onClose),
               ],
@@ -223,45 +214,6 @@ class CampOverlay extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _UpgradeRow extends StatelessWidget {
-  const _UpgradeRow({
-    required this.world,
-    required this.kind,
-    required this.onTap,
-  });
-
-  final WorldState world;
-  final WeaponKind kind;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final w = weapons[kind]!;
-    final maxed = world.upgrades[kind]! >= WorldState.maxUpgrade;
-    final dmg = world.damageOf(kind);
-    return Row(
-      children: [
-        PxIcon(w.icon),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            '${w.name}  dmg $dmg${maxed ? '  (max)' : ' > ${dmg + 1}'}',
-            style: const TextStyle(color: Pal.text, fontSize: 14),
-          ),
-        ),
-        SizedBox(
-          width: 96,
-          child: GoldButton(
-            label: maxed ? 'Maxed' : ':token: ${world.upgradeCost(kind)}',
-            filled: !maxed && world.canUpgrade(kind),
-            onTap: world.canUpgrade(kind) ? onTap : null,
-          ),
-        ),
-      ],
     );
   }
 }
@@ -319,7 +271,7 @@ class QuestLogOverlay extends StatelessWidget {
                   ),
                 PxText(
                   ':token: ${world.tokens} tokens'
-                  '${world.inventory.isEmpty ? '' : '   Carrying: ${world.inventory.join(', ')}'}',
+                  '${_carried(world).isEmpty ? '' : '   Carrying: ${_carried(world)}'}',
                   style: const TextStyle(color: Pal.dim, fontSize: 14),
                 ),
                 const SizedBox(height: 12),
@@ -332,6 +284,12 @@ class QuestLogOverlay extends StatelessWidget {
     );
   }
 }
+
+/// Quest items in the bag, for the journal.
+String _carried(WorldState w) => [
+  for (final s in w.bag)
+    if (s != null && s.def.isQuest) s.def.name,
+].join(', ');
 
 class _QuestEntry extends StatelessWidget {
   const _QuestEntry({
@@ -380,59 +338,6 @@ class _QuestEntry extends StatelessWidget {
             ],
           ],
         ],
-      ),
-    );
-  }
-}
-
-/// A small action button for the bottom bar.
-class ActionButton extends StatelessWidget {
-  const ActionButton({
-    super.key,
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    this.selected = false,
-    this.enabled = true,
-  });
-
-  final String icon;
-  final String label;
-  final VoidCallback onTap;
-  final bool selected;
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: enabled ? onTap : null,
-      child: Opacity(
-        opacity: enabled ? 1 : 0.45,
-        child: PixelBox(
-          color: selected ? Pal.panelHi : Pal.panel,
-          border: selected ? Pal.gold : Pal.ink,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              icon == 'archer' || icon == 'knight'
-                  ? UnitPortrait(
-                      icon == 'archer' ? UnitType.archer : UnitType.knight,
-                      mult: 1,
-                    )
-                  : PxIcon(icon),
-              const SizedBox(width: 6),
-              PxText(
-                label,
-                style: TextStyle(
-                  color: selected ? Pal.gold : Pal.text,
-                  fontSize: 15,
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

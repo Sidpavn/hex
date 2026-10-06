@@ -144,6 +144,11 @@ assert reachable(c, (3, 19), (24, 19)), 'cave not connected'
 write('meadow', 'Whispering Meadow', False, m, ['portal 1 cave 1 cave'] + [
     prop(m, 'camp {c} {r}', 7, 23),
     prop(m, 'npc mara Old_Mara {c} {r} healer', 8, 22),
+    prop(m, 'item spear {c} {r} spear', 24, 12),
+    prop(m, 'item dagger {c} {r} dagger', 6, 4),
+    prop(m, 'item potion1 {c} {r} potion', 10, 20),
+    prop(m, 'item ether1 {c} {r} ether', 16, 6),
+    prop(m, 'item potion2 {c} {r} potion', 26, 26),
 ], [
     enemy(m, 'knight', 'patrol', (14, 24), (14, 19)),
     enemy(m, 'archer', 'guard', (22, 18)),
@@ -153,7 +158,11 @@ write('meadow', 'Whispering Meadow', False, m, ['portal 1 cave 1 cave'] + [
 ])
 write('cave', 'Hollow Deep', True, c, ['portal 1 meadow 1 cave_exit'] + [
     prop(c, 'camp {c} {r}', 5, 18),
-    prop(c, 'item lantern {c} {r} lantern Old_Lantern', 14, 3),
+    prop(c, 'item lantern {c} {r} lantern', 14, 3),
+    prop(c, 'item axe {c} {r} axe', 23, 16),
+    prop(c, 'item longbow {c} {r} longbow', 4, 11),
+    prop(c, 'item potion1 {c} {r} potion', 9, 15),
+    prop(c, 'item ether1 {c} {r} ether', 20, 8),
 ], [
     enemy(c, 'knight', 'patrol', (9, 8), (12, 12)),
     enemy(c, 'archer', 'guard', (20, 6)),

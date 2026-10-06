@@ -63,7 +63,7 @@ String? npcMark(NpcSpawn npc, WorldState w) {
   if (npc.id != 'mara') return null;
   final stage = questStage(w, 'lantern');
   if (stage >= 2) return null;
-  if (w.inventory.contains('lantern')) return 'search';
+  if (w.hasItem('lantern')) return 'search';
   return stage == 0 ? 'alert' : null;
 }
 
@@ -72,7 +72,7 @@ Dialogue talkTo(NpcSpawn npc, WorldState w) {
   switch (npc.id) {
     case 'mara':
       final stage = questStage(w, 'lantern');
-      final has = w.inventory.contains('lantern');
+      final has = w.hasItem('lantern');
       if (stage >= 2) {
         return const Dialogue('Mara', [
           'The light is back in my window. Thank you again, traveller.',
@@ -83,13 +83,16 @@ Dialogue talkTo(NpcSpawn npc, WorldState w) {
           'Mara',
           const [
             'My lantern! You found it!',
-            'Please, take these. You have earned them.',
+            'Please, take these. And let me teach you a little healing '
+                'magic I know.',
           ],
           [
-            DialogueChoice('Hand it over (+3 tokens)', (w) {
-              w.inventory.remove('lantern');
+            DialogueChoice('Hand it over (3 tokens, 2 potions, Mend)', (w) {
+              w.removeItem('lantern');
               w.quests['lantern'] = 2;
               w.tokens += 3;
+              w.addItem('potion', 2);
+              w.learn('mend');
             }),
           ],
         );
@@ -119,7 +122,7 @@ Dialogue talkTo(NpcSpawn npc, WorldState w) {
 QuestObjective? currentObjective(WorldState w) {
   final stage = questStage(w, 'lantern');
   if (stage >= 2) return null;
-  if (w.inventory.contains('lantern')) {
+  if (w.hasItem('lantern')) {
     return const QuestObjective(
       'meadow',
       "Bring the lantern back to Mara.",

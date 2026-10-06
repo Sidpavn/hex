@@ -167,7 +167,7 @@ void main() {
     final k = s2.enemies.single;
     final before = k.hp;
     s2.attack(k);
-    expect(before - k.hp, WorldState().damageOf(WeaponKind.sword));
+    expect(before - k.hp, WorldState().damageOf('sword'));
   });
 
   test('the hero cannot walk through enemies and can fall', () {
@@ -212,7 +212,7 @@ void main() {
       final s = sim(z, hero: at(5, 3), world: world);
       final k = s.enemies.single;
       expect(s.reaches(k), isFalse); // sword, 3 hexes away
-      world.equipped = WeaponKind.bow;
+      world.equipped = 'bow';
       expect(s.reaches(k), isTrue); // bow, 3 hexes away
       s.hero = at(7, 3);
       expect(s.reaches(k), isFalse); // too close for the bow
@@ -222,19 +222,19 @@ void main() {
       final rows = [...grass];
       rows[3] = '${rows[3].substring(0, 6)}^${rows[3].substring(7)}';
       final z = zoneOf(rows, enemies: ['knight 8 3 guard']);
-      final world = WorldState()..equipped = WeaponKind.bow;
+      final world = WorldState()..equipped = 'bow';
       final s = sim(z, hero: at(4, 3), world: world);
       expect(s.reaches(s.enemies.single), isFalse);
     });
 
     test('upgrades add damage and cost tokens', () {
       final w = WorldState()..tokens = 3;
-      expect(w.damageOf(WeaponKind.sword), 3);
-      expect(w.upgrade(WeaponKind.sword), isTrue); // costs 1
-      expect(w.upgrade(WeaponKind.sword), isTrue); // costs 2
-      expect(w.damageOf(WeaponKind.sword), 5);
+      expect(w.damageOf('sword'), 3);
+      expect(w.upgrade('sword'), isTrue); // costs 1
+      expect(w.upgrade('sword'), isTrue); // costs 2
+      expect(w.damageOf('sword'), 5);
       expect(w.tokens, 0);
-      expect(w.upgrade(WeaponKind.sword), isFalse); // maxed
+      expect(w.upgrade('sword'), isFalse); // maxed
     });
 
     test('kills are remembered until a rest', () {
@@ -356,7 +356,7 @@ void main() {
         'name Test',
         'dark 0',
         'npc mara Mara 3 2 healer',
-        'item lantern 5 2 star Lantern',
+        'item lantern 5 2 lantern',
         'camp 1 1',
         'map',
         '@......',
@@ -370,7 +370,7 @@ void main() {
     expect(s.moveHero(at(3, 2)), isFalse);
     expect(s.isCamp(at(1, 1)), isTrue);
     expect(s.moveHero(at(5, 2)), isTrue);
-    expect(world.inventory, contains('lantern'));
+    expect(world.hasItem('lantern'), isTrue);
     expect(s.events.any((e) => e.kind == SimEventKind.pickup), isTrue);
     expect(s.groundItems, isEmpty);
     expect(sim(z, world: world).groundItems, isEmpty);
@@ -427,7 +427,7 @@ void main() {
 
     test('the bow is a ranged swing', () {
       final z = zoneOf(grass, enemies: ['knight 7 3 guard']);
-      final world = WorldState()..equipped = WeaponKind.bow;
+      final world = WorldState()..equipped = 'bow';
       final s = sim(z, hero: at(4, 3), world: world);
       s.attack(s.enemies.single);
       expect(s.events.first.kind, SimEventKind.heroSwing);
@@ -476,6 +476,144 @@ void main() {
         (e) => e.kind == SimEventKind.killedEnemy,
       );
       expect(kill.unit, UnitType.archer);
+    });
+  });
+
+  group('inventory', () {
+    test('items stack up to their limit and overflow into new slots', () {
+      final w = WorldState(); // starts with 2 potions
+      expect(w.countOf('potion'), 2);
+      expect(w.addItem('potion', 4), 0);
+      expect(w.countOf('potion'), 6);
+      // A stack holds 5, so the sixth sits in its own slot.
+      expect(
+        w.bag.whereType<ItemStack>().where((s) => s.id == 'potion'),
+        hasLength(2),
+      );
+      expect(w.removeItem('potion', 6), isTrue);
+      expect(w.countOf('potion'), 0);
+      expect(w.removeItem('potion'), isFalse);
+    });
+
+    test('a full bag turns things away', () {
+      final w = WorldState();
+      for (var i = 0; i < WorldState.bagSize; i++) {
+        w.bag[i] = ItemStack('lantern', 1);
+      }
+      expect(w.bagFull, isTrue);
+      expect(w.canAdd('axe'), isFalse);
+      expect(w.addItem('axe'), 1);
+    });
+
+    test('equipping swaps with the bag, and one weapon must stay in hand', () {
+      final w = WorldState()..addItem('axe');
+      final at = w.bag.indexWhere((s) => s?.id == 'axe');
+      expect(w.equipFromBag(at, 0), isTrue);
+      expect(w.weaponSlots[0], 'axe');
+      expect(w.hasItem('sword'), isTrue); // went back to the bag
+      expect(w.unequip(0), isTrue);
+      expect(w.unequip(1), isFalse); // the last one stays
+      expect(w.weaponId, 'bow');
+    });
+
+    test('quest items cannot be dropped', () {
+      final w = WorldState()..addItem('lantern');
+      final at = w.bag.indexWhere((s) => s?.id == 'lantern');
+      expect(w.drop(at), isFalse);
+      expect(w.hasItem('lantern'), isTrue);
+    });
+
+    test('spells live in one slot and must be learned first', () {
+      final w = WorldState();
+      w.slotSpell(1, 'mend'); // not learned yet
+      expect(w.spellSlots[1], isNull);
+      w.learn('mend');
+      expect(w.spellSlots[1], 'mend'); // goes to the empty slot
+      w.slotSpell(0, 'mend');
+      expect(w.spellSlots, ['mend', null]);
+    });
+  });
+
+  group('items in play', () {
+    test(
+      'a potion heals, takes a turn, and refuses when it would not help',
+      () {
+        final z = zoneOf(grass);
+        final world = WorldState();
+        final s = sim(z, hero: at(3, 3), world: world);
+        expect(s.useItem('potion'), isFalse); // already at full health
+        world.hp = 2;
+        final turn = s.turn;
+        expect(s.useItem('potion'), isTrue);
+        expect(world.hp, 6);
+        expect(s.turn, turn + 1);
+        expect(world.countOf('potion'), 1);
+      },
+    );
+
+    test('a mana potion refills mana', () {
+      final z = zoneOf(grass);
+      final world = WorldState()
+        ..addItem('ether')
+        ..mana = 0;
+      final s = sim(z, hero: at(3, 3), world: world);
+      expect(s.useItem('ether'), isTrue);
+      expect(world.mana, greaterThanOrEqualTo(2));
+    });
+
+    test('Mend costs mana, heals 3 and only works when hurt', () {
+      final z = zoneOf(grass);
+      final world = WorldState();
+      final s = sim(z, hero: at(3, 3), world: world);
+      expect(s.castMend(), isFalse); // full health
+      world.hp = 3;
+      expect(s.castMend(), isTrue);
+      expect(world.hp, 6);
+      expect(world.mana, lessThan(WorldState.maxMana));
+    });
+
+    test('the spear reaches two hexes, the dagger triples sneak damage', () {
+      final z = zoneOf(grass, enemies: ['knight 6 3 sleep']);
+      final world = WorldState()..equipped = 'spear';
+      final s = sim(z, hero: at(4, 3), world: world);
+      expect(s.reaches(s.enemies.single), isTrue); // 2 away
+      final dagger = WorldState()..equipped = 'dagger';
+      final s2 = sim(z, hero: at(5, 3), world: dagger);
+      final k = s2.enemies.single;
+      final before = k.hp;
+      s2.attack(k);
+      // Knight has 5 HP: dagger 2 x3 = 6 kills it from asleep.
+      expect(before - 6, lessThanOrEqualTo(0));
+      expect(s2.enemies, isEmpty);
+    });
+
+    test('a pickup goes in the bag, or stays put when the bag is full', () {
+      final z = Zone.parse(
+        [
+          'zone t',
+          'name Test',
+          'dark 0',
+          'item sp 3 2 spear',
+          'map',
+          '@......',
+          '.......',
+          '.......',
+        ].join('\n'),
+      );
+      final world = WorldState();
+      final s = sim(z, hero: at(2, 2), world: world);
+      expect(s.moveHero(at(3, 2)), isTrue);
+      expect(world.hasItem('spear'), isTrue);
+
+      final full = WorldState();
+      for (var i = 0; i < WorldState.bagSize; i++) {
+        full.bag[i] = ItemStack('lantern', 1);
+      }
+      final s2 = sim(z, hero: at(2, 2), world: full);
+      expect(s2.moveHero(at(3, 2)), isTrue);
+      expect(full.hasItem('spear'), isFalse);
+      expect(s2.groundItems, hasLength(1)); // still there
+      expect(s2.events.any((e) => e.kind == SimEventKind.bagFull), isTrue);
     });
   });
 }

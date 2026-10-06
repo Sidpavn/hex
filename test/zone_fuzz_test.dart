@@ -69,8 +69,10 @@ void main() {
               }
             case 4:
               // Attack whatever is in reach, with either weapon.
-              (st.world as WorldState).equipped =
-                  WeaponKind.values[rng.nextInt(2)];
+              (st.world as WorldState).equipped = [
+                'sword',
+                'bow',
+              ][rng.nextInt(2)];
               for (final e in List.of(s.enemies)) {
                 if (s.reaches(e)) {
                   s.attack(e);
