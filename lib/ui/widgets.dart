@@ -1,136 +1,27 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 
-/// Shared look for every screen outside the game board: the same forest
-/// gradient, drifting fireflies and gold accents the board uses.
-class Pal {
-  static const bgTop = Color(0xFF12231F);
-  static const bgBottom = Color(0xFF1E3B34);
-  static const panel = Color(0xCC0B1512);
-  static const gold = Color(0xFFE0A030);
-  static const goldLight = Color(0xFFFFE082);
-  static const blue = Color(0xFF6FA3FF);
-  static const red = Color(0xFFFF7A7A);
-  static const green = Color(0xFF69F0AE);
-  static const purple = Color(0xFFD1A3FF);
-}
+import 'pixel/palette.dart';
+import 'pixel/pixel_assets.dart';
+import 'pixel/pixel_ui.dart';
 
-Path hexPath(Offset c, double r) {
-  final p = Path();
-  for (var i = 0; i < 6; i++) {
-    final a = math.pi / 180 * (60 * i - 30);
-    final pt = c + Offset(r * math.cos(a), r * math.sin(a));
-    i == 0 ? p.moveTo(pt.dx, pt.dy) : p.lineTo(pt.dx, pt.dy);
-  }
-  return p..close();
-}
+export 'pixel/palette.dart';
+export 'pixel/pixel_ui.dart';
 
-/// Animated gradient with drifting fireflies and faint floating hexagons.
-class Backdrop extends StatefulWidget {
+/// Flat screen background. No ambient decoration: the pixel art carries it.
+class Backdrop extends StatelessWidget {
   const Backdrop({super.key, required this.child});
 
   final Widget child;
 
   @override
-  State<Backdrop> createState() => _BackdropState();
+  Widget build(BuildContext context) => ColoredBox(
+    color: Pal.bgTop,
+    child: SizedBox.expand(child: child),
+  );
 }
 
-class _BackdropState extends State<Backdrop>
-    with SingleTickerProviderStateMixin {
-  late final Ticker _ticker;
-  final _time = ValueNotifier<double>(0);
-
-  @override
-  void initState() {
-    super.initState();
-    _ticker = createTicker((d) => _time.value = d.inMicroseconds / 1e6)
-      ..start();
-  }
-
-  @override
-  void dispose() {
-    _ticker.dispose();
-    _time.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        RepaintBoundary(child: CustomPaint(painter: _BackdropPainter(_time))),
-        widget.child,
-      ],
-    );
-  }
-}
-
-class _BackdropPainter extends CustomPainter {
-  _BackdropPainter(this.time) : super(repaint: time);
-
-  final ValueNotifier<double> time;
-
-  static double _h(int a, int b) {
-    final v = math.sin(a * 127.1 + b * 311.7) * 43758.5453;
-    return v - v.floorToDouble();
-  }
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final t = time.value;
-    final rect = Offset.zero & size;
-    canvas.drawRect(
-      rect,
-      Paint()
-        ..shader = const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Pal.bgTop, Pal.bgBottom],
-        ).createShader(rect),
-    );
-
-    // Big faint hexagons drifting upward.
-    final line = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
-    for (var i = 0; i < 9; i++) {
-      final r = 40 + _h(i, 1) * 80;
-      final speed = 4 + _h(i, 2) * 8;
-      final x = _h(i, 3) * size.width + math.sin(t * 0.2 + i) * 20;
-      final y =
-          size.height +
-          r -
-          ((t * speed + _h(i, 4) * size.height * 1.4) % (size.height + r * 2));
-      line.color = Pal.goldLight.withValues(alpha: 0.035 + 0.03 * _h(i, 5));
-      canvas.save();
-      canvas.translate(x, y);
-      canvas.rotate(t * 0.05 * (i.isEven ? 1 : -1));
-      canvas.drawPath(hexPath(Offset.zero, r), line);
-      canvas.restore();
-    }
-
-    // Fireflies, same recipe as the board.
-    final dot = Paint();
-    for (var i = 0; i < 34; i++) {
-      final speed = 6 + _h(i, 3) * 12;
-      final x =
-          (_h(i, 1) * size.width + math.sin(t * 0.5 + i) * 18) % size.width;
-      final y =
-          size.height - ((t * speed + _h(i, 2) * size.height) % size.height);
-      final tw = 0.5 + 0.5 * math.sin(t * 2 + i * 1.7);
-      dot.color = const Color(0xFFD8FF9E).withValues(alpha: 0.12 + 0.28 * tw);
-      canvas.drawCircle(Offset(x, y), 1.2 + _h(i, 4) * 2, dot);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _BackdropPainter old) => false;
-}
-
-/// Fades and slides its child in, [index] steps after the screen opens.
+/// Slides its child in, [index] beats after the screen opens. Motion is eased
+/// but snapped to whole UI pixels each frame, so it is smooth and still crisp.
 class Entrance extends StatelessWidget {
   const Entrance({super.key, required this.child, this.index = 0});
 
@@ -139,32 +30,59 @@ class Entrance extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final u = PixelUi.unit(context);
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: 1),
-      duration: Duration(milliseconds: 450 + index * 70),
-      curve: Curves.easeOutCubic,
+      duration: Duration(milliseconds: 360 + index * 70),
       builder: (context, t, child) {
-        final delay = (index * 70) / (450 + index * 70);
+        final delay = (index * 70) / (360 + index * 70);
         final p = ((t - delay) / (1 - delay)).clamp(0.0, 1.0);
-        return Opacity(
-          opacity: p,
-          child: Transform.translate(
-            offset: Offset(0, (1 - p) * 28),
-            child: child,
-          ),
-        );
+        if (p <= 0) return const Opacity(opacity: 0, child: SizedBox());
+        // Eased, but landing on whole UI pixels every frame.
+        final e = Curves.easeOutCubic.transform(p);
+        final dy = (((1 - e) * 28)).roundToDouble() * u;
+        return Transform.translate(offset: Offset(0, dy), child: child);
       },
       child: child,
     );
   }
 }
 
-/// Dark glass panel with a soft gold edge.
+/// Wraps a [PixelBox] so a tap presses it in by one pixel.
+class _PressBox extends StatefulWidget {
+  const _PressBox({required this.onTap, required this.builder});
+
+  final VoidCallback? onTap;
+  final Widget Function(bool pressed) builder;
+
+  @override
+  State<_PressBox> createState() => _PressBoxState();
+}
+
+class _PressBoxState extends State<_PressBox> {
+  bool _down = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.onTap == null) return widget.builder(false);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => setState(() => _down = true),
+      onTapCancel: () => setState(() => _down = false),
+      onTapUp: (_) => setState(() => _down = false),
+      onTap: widget.onTap,
+      child: widget.builder(_down),
+    );
+  }
+}
+
+/// A slate panel. [accent] swaps the border to a colour (current/done items);
+/// [dim] fades a locked one.
 class Panel extends StatelessWidget {
   const Panel({
     super.key,
     required this.child,
-    this.padding = const EdgeInsets.all(14),
+    this.padding = const EdgeInsets.all(12),
     this.glow,
     this.dim = false,
     this.onTap,
@@ -173,120 +91,65 @@ class Panel extends StatelessWidget {
   final Widget child;
   final EdgeInsets padding;
 
-  /// Colour of an optional soft glow behind the panel.
+  /// Accent colour for the border. (Named `glow` for existing call sites.)
   final Color? glow;
   final bool dim;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    final box = AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      padding: padding,
-      decoration: BoxDecoration(
-        color: Pal.panel,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: (glow ?? Pal.goldLight).withValues(alpha: dim ? 0.12 : 0.4),
-          width: 1.5,
+    return _PressBox(
+      onTap: onTap,
+      builder: (pressed) => Opacity(
+        opacity: dim ? 0.55 : 1,
+        child: PixelBox(
+          border: glow ?? Pal.ink,
+          padding: padding,
+          pressed: pressed,
+          child: child,
         ),
-        boxShadow: [
-          BoxShadow(
-            color: (glow ?? Colors.black).withValues(
-              alpha: glow != null ? 0.35 : 0.4,
-            ),
-            blurRadius: glow != null ? 20 : 8,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Opacity(opacity: dim ? 0.5 : 1, child: child),
-    );
-    if (onTap == null) return box;
-    return _Pressable(onTap: onTap!, child: box);
-  }
-}
-
-class _Pressable extends StatefulWidget {
-  const _Pressable({required this.child, required this.onTap});
-
-  final Widget child;
-  final VoidCallback onTap;
-
-  @override
-  State<_Pressable> createState() => _PressableState();
-}
-
-class _PressableState extends State<_Pressable> {
-  bool _down = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapDown: (_) => setState(() => _down = true),
-      onTapCancel: () => setState(() => _down = false),
-      onTapUp: (_) => setState(() => _down = false),
-      onTap: widget.onTap,
-      child: AnimatedScale(
-        scale: _down ? 0.97 : 1,
-        duration: const Duration(milliseconds: 120),
-        child: widget.child,
       ),
     );
   }
 }
 
-/// Big gold call-to-action, or a quieter outlined variant.
+/// The primary call-to-action, or a quieter outlined variant.
 class GoldButton extends StatelessWidget {
   const GoldButton({
     super.key,
     required this.label,
     required this.onTap,
     this.filled = true,
+    this.color = Pal.gold,
   });
 
   final String label;
   final VoidCallback? onTap;
   final bool filled;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
     final enabled = onTap != null;
-    final btn = Container(
-      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 28),
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(40),
-        gradient: filled
-            ? const LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [Pal.goldLight, Pal.gold],
-              )
-            : null,
-        border: filled
-            ? null
-            : Border.all(
-                color: Pal.goldLight.withValues(alpha: 0.6),
-                width: 1.5,
-              ),
-        boxShadow: filled
-            ? const [BoxShadow(color: Color(0x66FFC400), blurRadius: 18)]
-            : null,
-      ),
-      child: Text(
-        label.toUpperCase(),
-        style: TextStyle(
-          color: filled ? Colors.black : Pal.goldLight,
-          fontWeight: FontWeight.w900,
-          letterSpacing: 2,
-          fontSize: 15,
+    return _PressBox(
+      onTap: onTap,
+      builder: (pressed) => Opacity(
+        opacity: enabled ? 1 : 0.45,
+        child: PixelBox(
+          color: filled ? color : Pal.panel,
+          border: filled ? Pal.ink : color,
+          pressed: pressed,
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+          child: Center(
+            child: PxText(
+              label,
+              maxLines: 1,
+              style: TextStyle(color: filled ? Pal.ink : color, fontSize: 17),
+            ),
+          ),
         ),
       ),
     );
-    if (!enabled) return Opacity(opacity: 0.4, child: btn);
-    return _Pressable(onTap: onTap!, child: btn);
   }
 }
 
@@ -299,75 +162,80 @@ class Eyebrow extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(bottom: 8),
-    child: Text(
-      text.toUpperCase(),
-      style: const TextStyle(
-        color: Pal.goldLight,
-        fontSize: 11.5,
-        fontWeight: FontWeight.w800,
-        letterSpacing: 2.2,
-      ),
-    ),
+    child: PxText(text, style: const TextStyle(color: Pal.gold, fontSize: 14)),
   );
 }
 
-/// A pill-shaped option, glowing gold when selected.
+/// A selectable chip: gold when selected, slate otherwise.
 class Choice extends StatelessWidget {
   const Choice({
     super.key,
     required this.label,
     required this.selected,
     required this.onTap,
-    this.emoji,
+    this.icon,
     this.locked = false,
   });
 
   final String label;
-  final String? emoji;
+
+  /// Pixel icon name shown before the label.
+  final String? icon;
   final bool selected;
   final bool locked;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    final chip = AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(30),
-        color: selected ? Pal.gold : Colors.white10,
-        border: Border.all(
-          color: selected ? Pal.goldLight : Colors.white24,
-          width: 1.5,
-        ),
-        boxShadow: selected
-            ? const [BoxShadow(color: Color(0x66FFC400), blurRadius: 12)]
-            : null,
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (emoji != null || locked) ...[
-            Text(locked ? '🔒' : emoji!, style: const TextStyle(fontSize: 16)),
-            const SizedBox(width: 6),
-          ],
-          Text(
-            label,
-            style: TextStyle(
-              color: selected ? Colors.black : Colors.white,
-              fontWeight: FontWeight.w800,
-            ),
+    return _PressBox(
+      onTap: locked ? null : onTap,
+      builder: (pressed) => Opacity(
+        opacity: locked ? 0.5 : 1,
+        child: PixelBox(
+          color: selected ? Pal.gold : Pal.panel,
+          border: selected ? Pal.goldDark : Pal.ink,
+          pressed: pressed,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (icon != null || locked) ...[
+                PxIcon(locked ? 'lock' : icon!),
+                const SizedBox(width: 6),
+              ],
+              Text(
+                label,
+                style: TextStyle(
+                  color: selected ? Pal.ink : Pal.text,
+                  fontSize: 14,
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
-    return locked || onTap == null
-        ? Opacity(opacity: 0.45, child: chip)
-        : _Pressable(onTap: onTap!, child: chip);
   }
 }
 
-/// A hexagon badge holding [child], used for level numbers and icons.
+/// A small label chip.
+class Tag extends StatelessWidget {
+  const Tag(this.text, {super.key, this.color = Pal.dim});
+
+  final String text;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => PixelBox(
+    color: Pal.panelLo,
+    shadow: false,
+    padding: const EdgeInsets.symmetric(horizontal: 4),
+    child: PxText(text, style: TextStyle(color: color, fontSize: 11)),
+  );
+}
+
+/// A hexagon badge holding [child], used for level numbers and icons. Drawn
+/// from the same hex mask as the board tiles.
 class HexBadge extends StatelessWidget {
   const HexBadge({
     super.key,
@@ -380,47 +248,61 @@ class HexBadge extends StatelessWidget {
   final Widget child;
   final double size;
   final Color color;
+
+  /// Fills the badge with a dithered tint (current / completed).
   final bool glow;
 
   @override
   Widget build(BuildContext context) {
+    final art = PixelAssets.instance;
+    final dpr = MediaQuery.of(context).devicePixelRatio;
+    final k = (size * dpr / 24).floor().clamp(1, 99);
+    final s = k / dpr;
     return SizedBox(
-      width: size,
-      height: size,
-      child: CustomPaint(
-        painter: _HexBadgePainter(color, glow),
-        child: Center(child: child),
+      width: 24 * s,
+      height: 28 * s,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          if (art != null)
+            CustomPaint(
+              size: Size(24 * s, 28 * s),
+              painter: _HexBadgePainter(art, color, glow),
+            ),
+          child,
+        ],
       ),
     );
   }
 }
 
 class _HexBadgePainter extends CustomPainter {
-  _HexBadgePainter(this.color, this.glow);
+  _HexBadgePainter(this.art, this.color, this.glow);
 
+  final PixelAssets art;
   final Color color;
   final bool glow;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final c = size.center(Offset.zero);
-    final path = hexPath(c, size.width * 0.5);
-    if (glow) {
-      canvas.drawPath(
-        path,
+    final dst = Offset.zero & size;
+    void draw(String mask, Color c) {
+      final img = art.mask(mask);
+      canvas.drawImageRect(
+        img,
+        Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
+        dst,
         Paint()
-          ..color = color.withValues(alpha: 0.6)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
+          ..filterQuality = FilterQuality.none
+          ..isAntiAlias = false
+          ..colorFilter = ColorFilter.mode(c, BlendMode.srcIn),
       );
     }
-    canvas.drawPath(path, Paint()..color = const Color(0xFF0B1512));
-    canvas.drawPath(
-      path,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.5
-        ..color = color,
-    );
+
+    draw('fillA', Pal.ink);
+    draw('fillB', Pal.ink);
+    if (glow) draw('fillA', color.withValues(alpha: 0.35));
+    draw('ring', color);
   }
 
   @override
@@ -428,7 +310,7 @@ class _HexBadgePainter extends CustomPainter {
       old.color != color || old.glow != glow;
 }
 
-/// Backdrop + safe area + a header with a back button and a gold title.
+/// Backdrop + safe area + a header with a back button and a title.
 class ScreenFrame extends StatelessWidget {
   const ScreenFrame({
     super.key,
@@ -452,36 +334,35 @@ class ScreenFrame extends StatelessWidget {
           child: Column(
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(8, 6, 16, 4),
+                padding: const EdgeInsets.fromLTRB(4, 6, 16, 6),
                 child: Row(
                   children: [
-                    IconButton(
-                      onPressed: () => Navigator.of(context).maybePop(),
-                      icon: const Icon(
-                        Icons.arrow_back_ios_new_rounded,
-                        color: Pal.goldLight,
-                        size: 20,
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => Navigator.of(context).maybePop(),
+                      child: const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: PxIcon('back'),
                       ),
                     ),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            title.toUpperCase(),
+                          PxText(
+                            title,
                             style: const TextStyle(
-                              color: Pal.goldLight,
-                              fontSize: 22,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 3,
+                              color: Pal.gold,
+                              fontSize: 26,
+                              height: 1,
                             ),
                           ),
                           if (subtitle != null)
-                            Text(
+                            PxText(
                               subtitle!,
                               style: const TextStyle(
-                                color: Colors.white60,
-                                fontSize: 12,
+                                color: Pal.dim,
+                                fontSize: 13,
                               ),
                             ),
                         ],
@@ -502,27 +383,77 @@ class ScreenFrame extends StatelessWidget {
 
 /// A row of stars, filled up to [count] of [of].
 class Stars extends StatelessWidget {
-  const Stars(this.count, {super.key, this.of = 3, this.size = 18});
+  const Stars(
+    this.count, {
+    super.key,
+    this.of = 3,
+    this.size = 18,
+    this.mult = 1,
+  });
 
   final int count;
   final int of;
   final double size;
+  final int mult;
 
   @override
   Widget build(BuildContext context) => Row(
     mainAxisSize: MainAxisSize.min,
     children: [
       for (var i = 0; i < of; i++)
-        Icon(
-          i < count ? Icons.star_rounded : Icons.star_outline_rounded,
-          size: size,
-          color: i < count ? const Color(0xFFFFD54F) : Colors.white30,
+        Padding(
+          padding: const EdgeInsets.only(left: 2),
+          child: PxIcon(
+            'star',
+            mult: mult,
+            tint: i < count ? null : const Color(0xCC1A1C2C),
+          ),
         ),
     ],
   );
 }
 
-/// Wraps [child] in a pulsing gold glow while [active] (used by the coach).
+/// A minus / value / plus control for picking a whole number.
+class PxStepper extends StatelessWidget {
+  const PxStepper({
+    super.key,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.onChanged,
+  });
+
+  final int value;
+  final int min;
+  final int max;
+  final ValueChanged<int> onChanged;
+
+  Widget _btn(String label, bool enabled, VoidCallback tap) => SizedBox(
+    width: 56,
+    child: GoldButton(label: label, filled: false, onTap: enabled ? tap : null),
+  );
+
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisAlignment: MainAxisAlignment.center,
+    children: [
+      _btn('-', value > min, () => onChanged(value - 1)),
+      SizedBox(
+        width: 72,
+        child: Center(
+          child: Text(
+            '$value',
+            style: const TextStyle(color: Pal.gold, fontSize: 28),
+          ),
+        ),
+      ),
+      _btn('+', value < max, () => onChanged(value + 1)),
+    ],
+  );
+}
+
+/// Marks [child] as the thing to do next (used by the coach): a blinking
+/// gold frame, no glow.
 class Pulse extends StatefulWidget {
   const Pulse({
     super.key,
@@ -547,8 +478,16 @@ class _PulseState extends State<Pulse> with SingleTickerProviderStateMixin {
     super.initState();
     _c = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 900),
-    )..repeat(reverse: true);
+      duration: const Duration(milliseconds: 800),
+    );
+    if (widget.active) _c.repeat();
+  }
+
+  @override
+  void didUpdateWidget(covariant Pulse old) {
+    super.didUpdateWidget(old);
+    if (widget.active && !_c.isAnimating) _c.repeat();
+    if (!widget.active && _c.isAnimating) _c.stop();
   }
 
   @override
@@ -560,25 +499,17 @@ class _PulseState extends State<Pulse> with SingleTickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     if (!widget.active) return widget.child;
+    final u = PixelUi.unit(context);
     return AnimatedBuilder(
       animation: _c,
       builder: (context, child) => DecoratedBox(
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(widget.radius),
           border: Border.all(
-            color: Pal.goldLight.withValues(alpha: 0.6 + 0.4 * _c.value),
-            width: 2.5,
+            color: _c.value < 0.5 ? Pal.goldLight : Pal.goldDark,
+            width: u,
           ),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(
-                0xFFFFC400,
-              ).withValues(alpha: 0.35 + 0.4 * _c.value),
-              blurRadius: 10 + 14 * _c.value,
-            ),
-          ],
         ),
-        child: child,
+        child: Padding(padding: EdgeInsets.all(u), child: child),
       ),
       child: widget.child,
     );

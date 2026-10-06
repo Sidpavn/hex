@@ -67,34 +67,65 @@ class Hex {
   }
 }
 
-/// Maps hexes to screen pixels. Hex (0,0) sits at [origin].
+/// Maps hexes to screen pixels on a pixel-art grid.
+///
+/// One art pixel is [scale] logical pixels, always a whole number of device
+/// pixels, so sprites stay crisp. A hex is 24 art pixels wide and rows step by
+/// 21 (a 28-pixel-tall hex tessellates at 3/4 of its height). Hex (0,0) sits at
+/// [origin].
 class BoardLayout {
-  const BoardLayout(this.size, this.origin);
+  const BoardLayout(this.scale, this.origin);
 
-  final double size;
+  /// Logical pixels per art pixel.
+  final double scale;
   final Offset origin;
 
   static const int radius = 4;
+  static const double hexW = 24;
+  static const double rowH = 21;
+
+  /// Hex circumradius in logical pixels, for effects specified in unit space.
+  double get size => scale * hexW / sqrt3;
 
   factory BoardLayout.fit(Size area) {
-    final byWidth = area.width / (sqrt3 * (2 * radius + 1) + 0.8);
-    final byHeight = area.height / (1.5 * 2 * radius + 3.2);
-    return BoardLayout(math.min(byWidth, byHeight), area.center(Offset.zero));
+    final views = PlatformDispatcher.instance.views;
+    final dpr = views.isEmpty ? 1.0 : views.first.devicePixelRatio;
+    const artW = hexW * (2 * radius + 1) + 8;
+    const artH = rowH * 2 * radius + 28 + 24;
+    final fit = math.min(area.width * dpr / artW, area.height * dpr / artH);
+    final deviceScale = math.max(1.0, fit.floorToDouble());
+    final c = area.center(Offset.zero);
+    return BoardLayout(
+      deviceScale / dpr,
+      Offset(
+        (c.dx * dpr).roundToDouble() / dpr,
+        (c.dy * dpr).roundToDouble() / dpr,
+      ),
+    );
   }
 
   Offset toPixel(double q, double r) =>
-      origin + Offset(size * sqrt3 * (q + r / 2), size * 1.5 * r);
+      origin + Offset(scale * hexW * (q + r / 2), scale * rowH * r);
 
   Offset hexCenter(Hex h) => toPixel(h.q.toDouble(), h.r.toDouble());
 
-  Offset unitToPixel(Offset u) => origin + u * size;
+  /// Effects live in unit space (circumradius 1); x maps 1:1 to [size], y is
+  /// stretched slightly to match the 21px row step.
+  Offset unitToPixel(Offset u) =>
+      origin + Offset(u.dx * size, u.dy * scale * 14);
+
+  /// Rounds [p] to the nearest art pixel so sprites never straddle a pixel.
+  Offset snap(Offset p) =>
+      origin +
+      Offset(
+        ((p.dx - origin.dx) / scale).roundToDouble() * scale,
+        ((p.dy - origin.dy) / scale).roundToDouble() * scale,
+      );
 
   Hex fromPixel(Offset p) {
-    final x = (p.dx - origin.dx) / size;
-    final y = (p.dy - origin.dy) / size;
-    final fq = (sqrt3 / 3 * x - 1 / 3 * y);
-    final fr = (2 / 3 * y);
-    return _round(fq, fr);
+    final r = (p.dy - origin.dy) / (scale * rowH);
+    final q = (p.dx - origin.dx) / (scale * hexW) - r / 2;
+    return _round(q, r);
   }
 
   static Hex _round(double fq, double fr) {

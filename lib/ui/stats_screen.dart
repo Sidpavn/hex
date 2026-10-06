@@ -18,11 +18,6 @@ class _StatsScreenState extends State<StatsScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
-        backgroundColor: const Color(0xFF14211D),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-          side: BorderSide(color: Pal.red.withValues(alpha: 0.6)),
-        ),
         title: const Text('Reset all progress?'),
         content: const Text(
           'This clears stars, unlocks, your deck and every record.',
@@ -48,9 +43,9 @@ class _StatsScreenState extends State<StatsScreen> {
   @override
   Widget build(BuildContext context) {
     const modes = [
-      (GameMode.campaign, '🚩', 'Campaign', Pal.gold),
-      (GameMode.skirmish, '⚔️', 'Skirmish', Pal.red),
-      (GameMode.hotseat, '👥', 'Hot-seat', Pal.blue),
+      (GameMode.campaign, 'flag', 'Campaign', Pal.gold),
+      (GameMode.skirmish, 'swords', 'Skirmish', Pal.red),
+      (GameMode.hotseat, 'people', 'Hot-seat', Pal.blue),
     ];
     final cards = Storage.unlockedCards.length;
     final heroes = Storage.unlockedHeroes.length;
@@ -63,16 +58,17 @@ class _StatsScreenState extends State<StatsScreen> {
           Entrance(
             child: Panel(
               glow: Pal.gold,
+              padding: const EdgeInsets.symmetric(vertical: 14),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
                   _Big(
-                    '★',
+                    'star',
                     '${Storage.totalStars}/${campaignLevels.length * 3}',
                     'Stars',
                   ),
-                  _Big('🃏', '$cards/${CardType.values.length}', 'Cards'),
-                  _Big('🦸', '$heroes/${playableHeroes.length}', 'Heroes'),
+                  _Big('cards', '$cards/${CardType.values.length}', 'Cards'),
+                  _Big('crown', '$heroes/${playableHeroes.length}', 'Heroes'),
                 ],
               ),
             ),
@@ -85,7 +81,7 @@ class _StatsScreenState extends State<StatsScreen> {
                 index: i + 1,
                 child: _ModeCard(
                   mode: modes[i].$1,
-                  emoji: modes[i].$2,
+                  icon: modes[i].$2,
                   name: modes[i].$3,
                   color: modes[i].$4,
                 ),
@@ -113,39 +109,28 @@ class _Big extends StatelessWidget {
   final String label;
 
   @override
-  Widget build(BuildContext context) => Column(
-    children: [
-      Text(
-        icon,
-        style: const TextStyle(fontSize: 22, color: Color(0xFFFFD54F)),
-      ),
-      const SizedBox(height: 4),
-      Text(
-        value,
-        style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
-      ),
-      Text(
-        label.toUpperCase(),
-        style: const TextStyle(
-          color: Colors.white54,
-          fontSize: 10.5,
-          letterSpacing: 2,
-        ),
-      ),
-    ],
+  Widget build(BuildContext context) => Expanded(
+    child: Column(
+      children: [
+        PxIcon(icon, mult: 2),
+        const SizedBox(height: 4),
+        Text(value, style: const TextStyle(fontSize: 26, color: Pal.text)),
+        Text(label, style: const TextStyle(color: Pal.dim, fontSize: 13)),
+      ],
+    ),
   );
 }
 
 class _ModeCard extends StatelessWidget {
   const _ModeCard({
     required this.mode,
-    required this.emoji,
+    required this.icon,
     required this.name,
     required this.color,
   });
 
   final GameMode mode;
-  final String emoji;
+  final String icon;
   final String name;
   final Color color;
 
@@ -164,24 +149,13 @@ class _ModeCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              HexBadge(
-                size: 44,
-                color: color,
-                child: Text(emoji, style: const TextStyle(fontSize: 18)),
-              ),
+              HexBadge(size: 32, color: color, child: PxIcon(icon)),
               const SizedBox(width: 12),
-              Text(
-                name.toUpperCase(),
-                style: const TextStyle(
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 2,
-                  fontSize: 16,
-                ),
-              ),
+              Text(name, style: const TextStyle(fontSize: 22, color: Pal.text)),
               const Spacer(),
               Text(
                 '$played played',
-                style: const TextStyle(color: Colors.white60, fontSize: 12.5),
+                style: const TextStyle(color: Pal.dim, fontSize: 13),
               ),
             ],
           ),
@@ -190,32 +164,16 @@ class _ModeCard extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: TweenAnimationBuilder<double>(
-                      tween: Tween(begin: 0, end: frac),
-                      duration: const Duration(milliseconds: 900),
-                      curve: Curves.easeOut,
-                      builder: (_, v, _) => LinearProgressIndicator(
-                        value: v,
-                        minHeight: 10,
-                        backgroundColor: Colors.black38,
-                        valueColor: AlwaysStoppedAnimation(color),
-                      ),
-                    ),
-                  ),
+                  child: PxBar(value: frac, color: color),
                 ),
                 const SizedBox(width: 12),
-                Text(
-                  '$won won',
-                  style: TextStyle(color: color, fontWeight: FontWeight.w800),
-                ),
+                Text('$won won', style: TextStyle(color: color, fontSize: 16)),
               ],
             ),
             const SizedBox(height: 8),
             Text(
               best > 0 ? 'Fastest win: round $best' : 'No wins yet',
-              style: const TextStyle(color: Colors.white54, fontSize: 12.5),
+              style: const TextStyle(color: Pal.dim, fontSize: 13),
             ),
           ],
         ],

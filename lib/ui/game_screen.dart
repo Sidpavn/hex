@@ -91,7 +91,7 @@ class _GameScreenState extends State<GameScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF12231F),
+      backgroundColor: Pal.bgTop,
       body: Stack(
         children: [
           Column(
@@ -144,72 +144,48 @@ class _GameScreenState extends State<GameScreen>
       listenable: game,
       builder: (context, _) {
         final step = game.coachStep;
-        return AnimatedSize(
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOut,
-          alignment: Alignment.topCenter,
-          child: step == null || game.passing
-              ? const SizedBox(width: double.infinity)
-              : Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
-                  child: Container(
-                    key: ValueKey(game.coachIndex),
-                    padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xE60B1512),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Pal.goldLight, width: 1.5),
-                      boxShadow: const [
-                        BoxShadow(color: Color(0x55FFC400), blurRadius: 14),
-                      ],
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        const Text('🎓', style: TextStyle(fontSize: 24)),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            step.text,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 13.5,
-                              height: 1.3,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        if (step.until == CoachEvent.next)
-                          FilledButton(
-                            onPressed: game.coachNext,
-                            style: FilledButton.styleFrom(
-                              backgroundColor: Pal.gold,
-                              foregroundColor: Colors.black,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                              ),
-                              visualDensity: VisualDensity.compact,
-                            ),
-                            child: const Text(
-                              'Got it',
-                              style: TextStyle(fontWeight: FontWeight.w800),
-                            ),
-                          )
-                        else
-                          IconButton(
-                            tooltip: 'Hide tips',
-                            visualDensity: VisualDensity.compact,
-                            onPressed: game.hideCoach,
-                            icon: const Icon(
-                              Icons.close,
-                              size: 18,
-                              color: Colors.white54,
-                            ),
-                          ),
-                      ],
+        if (step == null || game.passing) {
+          return const SizedBox(width: double.infinity);
+        }
+        return Padding(
+          key: ValueKey(game.coachIndex),
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+          child: PixelBox(
+            color: Pal.panel,
+            border: Pal.gold,
+            padding: const EdgeInsets.fromLTRB(8, 6, 6, 6),
+            child: Row(
+              children: [
+                const PxIcon('book', mult: 2),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: PxText(
+                    step.text,
+                    style: const TextStyle(
+                      color: Pal.text,
+                      fontSize: 14,
+                      height: 1.1,
                     ),
                   ),
                 ),
+                const SizedBox(width: 6),
+                if (step.until == CoachEvent.next)
+                  SizedBox(
+                    width: 84,
+                    child: GoldButton(label: 'Got it', onTap: game.coachNext),
+                  )
+                else
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: game.hideCoach,
+                    child: const Padding(
+                      padding: EdgeInsets.all(10),
+                      child: PxIcon('close'),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         );
       },
     );
@@ -227,30 +203,29 @@ class _GameScreenState extends State<GameScreen>
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
           child: Row(
             children: [
-              _heroBar(ph?.emoji ?? '💀', ph, const Color(0xFF6FA3FF)),
+              _heroBar(ph, Team.player, Pal.blue),
               const SizedBox(width: 8),
               Expanded(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      'ROUND ${game.round}',
+                      'Round ${game.round}',
                       style: const TextStyle(
-                        color: Colors.white70,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 2,
-                        fontSize: 11,
+                        color: Pal.text,
+                        fontSize: 16,
+                        height: 1,
                       ),
                     ),
                     const SizedBox(height: 2),
-                    Text(
+                    PxText(
                       game.objectiveText,
                       textAlign: TextAlign.center,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        color: Color(0xFFFFE082),
-                        fontSize: 10.5,
+                        color: Pal.goldLight,
+                        fontSize: 11,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -259,7 +234,7 @@ class _GameScreenState extends State<GameScreen>
                 ),
               ),
               const SizedBox(width: 8),
-              _heroBar(eh?.emoji ?? '💀', eh, const Color(0xFFFF7A7A)),
+              _heroBar(eh, Team.enemy, Pal.red),
             ],
           ),
         );
@@ -267,29 +242,18 @@ class _GameScreenState extends State<GameScreen>
     );
   }
 
-  Widget _heroBar(String emoji, Unit? hero, Color color) {
+  Widget _heroBar(Unit? hero, Team team, Color color) {
     final frac = hero == null ? 0.0 : hero.hp / hero.stats.maxHp;
     return SizedBox(
-      width: 86,
+      width: 92,
       child: Row(
         children: [
-          Text(emoji, style: const TextStyle(fontSize: 22)),
+          hero == null
+              ? const PxIcon('skull')
+              : UnitPortrait(hero.type, team: team, mult: 1),
           const SizedBox(width: 4),
           Expanded(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: TweenAnimationBuilder<double>(
-                tween: Tween(begin: frac, end: frac),
-                duration: const Duration(milliseconds: 400),
-                curve: Curves.easeOut,
-                builder: (_, v, _) => LinearProgressIndicator(
-                  value: v,
-                  minHeight: 10,
-                  backgroundColor: Colors.black38,
-                  valueColor: AlwaysStoppedAnimation(color),
-                ),
-              ),
-            ),
+            child: PxBar(value: frac, color: color),
           ),
         ],
       ),
@@ -299,33 +263,22 @@ class _GameScreenState extends State<GameScreen>
   Widget _energy() {
     final n = game.energy;
     final shown = math.max(n, 3);
+    final u = PixelUi.unit(context);
     return FittedBox(
       fit: BoxFit.scaleDown,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Text('⚡', style: TextStyle(fontSize: 16)),
+          const PxIcon('bolt'),
           const SizedBox(width: 4),
           for (var i = 0; i < shown; i++)
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 250),
-              curve: Curves.elasticOut,
+            Container(
               margin: const EdgeInsets.symmetric(horizontal: 2),
-              width: i < n ? 16 : 12,
-              height: i < n ? 16 : 12,
+              width: 6 * u,
+              height: 6 * u,
               decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: i < n ? const Color(0xFFFFE082) : Colors.white12,
-                // Keep blur constant: elasticOut overshoots t>1, and lerping
-                // a shadow to/from null would make blurRadius negative.
-                boxShadow: [
-                  BoxShadow(
-                    color: i < n
-                        ? const Color(0xAAFFC400)
-                        : const Color(0x00FFC400),
-                    blurRadius: 8,
-                  ),
-                ],
+                color: i < n ? Pal.gold : Pal.panelLo,
+                border: Border.all(color: Pal.ink, width: u),
               ),
             ),
         ],
@@ -345,39 +298,20 @@ class _GameScreenState extends State<GameScreen>
           child: Row(
             children: [
               Expanded(
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 200),
-                  child: Text(
-                    game.hint,
-                    key: ValueKey(game.hint),
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 12.5,
-                    ),
-                  ),
+                child: PxText(
+                  game.hint,
+                  key: ValueKey(game.hint),
+                  style: const TextStyle(color: Pal.dim, fontSize: 13),
                 ),
               ),
               const SizedBox(width: 10),
-              AnimatedOpacity(
-                duration: const Duration(milliseconds: 200),
-                opacity: enabled ? 1 : 0.4,
-                child: Pulse(
-                  active: enabled && (game.coachStep?.endTurn ?? false),
-                  radius: 40,
-                  child: FilledButton(
-                    onPressed: enabled ? game.endTurn : null,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFFE0A030),
-                      foregroundColor: Colors.black,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 18,
-                        vertical: 10,
-                      ),
-                    ),
-                    child: const Text(
-                      'End turn',
-                      style: TextStyle(fontWeight: FontWeight.w800),
-                    ),
+              Pulse(
+                active: enabled && (game.coachStep?.endTurn ?? false),
+                child: SizedBox(
+                  width: 136,
+                  child: GoldButton(
+                    label: 'End turn',
+                    onTap: enabled ? game.endTurn : null,
                   ),
                 ),
               ),
@@ -394,34 +328,56 @@ class _GameScreenState extends State<GameScreen>
       builder: (context, _) {
         return LayoutBuilder(
           builder: (context, cons) {
-            final n = math.max(game.hand.length, 4);
-            final cardW = ((cons.maxWidth - 16) / n - 6).clamp(60.0, 92.0);
+            // Cards keep one readable size. When the hand outgrows the row
+            // they overlap like a held hand, and the selected card lifts to
+            // the front.
+            const cardW = 84.0;
+            const gap = 6.0;
+            final hand = game.hand;
+            final n = hand.length;
+            final avail = cons.maxWidth - 16;
+            final fits = n * cardW + (n - 1) * gap <= avail;
+            final step = n <= 1
+                ? 0.0
+                : fits
+                ? cardW + gap
+                : (avail - cardW) / (n - 1);
+            final total = n == 0 ? 0.0 : cardW + step * (n - 1);
+            final start = (cons.maxWidth - total) / 2;
+
+            Widget card(int i) => Positioned(
+              key: ValueKey(hand[i].id),
+              left: start + step * i,
+              bottom: 0,
+              child: Pulse(
+                active: game.coachStep?.card == hand[i].type,
+                child: CardView(
+                  card: hand[i],
+                  width: cardW,
+                  index: i,
+                  count: n,
+                  selected: game.selectedCard == hand[i],
+                  affordable: game.canCast(hand[i]),
+                  onTap: () {
+                    HapticFeedback.lightImpact();
+                    game.selectCard(hand[i]);
+                  },
+                ),
+              ),
+            );
+
+            final selected = [
+              for (var i = 0; i < n; i++)
+                if (game.selectedCard == hand[i]) i,
+            ];
             return SizedBox(
               height: cardW * 1.5 + 34,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.end,
+              child: Stack(
+                clipBehavior: Clip.none,
                 children: [
-                  for (var i = 0; i < game.hand.length; i++)
-                    Padding(
-                      key: ValueKey(game.hand[i].id),
-                      padding: const EdgeInsets.symmetric(horizontal: 3),
-                      child: Pulse(
-                        active: game.coachStep?.card == game.hand[i].type,
-                        child: CardView(
-                          card: game.hand[i],
-                          width: cardW,
-                          index: i,
-                          count: game.hand.length,
-                          selected: game.selectedCard == game.hand[i],
-                          affordable: game.canAfford(game.hand[i]),
-                          onTap: () {
-                            HapticFeedback.lightImpact();
-                            game.selectCard(game.hand[i]);
-                          },
-                        ),
-                      ),
-                    ),
+                  for (var i = 0; i < n; i++)
+                    if (!selected.contains(i)) card(i),
+                  for (final i in selected) card(i),
                 ],
               ),
             );
@@ -434,6 +390,7 @@ class _GameScreenState extends State<GameScreen>
   // ───────────────────────── overlays ─────────────────────────
 
   Widget _bannerOverlay() {
+    final u = PixelUi.unit(context);
     return Positioned.fill(
       child: IgnorePointer(
         child: Center(
@@ -442,41 +399,32 @@ class _GameScreenState extends State<GameScreen>
             tween: Tween(begin: 0, end: 1),
             duration: const Duration(milliseconds: 1700),
             builder: (context, t, _) {
-              final fadeIn = Curves.easeOut.transform(
+              // Eased slide in and out, snapped to whole UI pixels; no fade.
+              final inP = Curves.easeOutCubic.transform(
                 (t / 0.18).clamp(0.0, 1.0),
               );
-              final fadeOut =
-                  1 -
-                  Curves.easeIn.transform(((t - 0.78) / 0.22).clamp(0.0, 1.0));
-              final slide = (1 - fadeIn) * -80 + (1 - fadeOut) * 80;
-              return Opacity(
-                opacity: math.min(fadeIn, fadeOut),
-                child: Transform.translate(
-                  offset: Offset(slide, 0),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 28,
-                      vertical: 12,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xCC0B1512),
-                      borderRadius: BorderRadius.circular(40),
-                      border: Border.all(
-                        color: const Color(0xFFFFE082),
-                        width: 2,
-                      ),
-                      boxShadow: const [
-                        BoxShadow(color: Color(0x66FFC400), blurRadius: 24),
-                      ],
-                    ),
-                    child: Text(
-                      _banner!,
-                      style: const TextStyle(
-                        color: Color(0xFFFFE082),
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1,
-                      ),
+              final outP = Curves.easeInCubic.transform(
+                ((t - 0.78) / 0.22).clamp(0.0, 1.0),
+              );
+              if (t < 0.02 || t > 0.99) return const SizedBox.shrink();
+              final slide =
+                  (-(1 - inP) * 140).roundToDouble() * u +
+                  (outP * 140).roundToDouble() * u;
+              return Transform.translate(
+                offset: Offset(slide, 0),
+                child: PixelBox(
+                  color: Pal.panel,
+                  border: Pal.gold,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 22,
+                    vertical: 8,
+                  ),
+                  child: PxText(
+                    _banner!,
+                    style: const TextStyle(
+                      color: Pal.gold,
+                      fontSize: 26,
+                      height: 1,
                     ),
                   ),
                 ),
@@ -490,45 +438,32 @@ class _GameScreenState extends State<GameScreen>
 
   Widget _passOverlay() {
     final next = GameController.teamName(game.turn);
-    final color = game.turn == Team.player
-        ? const Color(0xFF6FA3FF)
-        : const Color(0xFFFF7A7A);
+    final color = game.turn == Team.player ? Pal.blue : Pal.red;
     return Positioned.fill(
       child: Material(
-        color: const Color(0xFF0B1512),
+        color: Pal.ink,
         child: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text('📱', style: TextStyle(fontSize: 64)),
-              const SizedBox(height: 12),
+              const PxIcon('phone', mult: 3),
+              const SizedBox(height: 14),
               Text(
                 'Pass to $next',
-                style: TextStyle(
-                  color: color,
-                  fontSize: 34,
-                  fontWeight: FontWeight.w900,
-                ),
+                style: TextStyle(color: color, fontSize: 34, height: 1),
               ),
               const SizedBox(height: 6),
               Text(
-                'Round ${game.round}  •  your hand is hidden until you tap',
-                style: const TextStyle(color: Colors.white60),
+                'Round ${game.round}. Your hand is hidden until you tap.',
+                style: const TextStyle(color: Pal.dim, fontSize: 14),
               ),
               const SizedBox(height: 24),
-              FilledButton(
-                onPressed: game.confirmPass,
-                style: FilledButton.styleFrom(
-                  backgroundColor: color,
-                  foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 32,
-                    vertical: 14,
-                  ),
-                ),
-                child: const Text(
-                  "I'm ready",
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+              SizedBox(
+                width: 200,
+                child: GoldButton(
+                  label: "I'm ready",
+                  color: color,
+                  onTap: game.confirmPass,
                 ),
               ),
             ],
@@ -545,98 +480,52 @@ class _GameScreenState extends State<GameScreen>
     final hasNext =
         won && levelIdx != null && levelIdx + 1 < campaignLevels.length;
     final title = hot
-        ? '${GameController.teamName(game.winner!).toUpperCase()} WINS'
+        ? '${GameController.teamName(game.winner!)} wins'
         : won
-        ? 'VICTORY'
-        : 'DEFEAT';
+        ? 'Victory'
+        : 'Defeat';
     final accent = hot
-        ? (game.winner == Team.player
-              ? const Color(0xFF6FA3FF)
-              : const Color(0xFFFF7A7A))
+        ? (game.winner == Team.player ? Pal.blue : Pal.red)
         : won
-        ? const Color(0xFFFFE082)
-        : const Color(0xFFFF7A7A);
+        ? Pal.gold
+        : Pal.red;
+    Widget line(String text, Color color) => Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: PxText(text, style: TextStyle(color: color, fontSize: 15)),
+    );
     return Positioned.fill(
-      child: TweenAnimationBuilder<double>(
-        tween: Tween(begin: 0, end: 1),
-        duration: const Duration(milliseconds: 900),
-        curve: Curves.easeOut,
-        builder: (context, t, child) => Container(
-          color: Colors.black.withValues(alpha: 0.6 * t),
-          child: Opacity(opacity: t, child: child),
-        ),
+      child: ColoredBox(
+        color: const Color(0xCC1A1C2C),
         child: Center(
-          child: TweenAnimationBuilder<double>(
-            tween: Tween(begin: 0.3, end: 1),
-            duration: const Duration(milliseconds: 1100),
-            curve: Curves.elasticOut,
-            builder: (context, s, child) =>
-                Transform.scale(scale: s, child: child),
+          child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(won ? '🏆' : '💀', style: const TextStyle(fontSize: 72)),
-                const SizedBox(height: 8),
+                PxIcon(won ? 'trophy' : 'skull', mult: 4),
+                const SizedBox(height: 10),
                 Text(
                   title,
-                  style: TextStyle(
-                    color: accent,
-                    fontSize: 44,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 4,
-                  ),
+                  style: TextStyle(color: accent, fontSize: 44, height: 1),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   game.winReason,
-                  style: const TextStyle(color: Colors.white70, fontSize: 15),
+                  style: const TextStyle(color: Pal.dim, fontSize: 15),
                 ),
                 if (_result.stars > 0) ...[
                   const SizedBox(height: 10),
-                  Text(
-                    '${'★' * _result.stars}${'☆' * (3 - _result.stars)}',
-                    style: const TextStyle(
-                      color: Color(0xFFFFD54F),
-                      fontSize: 36,
-                      letterSpacing: 4,
-                    ),
-                  ),
+                  Stars(_result.stars, mult: 2),
                 ],
-                if (_result.newBest)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 6),
-                    child: Text(
-                      'New personal best!',
-                      style: TextStyle(color: Color(0xFF69F0AE)),
-                    ),
-                  ),
+                if (_result.newBest) line('New personal best!', Pal.green),
                 for (final c in _result.newCards)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: Text(
-                      'Unlocked card: ${cardInfo[c]!.emoji} ${cardInfo[c]!.name}',
-                      style: const TextStyle(color: Color(0xFFD1A3FF)),
-                    ),
+                  line(
+                    'Unlocked card: :${cardInfo[c]!.icon}: ${cardInfo[c]!.name}',
+                    Pal.purple,
                   ),
                 for (final m in _result.newModes)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: Text(
-                      'Mode unlocked: $m',
-                      style: const TextStyle(
-                        color: Pal.green,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
+                  line('Mode unlocked: $m', Pal.green),
                 for (final h in _result.newHeroes)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: Text(
-                      'Unlocked hero: ${unitStats[h]!.name}',
-                      style: const TextStyle(color: Color(0xFFD1A3FF)),
-                    ),
-                  ),
+                  line('Unlocked hero: ${unitStats[h]!.name}', Pal.purple),
                 const SizedBox(height: 20),
                 Wrap(
                   spacing: 10,
@@ -644,28 +533,36 @@ class _GameScreenState extends State<GameScreen>
                   alignment: WrapAlignment.center,
                   children: [
                     if (hasNext)
-                      FilledButton(
-                        onPressed: () => Navigator.of(context).pushReplacement(
-                          MaterialPageRoute(
-                            builder: (_) => GameScreen(
-                              config: Storage.configFor(
-                                campaignLevels[levelIdx + 1],
+                      SizedBox(
+                        width: 140,
+                        child: GoldButton(
+                          label: 'Next level',
+                          onTap: () => Navigator.of(context).pushReplacement(
+                            MaterialPageRoute(
+                              builder: (_) => GameScreen(
+                                config: Storage.configFor(
+                                  campaignLevels[levelIdx + 1],
+                                ),
                               ),
                             ),
                           ),
                         ),
-                        style: _bigButton,
-                        child: const Text('Next level'),
                       ),
-                    FilledButton(
-                      onPressed: _restart,
-                      style: hasNext ? _ghostButton : _bigButton,
-                      child: Text(won && !hasNext ? 'Play again' : 'Retry'),
+                    SizedBox(
+                      width: 140,
+                      child: GoldButton(
+                        label: won && !hasNext ? 'Play again' : 'Retry',
+                        filled: !hasNext,
+                        onTap: _restart,
+                      ),
                     ),
-                    FilledButton(
-                      onPressed: () => Navigator.of(context).maybePop(),
-                      style: _ghostButton,
-                      child: const Text('Menu'),
+                    SizedBox(
+                      width: 140,
+                      child: GoldButton(
+                        label: 'Menu',
+                        filled: false,
+                        onTap: () => Navigator.of(context).maybePop(),
+                      ),
                     ),
                   ],
                 ),
@@ -676,18 +573,4 @@ class _GameScreenState extends State<GameScreen>
       ),
     );
   }
-
-  static final ButtonStyle _bigButton = FilledButton.styleFrom(
-    backgroundColor: const Color(0xFFE0A030),
-    foregroundColor: Colors.black,
-    padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 14),
-    textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-  );
-
-  static final ButtonStyle _ghostButton = FilledButton.styleFrom(
-    backgroundColor: Colors.white12,
-    foregroundColor: Colors.white,
-    padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 14),
-    textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-  );
 }

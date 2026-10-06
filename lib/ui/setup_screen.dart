@@ -40,10 +40,10 @@ class _SetupScreenState extends State<SetupScreen> {
     _ => (4, 12, 8),
   };
 
-  static String _objectiveEmoji(Objective o) => switch (o) {
-    Objective.eliminate => '⚔️',
-    Objective.hold => '⭐',
-    Objective.survive => '🛡️',
+  static String _objectiveIcon(Objective o) => switch (o) {
+    Objective.eliminate => 'swords',
+    Objective.hold => 'star',
+    Objective.survive => 'shield',
   };
 
   void _start() {
@@ -90,10 +90,10 @@ class _SetupScreenState extends State<SetupScreen> {
                         for (final d in Difficulty.values)
                           Choice(
                             label: d.label,
-                            emoji: switch (d) {
-                              Difficulty.easy => '🌱',
-                              Difficulty.normal => '⚔️',
-                              Difficulty.hard => '💀',
+                            icon: switch (d) {
+                              Difficulty.easy => 'sprout',
+                              Difficulty.normal => 'swords',
+                              Difficulty.hard => 'skull',
                             },
                             selected: difficulty == d,
                             onTap: () => setState(() => difficulty = d),
@@ -101,20 +101,14 @@ class _SetupScreenState extends State<SetupScreen> {
                       ],
                     ),
                     const SizedBox(height: 8),
-                    Text(
-                      switch (difficulty) {
-                        Difficulty.easy =>
-                          'The AI makes mistakes and has less energy.',
-                        Difficulty.normal =>
-                          'A solid opponent that pushes you into hazards.',
-                        Difficulty.hard =>
-                          'Heals, shields, retreats and finishes you off. Extra energy.',
-                      },
-                      style: const TextStyle(
-                        color: Colors.white60,
-                        fontSize: 12.5,
-                      ),
-                    ),
+                    Text(switch (difficulty) {
+                      Difficulty.easy =>
+                        'The AI makes mistakes and has less energy.',
+                      Difficulty.normal =>
+                        'A solid opponent that pushes you into hazards.',
+                      Difficulty.hard =>
+                        'Heals, shields, retreats and finishes you off. Extra energy.',
+                    }, style: const TextStyle(color: Pal.dim, fontSize: 13)),
                   ],
                 ),
               ),
@@ -128,7 +122,7 @@ class _SetupScreenState extends State<SetupScreen> {
                   children: [
                     const Eyebrow('Your hero'),
                     SizedBox(
-                      height: 136,
+                      height: 150,
                       child: ListView(
                         scrollDirection: Axis.horizontal,
                         children: [
@@ -145,10 +139,7 @@ class _SetupScreenState extends State<SetupScreen> {
                     const SizedBox(height: 8),
                     Text(
                       unitStats[hero]!.blurb,
-                      style: const TextStyle(
-                        color: Colors.white60,
-                        fontSize: 12.5,
-                      ),
+                      style: const TextStyle(color: Pal.dim, fontSize: 13),
                     ),
                     if (heroes.length < playableHeroes.length)
                       const Padding(
@@ -178,7 +169,7 @@ class _SetupScreenState extends State<SetupScreen> {
                       for (final o in objectives)
                         Choice(
                           label: o.label,
-                          emoji: _objectiveEmoji(o),
+                          icon: _objectiveIcon(o),
                           selected: objective == o,
                           onTap: () => setState(() {
                             objective = o;
@@ -190,53 +181,22 @@ class _SetupScreenState extends State<SetupScreen> {
                   const SizedBox(height: 8),
                   Text(
                     objective.blurb,
-                    style: const TextStyle(
-                      color: Colors.white60,
-                      fontSize: 12.5,
-                    ),
+                    style: const TextStyle(color: Pal.dim, fontSize: 13),
                   ),
                   if (objective != Objective.eliminate) ...[
                     const SizedBox(height: 14),
-                    Row(
-                      children: [
-                        Text(
-                          objective == Objective.hold
-                              ? 'TURNS TO HOLD'
-                              : 'ROUNDS TO SURVIVE',
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 11,
-                            letterSpacing: 1.6,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const Spacer(),
-                        Text(
-                          '$shown',
-                          style: const TextStyle(
-                            color: Pal.goldLight,
-                            fontSize: 22,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ],
+                    Text(
+                      objective == Objective.hold
+                          ? 'Turns to hold'
+                          : 'Rounds to survive',
+                      style: const TextStyle(color: Pal.gold, fontSize: 14),
                     ),
-                    SliderTheme(
-                      data: SliderTheme.of(context).copyWith(
-                        activeTrackColor: Pal.gold,
-                        thumbColor: Pal.goldLight,
-                        inactiveTrackColor: Colors.white12,
-                        overlayColor: Pal.gold.withValues(alpha: 0.2),
-                        valueIndicatorColor: Pal.gold,
-                      ),
-                      child: Slider(
-                        min: lo.toDouble(),
-                        max: hi.toDouble(),
-                        divisions: hi - lo,
-                        value: shown.toDouble(),
-                        label: '$shown',
-                        onChanged: (v) => setState(() => target = v.round()),
-                      ),
+                    const SizedBox(height: 6),
+                    PxStepper(
+                      value: shown,
+                      min: lo,
+                      max: hi,
+                      onChanged: (v) => setState(() => target = v),
                     ),
                   ],
                 ],
@@ -269,53 +229,36 @@ class _HeroTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final emoji = switch (type) {
-      UnitType.warlord => '🦸',
-      UnitType.pyromancer => '🧝',
-      _ => '🧙',
-    };
     final s = unitStats[type]!;
     return Padding(
       padding: const EdgeInsets.only(right: 10),
       child: GestureDetector(
         onTap: locked ? null : onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          width: 98,
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            color: selected ? Pal.gold.withValues(alpha: 0.18) : Colors.white10,
-            border: Border.all(
-              color: selected ? Pal.goldLight : Colors.white24,
-              width: selected ? 2.5 : 1.5,
-            ),
-            boxShadow: selected
-                ? const [BoxShadow(color: Color(0x66FFC400), blurRadius: 14)]
-                : null,
-          ),
-          child: Opacity(
-            opacity: locked ? 0.4 : 1,
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
+        child: SizedBox(
+          width: 104,
+          child: PixelBox(
+            color: selected ? Pal.panelHi : Pal.panel,
+            border: selected ? Pal.gold : Pal.ink,
+            padding: const EdgeInsets.all(6),
+            child: Opacity(
+              opacity: locked ? 0.45 : 1,
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(
-                    locked ? '🔒' : emoji,
-                    style: const TextStyle(fontSize: 34),
-                  ),
+                  locked
+                      ? const SizedBox(
+                          height: 32,
+                          child: PxIcon('lock', mult: 2),
+                        )
+                      : UnitPortrait(type, mult: 2),
                   const SizedBox(height: 4),
                   Text(
                     s.name,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 13,
-                    ),
+                    style: const TextStyle(color: Pal.text, fontSize: 15),
                   ),
-                  Text(
-                    '❤️ ${s.maxHp}  ⚔️ ${s.damage}',
-                    style: const TextStyle(color: Colors.white60, fontSize: 11),
+                  PxText(
+                    ':heart: ${s.maxHp}  :swords: ${s.damage}',
+                    style: const TextStyle(color: Pal.dim, fontSize: 13),
                   ),
                 ],
               ),

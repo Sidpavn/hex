@@ -1,8 +1,11 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../game/models.dart';
+import 'widgets.dart';
 
-class CardView extends StatelessWidget {
+class CardView extends StatefulWidget {
   const CardView({
     super.key,
     required this.card,
@@ -23,110 +26,120 @@ class CardView extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
+  State<CardView> createState() => _CardViewState();
+}
+
+class _CardViewState extends State<CardView>
+    with SingleTickerProviderStateMixin {
+  /// Drives the idle float; each card is offset by its position in the hand.
+  late final AnimationController _float = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 2800),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _float.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final card = widget.card;
+    final width = widget.width;
+    final index = widget.index;
+    final selected = widget.selected;
+    final affordable = widget.affordable;
     final info = card.info;
     final height = width * 1.5;
-    final fan = index - (count - 1) / 2;
+    final u = PixelUi.unit(context);
+    final mult = width >= 78 ? 2 : 1;
 
+    // Deal in from below: eased, snapped to whole UI pixels each frame.
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: 1),
-      duration: Duration(milliseconds: 450 + index * 70),
-      curve: Curves.easeOutBack,
+      duration: Duration(milliseconds: 360 + index * 70),
       builder: (context, t, child) => Transform.translate(
-        offset: Offset(0, (1 - t) * 170 + fan * fan * 2.2),
-        child: Transform.rotate(angle: fan * 0.04 * t, child: child),
+        offset: Offset(
+          0,
+          (((1 - Curves.easeOutCubic.transform(t)) * 120)).roundToDouble() * u,
+        ),
+        child: child,
       ),
       child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
+        onTap: widget.onTap,
+        child: TweenAnimationBuilder<double>(
+          tween: Tween(end: selected ? 1.0 : 0.0),
           duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOut,
-          transform: Matrix4.translationValues(0, selected ? -22 : 0, 0)
-            ..scaleByDouble(selected ? 1.08 : 1.0, selected ? 1.08 : 1.0, 1, 1),
-          transformAlignment: Alignment.bottomCenter,
-          width: width,
-          height: height,
-          padding: const EdgeInsets.fromLTRB(6, 6, 6, 6),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Color.lerp(info.color, Colors.white, 0.25)!,
-                info.color,
-                Color.lerp(info.color, Colors.black, 0.35)!,
-              ],
-            ),
-            border: Border.all(
-              color: selected ? const Color(0xFFFFE082) : Colors.white70,
-              width: selected ? 3 : 1.5,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: selected
-                    ? const Color(0xAAFFE082)
-                    : Colors.black.withValues(alpha: 0.4),
-                blurRadius: selected ? 18 : 6,
-                offset: const Offset(0, 3),
-              ),
-            ],
+          curve: Curves.easeOutCubic,
+          builder: (context, lift, child) => AnimatedBuilder(
+            animation: _float,
+            builder: (context, _) {
+              // A gentle bob. Positions snap to device pixels (not whole art
+              // pixels, which are too coarse for a slow float and look like
+              // low framerate); the sprite is still nearest-neighbour sampled.
+              final dpr = MediaQuery.of(context).devicePixelRatio;
+              final wave = math.sin(
+                (_float.value + index * 0.17) * 2 * math.pi,
+              );
+              final amp = affordable ? (selected ? 2.0 : 1.2) : 0.0;
+              final raw = (-lift * 4 + wave * amp) * u;
+              final dy = (raw * dpr).roundToDouble() / dpr;
+              return Transform.translate(offset: Offset(0, dy), child: child);
+            },
+            child: child,
           ),
-          child: Opacity(
-            opacity: affordable ? 1 : 0.45,
-            child: Column(
-              children: [
-                Row(
+          child: SizedBox(
+            width: width,
+            height: height,
+            child: Opacity(
+              opacity: affordable ? 1 : 0.5,
+              child: PixelBox(
+                color: Color.lerp(info.color, Pal.ink, 0.35)!,
+                border: selected ? Pal.gold : Pal.ink,
+                padding: const EdgeInsets.all(3),
+                child: Column(
                   children: [
-                    Container(
-                      width: width * 0.28,
-                      height: width * 0.28,
-                      alignment: Alignment.center,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF1B1B2F),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Text(
-                        '${info.cost}',
-                        style: TextStyle(
-                          color: const Color(0xFFFFE082),
-                          fontWeight: FontWeight.w900,
-                          fontSize: width * 0.17,
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: PixelBox(
+                        color: Pal.ink,
+                        border: Pal.ink,
+                        shadow: false,
+                        padding: const EdgeInsets.symmetric(horizontal: 3),
+                        child: Text(
+                          '${info.cost}',
+                          style: const TextStyle(color: Pal.gold, fontSize: 14),
                         ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Center(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: PxIcon(info.icon, mult: mult),
+                        ),
+                      ),
+                    ),
+                    Text(
+                      info.name,
+                      maxLines: 1,
+                      style: const TextStyle(color: Pal.text, fontSize: 14),
+                    ),
+                    Text(
+                      info.desc,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Pal.dim,
+                        fontSize: 8,
+                        height: 1,
                       ),
                     ),
                   ],
                 ),
-                Expanded(
-                  child: Center(
-                    child: Text(
-                      info.emoji,
-                      style: TextStyle(fontSize: width * 0.4),
-                    ),
-                  ),
-                ),
-                Text(
-                  info.name,
-                  maxLines: 1,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w800,
-                    fontSize: (width * 0.15).clamp(10, 15),
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  info.desc,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.9),
-                    fontSize: (width * 0.105).clamp(7.5, 10.5),
-                    height: 1.1,
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ),

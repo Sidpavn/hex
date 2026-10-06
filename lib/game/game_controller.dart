@@ -28,6 +28,27 @@ class GameController extends ChangeNotifier {
 
   static const int radius = BoardLayout.radius;
   static const int handLimit = 6;
+
+  /// Chance each round that burning forest ignites a neighbouring forest.
+  static const double fireSpreadChance = 0.5;
+
+  /// Damage a hero takes when a spell tries to throw it into a hazard.
+  static const int heroSpellPushDamage = 2;
+
+  /// Spells that hurt or throw units. A side can cast this many per turn, so
+  /// a hand full of Fireballs and Gusts can't just be emptied at the enemy.
+  static const int attackSpellsPerTurn = 1;
+  static const Set<CardType> attackSpells = {
+    CardType.fireball,
+    CardType.gust,
+    CardType.lightning,
+  };
+
+  /// Attack spells each side has cast this turn.
+  final Map<Team, int> spellsCast = {Team.player: 0, Team.enemy: 0};
+
+  bool _spellCapped(Team team, CardType type) =>
+      attackSpells.contains(type) && spellsCast[team]! >= attackSpellsPerTurn;
   static const playerStart = Hex(-2, 4);
   static const enemyStart = Hex(2, -4);
 
@@ -78,13 +99,13 @@ class GameController extends ChangeNotifier {
     final limit = config.roundLimit;
     if (limit == null) return '';
     final left = math.max(0, limit - round + 1);
-    return '  ⏳ $left ${left == 1 ? 'round' : 'rounds'} left';
+    return '  :hourglass: $left ${left == 1 ? 'round' : 'rounds'} left';
   }
 
   String get objectiveText => switch (objective) {
     Objective.eliminate => 'Defeat the enemy hero$_clock',
     Objective.hold =>
-      '⭐ Hold the centre  Blue ${holdTurns[Team.player]}/${config.target} · '
+      ':star: Hold the centre  Blue ${holdTurns[Team.player]}/${config.target} · '
           'Red ${holdTurns[Team.enemy]}/${config.target}$_clock',
     Objective.survive => 'Survive until round ${config.target}  (round $round)',
   };
@@ -123,6 +144,8 @@ class GameController extends ChangeNotifier {
     busy = false;
     passing = false;
     holdTurns = {Team.player: 0, Team.enemy: 0};
+    spellsCast[Team.player] = 0;
+    spellsCast[Team.enemy] = 0;
     coachIndex = 0;
     coachHidden = false;
     selected = null;
@@ -344,6 +367,9 @@ class GameController extends ChangeNotifier {
 
   bool canAfford(GameCard c) => energy >= c.info.cost;
 
+  /// Affordable and not blocked by the attack-spell limit.
+  bool canCast(GameCard c) => canAfford(c) && !_spellCapped(viewTeam, c.type);
+
   ({Map<Hex, int> cost, Map<Hex, Hex> parent}) _search(Unit u) {
     final budget = u.stats.move + u.bonusMove;
     final cost = <Hex, int>{u.pos: 0};
@@ -503,6 +529,11 @@ class GameController extends ChangeNotifier {
       _refresh();
       return;
     }
+    if (_spellCapped(viewTeam, card.type)) {
+      hint = 'One attack spell per turn. Save ${card.info.name} for next turn.';
+      _notify();
+      return;
+    }
     if (!canAfford(card)) {
       hint = 'Not enough energy for ${card.info.name}.';
       _notify();
@@ -574,7 +605,7 @@ class GameController extends ChangeNotifier {
       }
       hint = parts.isEmpty
           ? '${s.stats.name} is exhausted.'
-          : '${s.stats.name}: ${parts.join(' • ')}';
+          : '${s.stats.name}: ${parts.join(', ')}';
     } else {
       hint = hotseat
           ? '${teamName(turn)}: tap a unit or play a card.'
@@ -635,7 +666,7 @@ class GameController extends ChangeNotifier {
         FxEvent(
           FxKind.text,
           at: centre,
-          text: '⭐ $n/${config.target}',
+          text: ':star: $n/${config.target}',
           color: const Color(0xFFFFE082),
         ),
       );
@@ -869,10 +900,31 @@ class GameController extends ChangeNotifier {
     if (u.isHero) _fx(FxEvent(FxKind.shake, amount: 1.2, delay: delay));
   }
 
-  void _push(Unit u, int dir, int dist) {
+  /// Shoves [u] up to [dist] hexes. [resist] is for spells: a hero is too
+  /// heavy to be thrown into water, lava or off the board by a spell. It is
+  /// hurt and stays put instead (melee knockback is still lethal).
+  void _push(Unit u, int dir, int dist, {bool resist = false}) {
     for (var i = 0; i < dist; i++) {
       final next = u.pos.neighbor(dir);
       final tile = tiles[next];
+      final deadly =
+          tile == null ||
+          tile.terrain == Terrain.water ||
+          tile.terrain == Terrain.lava;
+      if (resist && u.isHero && deadly) {
+        _fx(
+          FxEvent(
+            FxKind.text,
+            at: u.pos,
+            text: 'Held fast!',
+            color: const Color(0xFFFFD54F),
+            delay: 0.1,
+          ),
+        );
+        _fx(const FxEvent(FxKind.shake, amount: 0.6, delay: 0.1));
+        _damage(u, heroSpellPushDamage, delay: 0.1, ignoreCover: true);
+        return;
+      }
       if (tile == null) {
         u.pos = next;
         _removeUnit(u, spin: true, text: 'Knocked off!');
@@ -954,7 +1006,7 @@ class GameController extends ChangeNotifier {
         FxEvent(
           FxKind.text,
           at: u.pos,
-          text: '+1 ⚡',
+          text: '+1 :bolt:',
           color: const Color(0xFFD1A3FF),
           delay: delay,
         ),
@@ -993,6 +1045,9 @@ class GameController extends ChangeNotifier {
   }
 
   void _applyCard(Team team, CardType type, Hex target) {
+    if (attackSpells.contains(type)) {
+      spellsCast[team] = spellsCast[team]! + 1;
+    }
     final hero = heroOf(team);
     switch (type) {
       case CardType.summonKnight:
@@ -1032,7 +1087,9 @@ class GameController extends ChangeNotifier {
             tile.fire = 2;
           }
           final u = unitAt(h);
-          if (u != null) _damage(u, 2, delay: 0.4, fire: true);
+          if (u != null) {
+            _damage(u, h == target ? 2 : 1, delay: 0.4, fire: true);
+          }
         }
         _fx(const FxEvent(FxKind.shake, amount: 0.8, delay: 0.4));
       case CardType.gust:
@@ -1054,7 +1111,7 @@ class GameController extends ChangeNotifier {
               color: const Color(0xFFB2EBF2),
             ),
           );
-          _push(u, hero.pos.directionToward(u.pos), 2);
+          _push(u, hero.pos.directionToward(u.pos), 2, resist: true);
         }
       case CardType.lightning:
         final u = unitAt(target);
@@ -1254,6 +1311,7 @@ class GameController extends ChangeNotifier {
   void _beginTurn(Team team) {
     turn = team;
     busy = false;
+    spellsCast[team] = 0;
     _resetUnits(team);
     _bossAbilities(team);
     energies[team] = energyFor(round);
@@ -1287,7 +1345,7 @@ class GameController extends ChangeNotifier {
           if (nt != null &&
               nt.terrain == Terrain.forest &&
               nt.fire == 0 &&
-              _rng.nextDouble() < 0.5) {
+              _rng.nextDouble() < fireSpreadChance) {
             ignite.add(n);
           }
         }
@@ -1366,6 +1424,7 @@ class GameController extends ChangeNotifier {
     final gen = _gen;
     turn = Team.enemy;
     busy = true;
+    spellsCast[Team.enemy] = 0;
     _resetUnits(Team.enemy);
     _bossAbilities(Team.enemy);
     energies[Team.enemy] = enemyEnergy + _enemyIncome();
@@ -1384,7 +1443,9 @@ class GameController extends ChangeNotifier {
     final full = config.enemyAi == EnemyAi.full;
 
     // 1. Fireball when it is worth it.
-    if (full && enemyEnergy >= 2) {
+    if (full &&
+        enemyEnergy >= 2 &&
+        !_spellCapped(Team.enemy, CardType.fireball)) {
       Hex? best;
       var bestScore = _diff == Difficulty.easy ? 6 : 3;
       for (final h in tiles.keys) {
@@ -1522,12 +1583,13 @@ class GameController extends ChangeNotifier {
     if (eh == null) return null;
     final e = enemyEnergy;
     final foes = units.where((u) => u.team == Team.player).toList();
+    final capped = _spellCapped(Team.enemy, CardType.gust);
 
-    // Shove a unit into water, lava or off the board.
-    if (e >= 1) {
+    // Shove a unit into water, lava or off the board. Heroes resist spells.
+    if (e >= 1 && !capped) {
       Unit? pick;
       for (final f in foes) {
-        if (f.pos.distanceTo(eh.pos) > 5) continue;
+        if (f.isHero || f.pos.distanceTo(eh.pos) > 5) continue;
         if (!_pushLethal(f.pos, eh.pos.directionToward(f.pos), 2)) continue;
         if (pick == null ||
             (f.isHero && !pick.isHero) ||
@@ -1538,7 +1600,7 @@ class GameController extends ChangeNotifier {
       if (pick != null) return (card: CardType.gust, target: pick.pos);
     }
     // Finish a wounded foe with lightning.
-    if (e >= 2 && _diff.smart) {
+    if (e >= 2 && _diff.smart && !capped) {
       Unit? pick;
       for (final f in foes) {
         if (f.pos.distanceTo(eh.pos) > 5 || f.shield > 0 || f.hp > 3) continue;

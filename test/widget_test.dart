@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'dart:io';
@@ -10,6 +11,8 @@ import 'package:hex/game/game_controller.dart';
 import 'package:hex/game/hex.dart';
 import 'package:hex/game/models.dart';
 import 'package:hex/main.dart';
+import 'package:hex/ui/pixel/pixel_assets.dart';
+import 'package:hex/ui/widgets.dart';
 
 void main() {
   test('hex distance and direction', () {
@@ -36,6 +39,45 @@ void main() {
     expect(g.cardTargets, contains(knight.pos));
     g.playCard(knight.pos);
     expect(g.units.contains(knight), isFalse);
+  });
+
+  test('a spell cannot throw a hero into a hazard, it only hurts', () {
+    final g = GameController(seed: 1, aiDelayScale: 0);
+    final hero = g.heroOf(Team.player)!;
+    final foe = g.heroOf(Team.enemy)!;
+    foe.pos = hero.pos + Hex.dirs[0] + Hex.dirs[0];
+    final dir = hero.pos.directionToward(foe.pos);
+    g.tiles[foe.pos.neighbor(dir)] = Tile(Terrain.lava);
+    g.hand = [GameCard(999, CardType.gust)];
+    g.energy = 3;
+    final before = foe.hp;
+    g.selectCard(g.hand.first);
+    g.playCard(foe.pos);
+    expect(g.units.contains(foe), isTrue);
+    expect(foe.pos, hero.pos + Hex.dirs[0] + Hex.dirs[0]);
+    expect(foe.hp, before - GameController.heroSpellPushDamage);
+  });
+
+  test('only one attack spell can be cast per turn', () {
+    final g = GameController(seed: 1, aiDelayScale: 0);
+    final foe = g.units.firstWhere((u) => u.team == Team.enemy && !u.isHero);
+    final hero = g.heroOf(Team.player)!;
+    foe.pos = hero.pos + Hex.dirs[0] + Hex.dirs[0];
+    g.hand = [
+      GameCard(1, CardType.fireball),
+      GameCard(2, CardType.gust),
+      GameCard(3, CardType.heal),
+    ];
+    g.energy = 5;
+    final second = g.hand[1];
+    g.selectCard(g.hand.first);
+    g.playCard(foe.pos);
+    // The turn's attack spell is spent: Gust is blocked, utility cards aren't.
+    expect(g.canCast(second), isFalse);
+    g.selectCard(second);
+    expect(g.selectedCard, isNull);
+    expect(g.hint, contains('One attack spell per turn'));
+    expect(g.canCast(g.hand.last), isTrue);
   });
 
   test('full AI-vs-passive game terminates without errors', () async {
@@ -396,17 +438,31 @@ void main() {
     tester,
   ) async {
     Storage.clearMemory();
-    tester.view.physicalSize = const Size(800, 1600);
-    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1170, 2532);
+    tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
-    // Screens animate forever (fireflies), so pump fixed durations.
+    // Some screens animate forever, so pump fixed durations.
     Future<void> settle() => tester.pump(const Duration(milliseconds: 900));
     Future<void> back() async {
-      await tester.tap(find.byIcon(Icons.arrow_back_ios_new_rounded));
+      await tester.tap(
+        find.byWidgetPredicate((w) => w is PxIcon && w.name == 'back'),
+      );
       await settle();
       await settle();
     }
 
+    await tester.runAsync(() async {
+      final font = FontLoader('VT323')
+        ..addFont(
+          Future.value(
+            ByteData.sublistView(
+              File('assets/fonts/VT323-Regular.ttf').readAsBytesSync(),
+            ),
+          ),
+        );
+      await font.load();
+      await PixelAssets.load();
+    });
     await tester.pumpWidget(const HexApp());
     await settle();
     expect(find.text('HEX TACTICS'), findsOneWidget);
@@ -421,23 +477,23 @@ void main() {
     await settle();
     expect(find.textContaining('Finish all 6 lessons'), findsNothing);
 
-    await tester.tap(find.text('CAMPAIGN'));
+    await tester.tap(find.text('Campaign'));
     await settle();
     await settle();
-    expect(find.text('FIRST STEPS'), findsOneWidget);
-    expect(find.text('TRAINING'), findsOneWidget);
+    expect(find.text(campaignLevels.first.name), findsOneWidget);
+    expect(find.text('Training'), findsOneWidget);
     await back();
 
-    await tester.tap(find.text('STATS'));
+    await tester.tap(find.text('Stats'));
     await settle();
     await settle();
-    expect(find.text('RESET PROGRESS'), findsOneWidget);
+    expect(find.text('Reset progress'), findsOneWidget);
     await back();
 
-    await tester.tap(find.text('SKIRMISH'));
+    await tester.tap(find.text('Skirmish'));
     await settle();
     await settle();
-    await tester.tap(find.text('START BATTLE'));
+    await tester.tap(find.text('Start battle'));
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pump(const Duration(milliseconds: 1500));
     expect(find.text('End turn'), findsOneWidget);

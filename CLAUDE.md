@@ -26,3 +26,10 @@ The UI must not look AI-generated. Before adding or changing any UI, check it ag
 1. Could this screen be swapped for any other app's "dark fantasy game" template? If yes, make a choice that is specific to Hex (the hex grid, its pieces, its rules).
 2. Count distinct effects (glow, gradient, blur, bounce). More than one per screen is too many.
 3. Would a designer have drawn this, or does it just look "polished by default"? Cut until it looks decided.
+
+## Pixel UI kit (how the rules above are met)
+- Sprites, icons and units come from `assets/pixel/sprites.txt`; add art there, never emoji. Icons in strings are `:name:` tokens rendered by `PxText`.
+- Use `PixelBox` / `Panel` / `GoldButton` / `Choice` / `PxBar` / `HexBadge` from `lib/ui/widgets.dart`. They draw on a whole-device-pixel grid (`PixelUi.unit`).
+- Font is VT323. `PixelTextScaler` (set in `main.dart`) snaps every font size to a crisp multiple, so just write normal sizes; don't add `letterSpacing`.
+- No glow, gradients, blur, rotation, fractional scaling or fades. Motion steps in whole pixels. Page transitions are cuts.
+- Previews: `PIXEL_PREVIEW=<png> flutter test test/pixel_preview_test.dart` (board) and `UI_PREVIEW=<dir> flutter test test/ui_preview_test.dart` (screens).

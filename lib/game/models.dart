@@ -196,32 +196,6 @@ class Unit {
 
   UnitStats get stats => unitStats[type]!;
   bool get isHero => stats.hero;
-
-  String get emoji {
-    final mine = team == Team.player;
-    switch (type) {
-      case UnitType.hero:
-        return mine ? '🧙' : '👹';
-      case UnitType.warlord:
-        return mine ? '🦸' : '🦹';
-      case UnitType.pyromancer:
-        return mine ? '🧝' : '🧛';
-      case UnitType.titan:
-        return '🐲';
-      case UnitType.knight:
-        return '🤺';
-      case UnitType.archer:
-        return '🏹';
-      case UnitType.golem:
-        return '🗿';
-      case UnitType.cavalry:
-        return '🐎';
-      case UnitType.mage:
-        return '🔮';
-      case UnitType.healer:
-        return '🧚';
-    }
-  }
 }
 
 enum CardType {
@@ -259,11 +233,13 @@ CardType summonCardFor(UnitType t) =>
 int summonCost(UnitType t) => cardInfo[summonCardFor(t)]!.cost;
 
 class CardInfo {
-  const CardInfo(this.name, this.cost, this.emoji, this.desc, this.color);
+  const CardInfo(this.name, this.cost, this.icon, this.desc, this.color);
 
   final String name;
   final int cost;
-  final String emoji;
+
+  /// Pixel icon name (a unit type for summon cards).
+  final String icon;
   final String desc;
   final Color color;
 }
@@ -272,105 +248,105 @@ const Map<CardType, CardInfo> cardInfo = {
   CardType.summonKnight: CardInfo(
     'Knight',
     2,
-    '🤺',
+    'knight',
     'Summon a Knight. Its hits knock foes back.',
     Color(0xFF3C6FB5),
   ),
   CardType.summonArcher: CardInfo(
     'Archer',
     1,
-    '🏹',
+    'archer',
     'Summon an Archer. Shoots 2-3 hexes.',
     Color(0xFF4A7FC9),
   ),
   CardType.summonGolem: CardInfo(
     'Golem',
     3,
-    '🗿',
+    'golem',
     'Summon a Golem. Slow but hits for 3.',
     Color(0xFF5B6FA0),
   ),
   CardType.fireball: CardInfo(
     'Fireball',
     2,
-    '🔥',
-    'Blast a hex and its ring for 2. Ignites forests!',
+    'fire',
+    'Blast a hex for 2 and its ring for 1. Ignites forests!',
     Color(0xFFD9542C),
   ),
   CardType.gust: CardInfo(
     'Gust',
     1,
-    '🌪️',
-    'Shove a unit 2 hexes. Water and lava are deadly.',
+    'gust',
+    'Shove a unit 2 hexes. Water and lava kill. Heroes resist.',
     Color(0xFF3FA7B8),
   ),
   CardType.heal: CardInfo(
     'Heal',
     1,
-    '🌿',
+    'heal',
     'Restore 3 HP to an ally.',
     Color(0xFF4FAE6A),
   ),
   CardType.dash: CardInfo(
     'Dash',
     1,
-    '💨',
+    'dash',
     '+2 move and an ally can move again.',
     Color(0xFFD99A2B),
   ),
   CardType.shield: CardInfo(
     'Shield',
     1,
-    '🛡️',
+    'shield',
     'Block the next hit completely.',
     Color(0xFF7A6BD1),
   ),
   CardType.grow: CardInfo(
     'Grow',
     1,
-    '🌲',
+    'tree',
     'Turn grass into forest for cover.',
     Color(0xFF3E8E4D),
   ),
   CardType.summonCavalry: CardInfo(
     'Cavalry',
     2,
-    '🐎',
+    'cavalry',
     'Summon Cavalry. Moves 4 hexes.',
     Color(0xFF8A6B3C),
   ),
   CardType.summonMage: CardInfo(
     'Mage',
     2,
-    '🔮',
+    'mage',
     'Summon a Mage. Blasts also scorch adjacent foes.',
     Color(0xFF8A4FC9),
   ),
   CardType.summonHealer: CardInfo(
     'Healer',
     1,
-    '🧚',
+    'healer',
     'Summon a Healer. Mends 2 HP from 2 hexes.',
     Color(0xFF3FA88A),
   ),
   CardType.lightning: CardInfo(
     'Lightning',
     2,
-    '⚡',
+    'bolt',
     'Strike a foe within 5 for 3. Ignores cover.',
     Color(0xFFC9A82B),
   ),
   CardType.teleport: CardInfo(
     'Teleport',
     1,
-    '🌀',
+    'portal',
     'Blink your hero up to 4 hexes.',
     Color(0xFF9B59B6),
   ),
   CardType.wall: CardInfo(
     'Rock Wall',
     1,
-    '⛰️',
+    'mountain',
     'Raise an impassable mountain within 4 hexes.',
     Color(0xFF7D7F86),
   ),

@@ -187,8 +187,8 @@ final List<LevelDef> _defs = [
     _lessonCards,
     const [
       CoachStep(
-        'Cards cost ⚡ energy. You get 3 each turn, shown at the top. '
-        'Tap the Knight card (2⚡).',
+        'Cards cost :bolt: energy. You get 3 each turn, shown at the top. '
+        'Tap the Knight card (2:bolt:).',
         until: CoachEvent.cardSelected,
         card: CardType.summonKnight,
       ),
@@ -198,7 +198,7 @@ final List<LevelDef> _defs = [
         card: CardType.summonKnight,
       ),
       CoachStep(
-        'The Archer costs 1⚡, exactly what is left. Play it too.',
+        'The Archer costs 1:bolt:, exactly what is left. Play it too.',
         until: CoachEvent.cardPlayed,
         card: CardType.summonArcher,
       ),
@@ -209,7 +209,7 @@ final List<LevelDef> _defs = [
         endTurn: true,
       ),
       CoachStep(
-        'Energy refills and you draw 2 cards each turn. Cast Fireball (2⚡) '
+        'Energy refills and you draw 2 cards each turn. Cast Fireball (2:bolt:) '
         'at the enemy: it hits a hex and the ring around it.',
         until: CoachEvent.cardPlayed,
         card: CardType.fireball,
@@ -281,7 +281,7 @@ final List<LevelDef> _defs = [
     _lessonSupport,
     const [
       CoachStep(
-        'Crystals give +1⚡ the first time anyone steps on one. Move your '
+        'Crystals give +1:bolt: the first time anyone steps on one. Move your '
         'Sorcerer onto the glowing crystal.',
         until: CoachEvent.moved,
         hexes: [Hex(0, 1)],
@@ -324,7 +324,7 @@ final List<LevelDef> _defs = [
       seed: 22,
       coach: [
         CoachStep(
-          'New objective! Keep any unit on the ⭐ centre hex at the end of '
+          'New objective! Keep any unit on the :star: centre hex at the end of '
           'your turn, 3 turns in a row. The enemy wants it too.',
         ),
       ],
@@ -454,7 +454,7 @@ final List<LevelDef> _defs = [
       coach: [
         CoachStep(
           'Challenge levels give you a fixed set of cards and a clock: win '
-          'within 7 rounds (see ⏳ at the top). Grow forests, then burn them.',
+          'within 7 rounds (see :hourglass: at the top). Grow forests, then burn them.',
         ),
       ],
     ),

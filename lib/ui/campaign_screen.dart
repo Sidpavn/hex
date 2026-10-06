@@ -47,7 +47,7 @@ class _CampaignScreenState extends State<CampaignScreen>
     }
     return ScreenFrame(
       title: 'Campaign',
-      subtitle: '★ ${Storage.totalStars} of ${n * 3}',
+      subtitle: ':star: ${Storage.totalStars} of ${n * 3}',
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
         children: [
@@ -89,19 +89,8 @@ class _Header extends StatelessWidget {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          title.toUpperCase(),
-          style: const TextStyle(
-            color: Pal.goldLight,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 3,
-            fontSize: 15,
-          ),
-        ),
-        Text(
-          subtitle,
-          style: const TextStyle(color: Colors.white54, fontSize: 12),
-        ),
+        Text(title, style: const TextStyle(color: Pal.gold, fontSize: 22)),
+        Text(subtitle, style: const TextStyle(color: Pal.dim, fontSize: 13)),
       ],
     ),
   );
@@ -136,27 +125,27 @@ class _LevelRow extends StatelessWidget {
         ? Pal.green
         : open
         ? (lesson ? Pal.blue : Pal.gold)
-        : Colors.white24;
+        : Pal.dimmer;
 
     final tags = <Widget>[
-      if (lesson) _Tag('🎓 ${lv.topic}'),
+      if (lesson) Tag(':book: ${lv.topic}'),
       if (!lesson)
-        _Tag(
+        Tag(
           c.objective == Objective.eliminate
-              ? '⚔️ Eliminate'
+              ? ':swords: Eliminate'
               : c.objective == Objective.hold
-              ? '⭐ Hold ${c.target} turns'
-              : '🛡️ Survive ${c.target} rounds',
+              ? ':star: Hold ${c.target} turns'
+              : ':shield: Survive ${c.target} rounds',
         ),
-      if (!lesson) _Tag(c.difficulty.label),
-      if (c.roundLimit != null) _Tag('⏳ ${c.roundLimit} rounds'),
+      if (!lesson) Tag(c.difficulty.label),
+      if (c.roundLimit != null) Tag(':hourglass: ${c.roundLimit} rounds'),
       if (c.enemyHero != UnitType.hero)
-        _Tag('👹 ${unitStats[c.enemyHero]!.name}'),
+        Tag(':skull: ${unitStats[c.enemyHero]!.name}'),
     ];
     final rewards = [
       for (final r in lv.rewardCards)
-        '${cardInfo[r]!.emoji} ${cardInfo[r]!.name}',
-      for (final h in lv.rewardHeroes) '🦸 ${unitStats[h]!.name}',
+        ':${cardInfo[r]!.icon}: ${cardInfo[r]!.name}',
+      for (final h in lv.rewardHeroes) ':crown: ${unitStats[h]!.name}',
     ];
 
     return IntrinsicHeight(
@@ -164,7 +153,7 @@ class _LevelRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           SizedBox(
-            width: 58,
+            width: 52,
             child: Column(
               children: [
                 Expanded(
@@ -172,29 +161,18 @@ class _LevelRow extends StatelessWidget {
                 ),
                 AnimatedBuilder(
                   animation: pulse,
-                  builder: (context, _) => Transform.scale(
-                    scale: current ? 1 + 0.08 * pulse.value : 1,
-                    child: HexBadge(
-                      size: 52,
-                      color: color,
-                      glow: current || done,
-                      child: open
-                          ? Text(
-                              lesson
-                                  ? '${index + 1}'
-                                  : '${index + 1 - lessonCount}',
-                              style: TextStyle(
-                                color: color,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 18,
-                              ),
-                            )
-                          : const Icon(
-                              Icons.lock_rounded,
-                              size: 18,
-                              color: Colors.white38,
-                            ),
-                    ),
+                  builder: (context, _) => HexBadge(
+                    size: 40,
+                    color: color,
+                    glow: current ? pulse.value > 0.5 : done,
+                    child: open
+                        ? Text(
+                            lesson
+                                ? '${index + 1}'
+                                : '${index + 1 - lessonCount}',
+                            style: TextStyle(color: color, fontSize: 18),
+                          )
+                        : const PxIcon('lock'),
                   ),
                 ),
                 Expanded(
@@ -219,11 +197,10 @@ class _LevelRow extends StatelessWidget {
                       children: [
                         Expanded(
                           child: Text(
-                            lv.name.toUpperCase(),
+                            lv.name,
                             style: const TextStyle(
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 1.4,
-                              fontSize: 14.5,
+                              fontSize: 18,
+                              color: Pal.text,
                             ),
                           ),
                         ),
@@ -233,35 +210,22 @@ class _LevelRow extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       lv.blurb,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 12.5,
-                      ),
+                      style: const TextStyle(color: Pal.dim, fontSize: 13),
                     ),
                     const SizedBox(height: 8),
                     Wrap(spacing: 6, runSpacing: 6, children: tags),
                     if (c.deck != null) ...[
                       const SizedBox(height: 8),
-                      Text(
-                        'YOUR CARDS  ${c.deck!.map((t) => cardInfo[t]!.emoji).join(' ')}',
-                        style: const TextStyle(
-                          color: Pal.goldLight,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 1,
-                        ),
+                      PxText(
+                        'Your cards: ${c.deck!.map((t) => ':${cardInfo[t]!.icon}:').join(' ')}',
+                        style: const TextStyle(color: Pal.gold, fontSize: 13),
                       ),
                     ],
                     if (rewards.isNotEmpty) ...[
                       const SizedBox(height: 8),
-                      Text(
-                        'REWARD  ${rewards.join('  ')}',
-                        style: const TextStyle(
-                          color: Pal.purple,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 1,
-                        ),
+                      PxText(
+                        'Reward: ${rewards.join('  ')}',
+                        style: const TextStyle(color: Pal.purple, fontSize: 13),
                       ),
                     ],
                   ],
@@ -284,28 +248,8 @@ class _Line extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Center(
     child: Container(
-      width: 3,
-      color: !visible
-          ? Colors.transparent
-          : (lit ? Pal.gold.withValues(alpha: 0.7) : Colors.white12),
-    ),
-  );
-}
-
-class _Tag extends StatelessWidget {
-  const _Tag(this.text);
-  final String text;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-    decoration: BoxDecoration(
-      color: Colors.white10,
-      borderRadius: BorderRadius.circular(20),
-    ),
-    child: Text(
-      text,
-      style: const TextStyle(color: Colors.white70, fontSize: 11),
+      width: PixelUi.unit(context) * 2,
+      color: !visible ? Colors.transparent : (lit ? Pal.goldDark : Pal.panelLo),
     ),
   );
 }
