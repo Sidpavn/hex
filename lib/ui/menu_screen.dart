@@ -34,6 +34,29 @@ class _MenuScreenState extends State<MenuScreen> {
       );
   }
 
+  Future<void> _restartExplore() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Start a new explore game?'),
+        content: const Text('Your current explore progress will be erased.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(c, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(c, true),
+            child: const Text('Erase it'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    Storage.clearExplore();
+    if (mounted) await _open(const ZoneScreen(autosave: true));
+  }
+
   Future<void> _skip() async {
     final ok = await showDialog<bool>(
       context: context,
@@ -63,6 +86,7 @@ class _MenuScreenState extends State<MenuScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final save = Storage.exploreWorld;
     final items = <_Item>[
       _Item(
         'flag',
@@ -99,9 +123,16 @@ class _MenuScreenState extends State<MenuScreen> {
       _Item(
         'tree',
         'Explore',
-        'Prototype: wander the world',
-        () => _open(const ZoneScreen()),
+        save == null ? 'Start in the training ground' : 'Continue',
+        () => _open(ZoneScreen(world: save, autosave: true)),
       ),
+      if (save != null)
+        _Item(
+          'sprout',
+          'New explore game',
+          'Erase the save and start over',
+          _restartExplore,
+        ),
       _Item(
         'chart',
         'Stats',

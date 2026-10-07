@@ -1,8 +1,11 @@
+import 'dart:convert';
+
 import 'package:hive_ce_flutter/hive_flutter.dart';
 
 import '../game/campaign.dart';
 import '../game/config.dart';
 import '../game/models.dart';
+import '../world/world_state.dart';
 
 /// What a finished game changed in the player's profile.
 class GameResult {
@@ -79,6 +82,24 @@ class Storage {
         if (names.contains(v.name)) v,
     };
   }
+
+  // ───────────────────────── explore save ─────────────────────────
+
+  /// The saved Explore game, or null if there is none (or it can't be read).
+  static WorldState? get exploreWorld {
+    final raw = _get('explore');
+    if (raw is! String) return null;
+    try {
+      return WorldState.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static void saveExplore(WorldState w) =>
+      _put('explore', jsonEncode(w.toJson()));
+
+  static void clearExplore() => _put('explore', null);
 
   // ───────────────────────── unlocks ─────────────────────────
 

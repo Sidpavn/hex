@@ -2,11 +2,14 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hex/data/storage.dart';
 import 'package:hex/game/hex.dart';
+import 'package:hex/ui/inventory_ui.dart';
 import 'package:hex/ui/pixel/pixel_assets.dart';
 import 'package:hex/ui/zone_screen.dart';
 import 'package:hex/world/pathfinding.dart';
 import 'package:hex/world/sim.dart';
+import 'package:hex/world/world_state.dart';
 import 'package:hex/world/zone.dart';
 
 Map<String, Zone> _load() {
@@ -114,7 +117,9 @@ void main() {
     tester.view.physicalSize = const Size(1170, 2532);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(const MaterialApp(home: ZoneScreen()));
+    await tester.pumpWidget(
+      const MaterialApp(home: ZoneScreen(startZone: 'meadow')),
+    );
     await tester.pump(const Duration(milliseconds: 100));
     final dynamic st = tester.state(find.byType(ZoneScreen));
     final meadow = st.zone as Zone;
@@ -128,5 +133,97 @@ void main() {
     expect(cave.id, 'cave');
     expect(st.heroHex as Hex, cave.portalHex['1']);
     await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('Continue resumes in the saved zone, and the game autosaves', (
+    tester,
+  ) async {
+    await tester.runAsync(() async {
+      await PixelAssets.load();
+      await ZoneRepo.loadAll();
+    });
+    addTearDown(Storage.clearMemory);
+    tester.view.physicalSize = const Size(1170, 2532);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    final meadow = _load()['meadow']!;
+    final w = WorldState.newGame()
+      ..quests['training'] = 5
+      ..resume = (zone: 'meadow', hex: meadow.spawn);
+    await tester.pumpWidget(
+      MaterialApp(home: ZoneScreen(world: w, autosave: true)),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+    final dynamic st = tester.state(find.byType(ZoneScreen));
+    expect((st.zone as Zone).id, 'meadow');
+    expect(st.heroHex as Hex, meadow.spawn);
+    final saved = Storage.exploreWorld;
+    expect(saved?.resume?.zone, 'meadow');
+    expect(saved?.quests['training'], 5);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  test('an inset frames the zone inside the free part of the screen', () {
+    final meadow = _load()['meadow']!;
+    const size = Size(390, 844);
+    const inset = EdgeInsets.fromLTRB(8, 120, 8, 90);
+    final b = meadow.bounds;
+    // Camera pushed into each corner: the zone's edge stops at the inset.
+    final tl = ZoneView(size, 3, b.topLeft, meadow, inset);
+    final edge = tl.toScreen(b.topLeft);
+    expect(edge.dy, closeTo(inset.top, 1));
+    expect(edge.dx, closeTo(inset.left, 1));
+    final br = ZoneView(size, 3, b.bottomRight, meadow, inset);
+    final far = br.toScreen(b.bottomRight);
+    expect(far.dy, closeTo(size.height - inset.bottom, 1));
+    expect(far.dx, closeTo(size.width - inset.right, 1));
+  });
+
+  testWidgets('the quick bar only shows what you have, and flags the goal', (
+    tester,
+  ) async {
+    await tester.runAsync(() => PixelAssets.load());
+    final w = WorldState.newGame();
+    String? pointAt;
+    Future<void> show() => tester.pumpWidget(
+      MaterialApp(
+        home: Material(
+          child: QuickBar(
+            world: w,
+            targeting: false,
+            pointAt: pointAt,
+            onWeapon: (_) {},
+            onSpell: (_) {},
+            onUse: (_) {},
+            canCast: (_) => true,
+          ),
+        ),
+      ),
+    );
+    int slots() => tester.widgetList(find.byType(ItemSlot)).length;
+    int flagged() => tester
+        .widgetList<ItemSlot>(find.byType(ItemSlot))
+        .where((s) => s.flag)
+        .length;
+
+    await show();
+    expect(slots(), 0);
+    w
+      ..addItem('sword')
+      ..autoEquip('sword');
+    await show();
+    expect(slots(), 1);
+    w
+      ..addItem('bow')
+      ..autoEquip('bow')
+      ..learn('mend')
+      ..addItem('potion');
+    pointAt = 'bow';
+    await show();
+    expect(slots(), 4); // sword, bow, mend, potion
+    expect(flagged(), 1); // the bow, which is not in hand
+    pointAt = 'sword';
+    await show();
+    expect(flagged(), 0); // already in hand
   });
 }

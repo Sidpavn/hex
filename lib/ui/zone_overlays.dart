@@ -231,7 +231,6 @@ class QuestLogOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final objective = currentObjective(world);
     return ModalFrame(
       onDismiss: onClose,
       child: Padding(
@@ -260,13 +259,13 @@ class QuestLogOverlay extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 10),
-                for (final q in questList)
+                for (final q in quests.where((q) => q.isListed(world)))
                   Padding(
                     padding: const EdgeInsets.only(bottom: 10),
                     child: _QuestEntry(
                       info: q,
-                      stage: questStage(world, q.id),
-                      objective: objective,
+                      stage: q.stage(world),
+                      objective: q.objective(world),
                     ),
                   ),
                 PxText(
@@ -298,7 +297,7 @@ class _QuestEntry extends StatelessWidget {
     required this.objective,
   });
 
-  final QuestInfo info;
+  final Quest info;
   final int stage;
   final QuestObjective? objective;
 

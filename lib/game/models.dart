@@ -38,6 +38,9 @@ enum UnitType {
   warlord,
   pyromancer,
   titan,
+
+  /// A training post. Only exists in Explore zones; never fights back.
+  post,
 }
 
 class UnitStats {
@@ -54,6 +57,7 @@ class UnitStats {
     this.hero = false,
     this.fireImmune = false,
     this.summons = false,
+    this.inert = false,
     this.blurb = '',
   });
 
@@ -81,6 +85,9 @@ class UnitStats {
 
   /// Calls a Knight to its side at the start of every turn.
   final bool summons;
+
+  /// Never acts and never dies; hits on it are only counted.
+  final bool inert;
 
   final String blurb;
 }
@@ -155,6 +162,13 @@ const Map<UnitType, UnitStats> unitStats = {
     hero: true,
     summons: true,
     blurb: 'Colossal boss. Calls a Knight every turn.',
+  ),
+  UnitType.post: UnitStats(
+    name: 'Training post',
+    maxHp: 99,
+    move: 0,
+    damage: 0,
+    inert: true,
   ),
 };
 

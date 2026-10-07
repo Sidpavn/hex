@@ -6,6 +6,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
 import '../game/hex.dart';
+import '../data/storage.dart';
 import '../game/models.dart';
 import '../world/items.dart';
 import '../world/pathfinding.dart';
@@ -24,12 +25,26 @@ import 'zone_overlays.dart';
 /// Maps a zone's world space (art pixels) onto the screen with a fixed,
 /// integer pixel scale and a camera that follows the hero.
 class ZoneView {
-  ZoneView(Size size, double dpr, Offset cam, Zone zone) {
+  /// [inset] is the part of the screen covered by the HUD. The zone is framed
+  /// inside what is left, so its outermost hexes can be reached and tapped.
+  ZoneView(
+    Size size,
+    double dpr,
+    Offset cam,
+    Zone zone, [
+    EdgeInsets inset = EdgeInsets.zero,
+  ]) {
     // About eight hexes across, whole device pixels per art pixel.
     final k = math.max(2, (size.width * dpr / (8 * BoardLayout.hexW)).round());
     scale = k / dpr;
-    final halfW = size.width / scale / 2;
-    final halfH = size.height / scale / 2;
+    final area = Rect.fromLTRB(
+      inset.left,
+      inset.top,
+      size.width - inset.right,
+      size.height - inset.bottom,
+    );
+    final halfW = area.width / scale / 2;
+    final halfH = area.height / scale / 2;
     double clamp(double v, double lo, double hi) =>
         lo > hi ? (lo + hi) / 2 : v.clamp(lo, hi);
     final b = zone.bounds;
@@ -37,7 +52,7 @@ class ZoneView {
       clamp(cam.dx, b.left + halfW, b.right - halfW),
       clamp(cam.dy, b.top + halfH, b.bottom - halfH),
     );
-    final o = size.center(Offset.zero) - c * scale;
+    final o = area.center - c * scale;
     origin = Offset(
       (o.dx * dpr).roundToDouble() / dpr,
       (o.dy * dpr).roundToDouble() / dpr,
@@ -66,9 +81,20 @@ class _FloatText {
 /// Explore a zone: tap a hex to travel there, tap an enemy to attack it, tap
 /// yourself to wait. Every step is a turn, and awake enemies react.
 class ZoneScreen extends StatefulWidget {
-  const ZoneScreen({super.key, this.startZone = 'meadow'});
+  const ZoneScreen({
+    super.key,
+    this.startZone = 'training',
+    this.world,
+    this.autosave = false,
+  });
 
   final String startZone;
+
+  /// A game to carry on with. Without one, a new game starts.
+  final WorldState? world;
+
+  /// Write progress to [Storage] at zone changes, camps and conversations.
+  final bool autosave;
 
   @override
   State<ZoneScreen> createState() => _ZoneScreenState();
@@ -78,7 +104,7 @@ class _ZoneScreenState extends State<ZoneScreen>
     with SingleTickerProviderStateMixin, ReloadsPixelAssets {
   Zone? zone;
   ZoneSim? sim;
-  final WorldState world = WorldState();
+  late final WorldState world = widget.world ?? WorldState.newGame();
   Map<String, Zone> zones = {};
 
   /// Spell targeting: the next tap on a valid hex throws a Fireball.
@@ -112,13 +138,49 @@ class _ZoneScreenState extends State<ZoneScreen>
 
   static const _hexesPerSecond = 8.0;
 
+  /// Screen covered by the HUD, measured after layout so the camera can frame
+  /// the zone in the space that is left.
+  EdgeInsets _inset = const EdgeInsets.all(8);
+  final _topKey = GlobalKey();
+  final _barKey = GlobalKey();
+
+  void _measure() {
+    final root = context.findRenderObject();
+    if (!mounted || root is! RenderBox || !root.hasSize) return;
+    double edge(GlobalKey k, {required bool bottomEdge}) {
+      final box = k.currentContext?.findRenderObject();
+      if (box is! RenderBox || !box.attached || !box.hasSize) return 0;
+      final at = box.localToGlobal(
+        Offset(0, bottomEdge ? box.size.height : 0),
+        ancestor: root,
+      );
+      return bottomEdge ? at.dy : root.size.height - at.dy;
+    }
+
+    const gap = 8.0;
+    final next = EdgeInsets.fromLTRB(
+      gap,
+      edge(_topKey, bottomEdge: true) + gap,
+      gap,
+      edge(_barKey, bottomEdge: false) + gap,
+    );
+    final d = next.top - _inset.top;
+    final e = next.bottom - _inset.bottom;
+    if (d.abs() > 0.5 || e.abs() > 0.5) setState(() => _inset = next);
+  }
+
   Hex get heroHex => sim?.hero ?? const Hex(0, 0);
 
   @override
   void initState() {
     super.initState();
     _ticker = createTicker(_onTick)..start();
-    _enter(widget.startZone);
+    final resume = widget.autosave ? world.resume : null;
+    if (resume != null) {
+      _enter(resume.zone, at: resume.hex);
+    } else {
+      _enter(widget.startZone);
+    }
   }
 
   @override
@@ -165,6 +227,16 @@ class _ZoneScreenState extends State<ZoneScreen>
       fx.clear();
       targeting = false;
     });
+    _save();
+  }
+
+  /// Writes the game down, if this screen was opened to keep one.
+  void _save() {
+    final z = zone;
+    final s = sim;
+    if (!widget.autosave || z == null || s == null || s.heroDown) return;
+    world.resume = (zone: z.id, hex: s.hero);
+    Storage.saveExplore(world);
   }
 
   void _clearRoute() {
@@ -253,6 +325,7 @@ class _ZoneScreenState extends State<ZoneScreen>
         afterTurn(s);
       } else {
         _clearRoute();
+        if (s.events.isNotEmpty) afterTurn(s);
       }
       if (path.isEmpty && !s.heroDown) {
         final camp = _toCamp;
@@ -453,6 +526,38 @@ class _ZoneScreenState extends State<ZoneScreen>
           HapticFeedback.selectionClick();
         case SimEventKind.bagFull:
           texts.add(_FloatText(at, 'Bag full', Pal.red));
+        case SimEventKind.telegraph:
+          // Stop auto-travel: the player has to choose where to stand.
+          _clearRoute();
+          final name = spellDefs[ev.note]?.name ?? 'Spell';
+          texts.add(
+            _FloatText(
+              hexWorld(ev.from!) + const Offset(0, -16),
+              '$name incoming',
+              Pal.red,
+              delay: cursor,
+            ),
+          );
+          HapticFeedback.mediumImpact();
+        case SimEventKind.learned:
+          final spell = spellDefs[ev.note];
+          if (spell != null) {
+            talking = NpcSpawn('boss', 'Pyromancer', ev.hex, ev.unit!);
+            dialogue = Dialogue(spell.name, [
+              'You learned ${spell.name}. ${spell.desc}',
+              'It costs ${spell.cost} mana. Tap it on the quick bar, then '
+                  'tap a hex up to ${ZoneSim.fireballRange} away.',
+            ]);
+          }
+        case SimEventKind.gateClosed:
+          final gate = closedGate(
+            s.source.id,
+            s.zone.tiles[ev.hex]?.portal ?? '',
+            world,
+          );
+          if (gate != null) {
+            texts.add(_FloatText(at, gate.message, Pal.goldLight));
+          }
         case SimEventKind.lostTrack:
           break;
       }
@@ -465,7 +570,7 @@ class _ZoneScreenState extends State<ZoneScreen>
     final z = zone;
     final s = sim;
     if (z == null || s == null || s.heroDown) return;
-    final view = ZoneView(size, _dpr, cam, z);
+    final view = ZoneView(size, _dpr, cam, z, _inset);
     final target = hexAtWorld(view.toWorld(local));
 
     // Aiming a spell: a valid hex fires it, anything else cancels.
@@ -586,6 +691,7 @@ class _ZoneScreenState extends State<ZoneScreen>
           _FloatText(heroWorld + const Offset(0, -12), 'Rested', Pal.green),
         );
     });
+    _save();
   }
 
   void _wakeUp() {
@@ -610,10 +716,11 @@ class _ZoneScreenState extends State<ZoneScreen>
 
   void _endTalk(DialogueChoice? choice) {
     setState(() {
-      choice?.apply?.call(world);
+      choice?.apply(world);
       talking = null;
       dialogue = null;
     });
+    _save();
   }
 
   @override
@@ -622,6 +729,7 @@ class _ZoneScreenState extends State<ZoneScreen>
     final z = zone;
     final s = sim;
     final objective = currentObjective(world);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measure());
     return Scaffold(
       backgroundColor: const Color(0xFF10181C),
       body: Stack(
@@ -644,64 +752,70 @@ class _ZoneScreenState extends State<ZoneScreen>
               padding: const EdgeInsets.all(8),
               child: Column(
                 children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  Column(
+                    key: _topKey,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: () => Navigator.of(context).maybePop(),
-                        child: const Padding(
-                          padding: EdgeInsets.all(8),
-                          child: PxIcon('back'),
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Expanded(child: _hud(z, s)),
-                      const SizedBox(width: 8),
-                      GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: () => setState(() {
-                          packOpen = true;
-                          packAtCamp = false;
-                        }),
-                        child: PixelBox(
-                          padding: const EdgeInsets.all(6),
-                          child: const PxIcon('pack'),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: () => setState(() => journalOpen = true),
-                        child: PixelBox(
-                          padding: const EdgeInsets.all(6),
-                          child: const PxIcon('book'),
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (objective != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: PixelBox(
-                          color: Pal.panelLo,
-                          shadow: false,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () => Navigator.of(context).maybePop(),
+                            child: const Padding(
+                              padding: EdgeInsets.all(8),
+                              child: PxIcon('back'),
+                            ),
                           ),
-                          child: PxText(
-                            ':star: ${objective.text}',
-                            style: const TextStyle(
-                              color: Pal.goldLight,
-                              fontSize: 13,
+                          const SizedBox(width: 4),
+                          Expanded(child: _hud(z, s)),
+                          const SizedBox(width: 8),
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () => setState(() {
+                              packOpen = true;
+                              packAtCamp = false;
+                            }),
+                            child: PixelBox(
+                              padding: const EdgeInsets.all(6),
+                              child: const PxIcon('pack'),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () => setState(() => journalOpen = true),
+                            child: PixelBox(
+                              padding: const EdgeInsets.all(6),
+                              child: const PxIcon('book'),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (objective != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: PixelBox(
+                              color: Pal.panelLo,
+                              shadow: false,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              child: PxText(
+                                ':star: ${objective.text}',
+                                style: const TextStyle(
+                                  color: Pal.goldLight,
+                                  fontSize: 13,
+                                ),
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ),
+                    ],
+                  ),
                   const Spacer(),
                   if (s != null) _actionBar(s),
                 ],
@@ -788,15 +902,6 @@ class _ZoneScreenState extends State<ZoneScreen>
                     padding: const EdgeInsets.only(right: 3),
                     child: _ManaPip(filled: i < world.mana),
                   ),
-                const SizedBox(width: 4),
-                Text(
-                  'T$t',
-                  style: const TextStyle(
-                    color: Pal.dim,
-                    fontSize: 13,
-                    height: 1,
-                  ),
-                ),
               ],
             ),
           ],
@@ -807,8 +912,10 @@ class _ZoneScreenState extends State<ZoneScreen>
 
   Widget _actionBar(ZoneSim s) {
     return Padding(
+      key: _barKey,
       padding: const EdgeInsets.only(top: 6),
       child: QuickBar(
+        pointAt: currentObjective(world)?.hint,
         world: world,
         targeting: targeting,
         canCast: _spellReady,
@@ -909,7 +1016,7 @@ class _ZonePainter extends CustomPainter {
     final sim = s.sim;
     if (art == null || zone == null || sim == null) return;
     final td = _terrain ??= TerrainDraw(art);
-    final v = ZoneView(size, s._dpr, s.cam, zone);
+    final v = ZoneView(size, s._dpr, s.cam, zone, s._inset);
     final sc = v.scale;
     final time = s.time;
     // Screen shake, in whole art pixels.
@@ -1027,6 +1134,38 @@ class _ZonePainter extends CustomPainter {
             ),
         );
         ringAt(h, const Color(0xFFFFA030));
+      }
+    }
+
+    // A boss's spell in the making: the hexes it will hit blink red, faster
+    // on the turn it fires.
+    for (final e in sim.enemies) {
+      if (e.telegraph.isEmpty) continue;
+      final last = e.charge <= 1;
+      final fill = art.mask(
+        (time * (last ? 8 : 4)).floor().isEven ? 'fillA' : 'fillB',
+      );
+      for (final h in e.telegraph) {
+        if (!visible.contains(h)) continue;
+        final c = v.toScreen(hexWorld(h));
+        canvas.drawImageRect(
+          fill,
+          Rect.fromLTWH(0, 0, fill.width.toDouble(), fill.height.toDouble()),
+          Rect.fromLTWH(
+            c.dx - HexArt.w / 2 * sc,
+            c.dy - HexArt.h / 2 * sc,
+            fill.width * sc,
+            fill.height * sc,
+          ),
+          Paint()
+            ..filterQuality = FilterQuality.none
+            ..isAntiAlias = false
+            ..colorFilter = ColorFilter.mode(
+              Pal.red.withAlpha(0xAA),
+              BlendMode.srcIn,
+            ),
+        );
+        ringAt(h, Pal.red);
       }
     }
 
@@ -1250,7 +1389,7 @@ class _ZonePainter extends CustomPainter {
         if (!sim.reaches(e) || s.targeting) continue;
         final centre = e.vis + e.kick + const Offset(0, -8);
         brackets(centre, 9, Pal.gold);
-        if (!e.hostile) {
+        if (!e.hostile && !e.stats.inert) {
           final fs = 16 * sc;
           final label = _pixelText('x2', fs, Pal.goldLight);
           final line = _pixelText('x2', fs, Pal.ink);
@@ -1402,7 +1541,7 @@ class _ZonePainter extends CustomPainter {
     );
 
     // Health pips once it has been hurt.
-    final max = e.stats.maxHp;
+    final max = e.maxHp;
     var iconTop = top - 4;
     if (e.hp < max) {
       final w = max * 2 + 2;

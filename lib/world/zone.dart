@@ -287,7 +287,7 @@ class ZoneRepo {
   static void clear() => _cache.clear();
 
   /// Every zone that ships with the game.
-  static const ids = ['meadow', 'cave'];
+  static const ids = ['training', 'meadow', 'cave'];
 
   /// Loads every zone, so quest markers can look across zones.
   static Future<Map<String, Zone>> loadAll([AssetBundle? bundle]) async {

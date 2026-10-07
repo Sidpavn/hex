@@ -3,8 +3,10 @@ import 'dart:ui';
 
 import '../game/hex.dart';
 import '../game/models.dart';
+import 'boss.dart';
 import 'pathfinding.dart';
 import 'items.dart';
+import 'quests.dart';
 import 'world_state.dart';
 import 'zone.dart';
 
@@ -33,7 +35,8 @@ class Enemy {
       route = s.route,
       behavior = s.behavior,
       hex = s.hex,
-      hp = unitStats[s.type]!.maxHp,
+      maxHp = bossKits[s.type]?.hp ?? unitStats[s.type]!.maxHp,
+      hp = bossKits[s.type]?.hp ?? unitStats[s.type]!.maxHp,
       awareness = s.behavior == Behavior.sleep
           ? Awareness.asleep
           : Awareness.idle,
@@ -49,8 +52,16 @@ class Enemy {
   final Behavior behavior;
 
   Hex hex;
+  final int maxHp;
   int hp;
   Awareness awareness;
+
+  /// A boss's spell in the making: the hexes it will hit, the hex it aimed
+  /// at, the turns left before it fires and the turns before the next cast.
+  Set<Hex> telegraph = {};
+  Hex? aim;
+  int charge = 0;
+  int cool = 0;
 
   /// Where it was last seen the hero, while alert or searching.
   Hex? lastSeen;
@@ -104,6 +115,16 @@ enum SimEventKind {
   /// There was something to pick up but the bag is full.
   bagFull,
 
+  /// The hero walked into a portal that is still shut.
+  gateClosed,
+
+  /// A boss started a spell: [SimEvent.hex] is the aimed hex, [SimEvent.from]
+  /// the boss, [SimEvent.note] the spell.
+  telegraph,
+
+  /// The hero learned the spell named in [SimEvent.note].
+  learned,
+
   /// The hero swung or shot at [SimEvent.hex] (from [SimEvent.from]).
   heroSwing,
 
@@ -120,6 +141,7 @@ class SimEvent {
     this.from,
     this.ranged = false,
     this.unit,
+    this.note,
   ]);
 
   final SimEventKind kind;
@@ -135,6 +157,9 @@ class SimEvent {
 
   /// The enemy type involved, when there is one.
   final UnitType? unit;
+
+  /// A spell id, for [SimEventKind.telegraph] and [SimEventKind.learned].
+  final String? note;
 }
 
 /// The rules of moving around a zone: turn-based, with awake enemies reacting
@@ -186,7 +211,7 @@ class ZoneSim {
   static const regenEvery = 6;
 
   /// Turns per point of mana.
-  static const manaEvery = 2;
+  static const manaEvery = 4;
 
   static const fireballCost = 2;
   static const fireballRange = 4;
@@ -323,11 +348,17 @@ class ZoneSim {
         npcAt(to) != null) {
       return false;
     }
+    final portal = tile.portal;
+    if (portal != null && closedGate(source.id, portal, world) != null) {
+      events.add(SimEvent(SimEventKind.gateClosed, to));
+      return false;
+    }
     hero = to;
     final item = itemAt(to);
     if (item != null) {
       if (world.canAdd(item.itemId)) {
         world.addItem(item.itemId);
+        world.autoEquip(item.itemId);
         world.collected.add('${source.id}#${item.id}');
         events.add(SimEvent(SimEventKind.pickup, to));
       } else {
@@ -369,6 +400,7 @@ class ZoneSim {
       sneakable: true,
       sneakMult: world.weapon.sneak,
     );
+    world.bump(Counts.hit(e.type, ranged: world.weapon.ranged));
     tick();
     return true;
   }
@@ -381,8 +413,41 @@ class ZoneSim {
   }) {
     final sneak = sneakable && !e.hostile;
     final total = dmg * (sneak ? sneakMult : 1);
+    if (e.stats.inert) {
+      events.add(
+        SimEvent(
+          SimEventKind.hitEnemy,
+          e.hex,
+          total,
+          false,
+          null,
+          false,
+          e.type,
+        ),
+      );
+      return;
+    }
     e.hp -= total;
-    if (!e.alive) world.slain.add(e.key);
+    if (!e.alive) {
+      world.slain.add(e.key);
+      world.bump(Counts.kill(e.type));
+      final kit = bossKits[e.type];
+      if (kit != null && !world.knownSpells.contains(kit.spell)) {
+        world.learn(kit.spell);
+        events.add(
+          SimEvent(
+            SimEventKind.learned,
+            e.hex,
+            0,
+            false,
+            null,
+            false,
+            e.type,
+            kit.spell,
+          ),
+        );
+      }
+    }
     events.add(
       SimEvent(
         e.alive ? SimEventKind.hitEnemy : SimEventKind.killedEnemy,
@@ -420,6 +485,7 @@ class ZoneSim {
   bool castFireball(Hex target) {
     if (!canCastFireball(target)) return false;
     world.mana -= fireballCost;
+    world.bump(Counts.cast('fireball'));
     events.add(SimEvent(SimEventKind.spell, target, 0, false, hero, true));
     for (final h in [target, ...target.neighbors]) {
       if (!zone.tiles.containsKey(h)) continue;
@@ -440,6 +506,7 @@ class ZoneSim {
   bool castMend() {
     if (mana < mendCost || heroHp >= heroMaxHp || heroDown) return false;
     world.mana -= mendCost;
+    world.bump(Counts.castMend);
     _heal(mendHeal);
     tick();
     return true;
@@ -479,13 +546,66 @@ class ZoneSim {
   void tick() {
     turn++;
     for (final e in List.of(enemies)) {
-      if (!e.alive) continue;
-      _act(e);
+      if (!e.alive || e.stats.inert) continue;
+      if (!_bossTurn(e)) _act(e);
       if (heroDown) break;
     }
     _fireStep();
     enemies.removeWhere((e) => !e.alive);
     _regen();
+  }
+
+  /// A boss spends its turn charging or firing a spell instead of acting
+  /// normally. Returns whether it did.
+  bool _bossTurn(Enemy e) {
+    final kit = bossKits[e.type];
+    if (kit == null) return false;
+    if (e.charge > 0) {
+      if (--e.charge == 0) _release(e, kit);
+      return true;
+    }
+    if (e.cool > 0) e.cool--;
+    if (e.awareness == Awareness.alert &&
+        e.cool == 0 &&
+        e.hex.distanceTo(hero) <= kit.range &&
+        sees(e)) {
+      // Aim where the hero stands now; moving away is the answer.
+      e.aim = hero;
+      e.telegraph = {
+        for (final h in [hero, ...hero.neighbors])
+          if (zone.tiles[h]?.walkable ?? false) h,
+      };
+      e.charge = kit.warn;
+      events.add(
+        SimEvent(
+          SimEventKind.telegraph,
+          hero,
+          0,
+          false,
+          e.hex,
+          true,
+          e.type,
+          kit.spell,
+        ),
+      );
+      return true;
+    }
+    return false;
+  }
+
+  /// The blast lands on whatever is still in the marked hexes.
+  void _release(Enemy e, BossKit kit) {
+    final target = e.aim!;
+    events.add(
+      SimEvent(SimEventKind.spell, target, 0, false, e.hex, true, e.type),
+    );
+    for (final h in e.telegraph) {
+      if (_burnable(h)) fire[h] = burnTurns;
+      if (h == hero) _hurtHero(h == target ? kit.center : kit.ring);
+    }
+    e.telegraph = {};
+    e.aim = null;
+    e.cool = kit.cooldown;
   }
 
   /// Fire hurts what stands in it, spreads through forests and burns them
@@ -548,7 +668,12 @@ class ZoneSim {
       events.add(SimEvent(SimEventKind.noticed, e.hex));
       // A pack moves together.
       for (final o in enemies) {
-        if (o == e || !o.alive || o.awareness == Awareness.alert) continue;
+        if (o == e ||
+            !o.alive ||
+            o.stats.inert ||
+            o.awareness == Awareness.alert) {
+          continue;
+        }
         if (o.hex.distanceTo(e.hex) <= packRadius) {
           o.awareness = Awareness.alert;
           events.add(SimEvent(SimEventKind.noticed, o.hex));

@@ -2,6 +2,19 @@ import '../game/hex.dart';
 import '../game/models.dart';
 import 'items.dart';
 
+/// Keys for [WorldState.counts]. Anything the player does that a quest might
+/// care about is counted under one of these.
+abstract final class Counts {
+  static String hit(UnitType unit, {required bool ranged}) =>
+      'hit:${unit.name}:${ranged ? 'ranged' : 'melee'}';
+  static String kill(UnitType unit) => 'kill:${unit.name}';
+  static String cast(String spell) => 'cast:$spell';
+
+  static const postMelee = 'hit:post:melee';
+  static const postRanged = 'hit:post:ranged';
+  static const castMend = 'cast:mend';
+}
+
 /// One slot's worth of an item in the bag.
 class ItemStack {
   ItemStack(this.id, this.count);
@@ -16,6 +29,14 @@ class ItemStack {
 class WorldState {
   WorldState() {
     addItem('potion', 2);
+  }
+
+  /// A new Explore game: bare hands and no spells. Everything is earned in
+  /// the training ground.
+  WorldState.newGame() {
+    weaponSlots.fillRange(0, weaponSlots.length, null);
+    spellSlots.fillRange(0, spellSlots.length, null);
+    knownSpells.clear();
   }
 
   static final int maxHp = unitStats[UnitType.hero]!.maxHp;
@@ -53,8 +74,85 @@ class WorldState {
   /// Quest id to stage.
   final Map<String, int> quests = {};
 
+  /// Things done so far, by [Counts] key. Quests read these.
+  final Map<String, int> counts = {};
+
+  int count(String key) => counts[key] ?? 0;
+  void bump(String key) => counts[key] = count(key) + 1;
+
   /// The last campsite rested at. Falling returns you here.
   ({String zone, Hex hex})? camp;
+
+  /// Where the game was last saved, so Continue picks up there.
+  ({String zone, Hex hex})? resume;
+
+  // ───────────────────────── saving ─────────────────────────
+
+  Map<String, dynamic> toJson() {
+    Map<String, dynamic> where(({String zone, Hex hex}) w) => {
+      'zone': w.zone,
+      'q': w.hex.q,
+      'r': w.hex.r,
+    };
+    return {
+      'hp': hp,
+      'mana': mana,
+      'tokens': tokens,
+      'weapons': weaponSlots,
+      'activeWeapon': activeWeapon,
+      'spells': spellSlots,
+      'known': knownSpells.toList(),
+      'upgrades': upgrades,
+      'bag': [
+        for (final s in bag) s == null ? null : {'id': s.id, 'n': s.count},
+      ],
+      'slain': slain.toList(),
+      'collected': collected.toList(),
+      'quests': quests,
+      'counts': counts,
+      if (camp != null) 'camp': where(camp!),
+      if (resume != null) 'resume': where(resume!),
+    };
+  }
+
+  /// Rebuilds a world from [toJson]. Throws if the data is malformed; callers
+  /// treat that as "no save".
+  factory WorldState.fromJson(Map<String, dynamic> j) {
+    ({String zone, Hex hex}) where(dynamic m) =>
+        (zone: m['zone'] as String, hex: Hex(m['q'] as int, m['r'] as int));
+    Map<String, int> ints(dynamic m) => {
+      for (final e in (m as Map).entries) e.key as String: e.value as int,
+    };
+    List<String?> slots(dynamic l, int n) => [
+      for (var i = 0; i < n; i++)
+        i < (l as List).length ? l[i] as String? : null,
+    ];
+
+    final w = WorldState.newGame();
+    w.hp = j['hp'] as int;
+    w.mana = j['mana'] as int;
+    w.tokens = j['tokens'] as int;
+    w.weaponSlots.setAll(0, slots(j['weapons'], w.weaponSlots.length));
+    w.activeWeapon = (j['activeWeapon'] as int).clamp(
+      0,
+      w.weaponSlots.length - 1,
+    );
+    w.spellSlots.setAll(0, slots(j['spells'], w.spellSlots.length));
+    w.knownSpells.addAll((j['known'] as List).cast<String>());
+    w.upgrades.addAll(ints(j['upgrades']));
+    final bag = j['bag'] as List;
+    for (var i = 0; i < bagSize && i < bag.length; i++) {
+      final b = bag[i];
+      if (b != null) w.bag[i] = ItemStack(b['id'] as String, b['n'] as int);
+    }
+    w.slain.addAll((j['slain'] as List).cast<String>());
+    w.collected.addAll((j['collected'] as List).cast<String>());
+    w.quests.addAll(ints(j['quests']));
+    w.counts.addAll(ints(j['counts']));
+    if (j['camp'] != null) w.camp = where(j['camp']);
+    if (j['resume'] != null) w.resume = where(j['resume']);
+    return w;
+  }
 
   // ───────────────────────── weapons ─────────────────────────
 
@@ -101,6 +199,15 @@ class WorldState {
       if (s != null && s.id == id) n += s.count;
     }
     return n;
+  }
+
+  /// Moves a freshly picked-up weapon from the bag into an empty weapon slot,
+  /// and holds it if your hands were empty. Does nothing if both are full.
+  void autoEquip(String id) {
+    final slot = weaponSlots.indexOf(null);
+    if (slot < 0 || !itemOf(id).isWeapon || !removeItem(id)) return;
+    weaponSlots[slot] = id;
+    if (weaponSlots[activeWeapon] == null) activeWeapon = slot;
   }
 
   bool hasItem(String id) => countOf(id) > 0;

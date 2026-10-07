@@ -19,6 +19,7 @@ class ItemSlot extends StatelessWidget {
     this.active = false,
     this.dim = false,
     this.accent,
+    this.flag = false,
     this.mult = 2,
   });
 
@@ -40,13 +41,16 @@ class ItemSlot extends StatelessWidget {
 
   /// Border colour for special items.
   final Color? accent;
+
+  /// Marks the slot as the one a quest wants you to use.
+  final bool flag;
   final int mult;
 
   @override
   Widget build(BuildContext context) {
     final u = PixelUi.unit(context);
     final size = (12 * mult + 4) * u;
-    final border = selected
+    final border = selected || flag
         ? Pal.goldLight
         : active
         ? Pal.gold
@@ -73,6 +77,12 @@ class ItemSlot extends StatelessWidget {
                       : PxIcon(icon!, mult: mult),
                 ),
               ),
+              if (flag)
+                Positioned(
+                  right: 2 * u,
+                  top: 2 * u,
+                  child: const PxIcon('star_s'),
+                ),
               if (corner != null)
                 Positioned(
                   left: 3 * u,
@@ -115,8 +125,9 @@ Color? tierColor(int level) => switch (level) {
   _ => null,
 };
 
-/// The bar of big slots under the world: two weapons, two spells and two
-/// potions. Tap to use.
+/// The bar of big slots under the world. Weapons on the left, spells in the
+/// middle, potions on the right; a group only appears once you have
+/// something for it. Tap to use.
 class QuickBar extends StatelessWidget {
   const QuickBar({
     super.key,
@@ -126,6 +137,7 @@ class QuickBar extends StatelessWidget {
     required this.onSpell,
     required this.onUse,
     required this.canCast,
+    this.pointAt,
   });
 
   final WorldState world;
@@ -137,53 +149,66 @@ class QuickBar extends StatelessWidget {
   /// Whether the spell in the given slot can be cast right now.
   final bool Function(String spell) canCast;
 
+  /// Item or spell id a quest wants you to use, shown with a star.
+  final String? pointAt;
+
   @override
   Widget build(BuildContext context) {
-    final slots = <Widget>[];
-    for (var i = 0; i < world.weaponSlots.length; i++) {
-      final id = world.weaponSlots[i];
-      slots.add(
-        ItemSlot(
-          icon: id == null ? null : itemOf(id).icon,
-          badge: id == null ? null : '${world.damageOf(id)}',
-          corner: id != null && world.level(id) > 0
-              ? '+${world.level(id)}'
-              : null,
-          active: id != null && world.activeWeapon == i && !targeting,
-          accent: id == null ? null : tierColor(world.level(id)),
-          onTap: id == null ? null : () => onWeapon(i),
-        ),
-      );
-    }
-    for (var i = 0; i < world.spellSlots.length; i++) {
-      final id = world.spellSlots[i];
-      final def = id == null ? null : spellDefs[id];
-      slots.add(
-        ItemSlot(
-          icon: def?.icon,
-          badge: def == null ? null : '${def.cost}',
-          active: id == 'fireball' && targeting,
-          dim: def != null && !canCast(def.id),
-          onTap: def == null ? null : () => onSpell(i),
-        ),
-      );
-    }
-    for (final id in const ['potion', 'ether']) {
-      final n = world.countOf(id);
-      slots.add(
-        ItemSlot(
-          icon: itemOf(id).icon,
-          badge: '$n',
-          dim: n == 0,
-          onTap: n == 0 ? null : () => onUse(id),
-        ),
-      );
-    }
-    return Wrap(
-      alignment: WrapAlignment.center,
-      spacing: 6,
-      runSpacing: 6,
-      children: slots,
+    final weapons = <Widget>[
+      for (var i = 0; i < world.weaponSlots.length; i++)
+        if (world.weaponSlots[i] case final id?)
+          ItemSlot(
+            icon: itemOf(id).icon,
+            badge: '${world.damageOf(id)}',
+            corner: world.level(id) > 0 ? '+${world.level(id)}' : null,
+            active: world.activeWeapon == i && !targeting,
+            flag: pointAt == id && world.activeWeapon != i,
+            accent: tierColor(world.level(id)),
+            onTap: () => onWeapon(i),
+          ),
+    ];
+    final spells = <Widget>[
+      for (var i = 0; i < world.spellSlots.length; i++)
+        if (spellDefs[world.spellSlots[i]] case final def?)
+          ItemSlot(
+            icon: def.icon,
+            badge: '${def.cost}',
+            active: def.id == 'fireball' && targeting,
+            dim: !canCast(def.id),
+            flag: pointAt == def.id,
+            onTap: () => onSpell(i),
+          ),
+    ];
+    final items = <Widget>[
+      for (final id in const ['potion', 'ether'])
+        if (world.countOf(id) > 0)
+          ItemSlot(
+            icon: itemOf(id).icon,
+            badge: '${world.countOf(id)}',
+            flag: pointAt == id,
+            onTap: () => onUse(id),
+          ),
+    ];
+    Widget group(List<Widget> slots) => Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 0; i < slots.length; i++) ...[
+          if (i > 0) const SizedBox(width: 6),
+          slots[i],
+        ],
+      ],
+    );
+    return SizedBox(
+      width: double.infinity,
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        spacing: 12,
+        runSpacing: 6,
+        children: [
+          for (final g in [weapons, spells, items])
+            if (g.isNotEmpty) group(g),
+        ],
+      ),
     );
   }
 }

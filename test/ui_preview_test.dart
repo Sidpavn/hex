@@ -69,17 +69,126 @@ void main() {
     }
 
     await tester.runAsync(() async {
+      await ZoneRepo.load('training');
       await ZoneRepo.load('meadow');
       await ZoneRepo.load('cave');
     });
-    await shot('zone_meadow', const ZoneScreen(), settle: 2);
-    // An enemy has just noticed the hero.
+    await shot('zone_training', const ZoneScreen(), settle: 2);
+    // The training post, in reach of a sword.
     {
       final key = GlobalKey();
       await tester.pumpWidget(
         RepaintBoundary(
           key: key,
           child: const HexApp(home: ZoneScreen()),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 200));
+      final dynamic st = tester.state(find.byType(ZoneScreen));
+      final z = st.zone as Zone;
+      final post = z.enemies.firstWhere((e) => e.type == UnitType.post);
+      (st.world as WorldState)
+        ..addItem('sword')
+        ..equipped = 'sword';
+      final spot = post.hex.neighbors.firstWhere((h) => z.tiles[h]!.walkable);
+      st.sim.hero = spot;
+      st.heroWorld = hexWorld(spot);
+      st.cam = st.heroWorld;
+      st.setState(() {});
+      for (var i = 0; i < 3; i++) {
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+      final boundary =
+          key.currentContext!.findRenderObject() as RenderRepaintBoundary;
+      await tester.runAsync(() async {
+        final img = await boundary.toImage(pixelRatio: 3);
+        final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
+        File(
+          '$dir/zone_post.png',
+        ).writeAsBytesSync(bytes!.buffer.asUint8List());
+      });
+    }
+    // A full quick bar, with the quest pointing at the bow.
+    {
+      final key = GlobalKey();
+      await tester.pumpWidget(
+        RepaintBoundary(
+          key: key,
+          child: const HexApp(home: ZoneScreen()),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 200));
+      final dynamic st = tester.state(find.byType(ZoneScreen));
+      (st.world as WorldState)
+        ..quests['training'] = 2
+        ..addItem('sword')
+        ..autoEquip('sword')
+        ..addItem('bow')
+        ..autoEquip('bow')
+        ..learn('fireball')
+        ..learn('mend')
+        ..addItem('potion', 2)
+        ..addItem('ether');
+      st.setState(() {});
+      for (var i = 0; i < 3; i++) {
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+      final boundary =
+          key.currentContext!.findRenderObject() as RenderRepaintBoundary;
+      await tester.runAsync(() async {
+        final img = await boundary.toImage(pixelRatio: 3);
+        final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
+        File('$dir/zone_bar.png').writeAsBytesSync(bytes!.buffer.asUint8List());
+      });
+    }
+    // The cave boss has aimed at the hero.
+    {
+      final key = GlobalKey();
+      await tester.pumpWidget(
+        RepaintBoundary(
+          key: key,
+          child: const HexApp(home: ZoneScreen(startZone: 'cave')),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 200));
+      final dynamic st = tester.state(find.byType(ZoneScreen));
+      final sim = st.sim as ZoneSim;
+      final boss = sim.enemies.firstWhere((e) => e.type == UnitType.pyromancer);
+      final spot = [
+        for (final h in sim.zone.tiles.keys)
+          if (sim.zone.tiles[h]!.walkable &&
+              h.distanceTo(boss.hex) == 4 &&
+              sim.lineOfSight(h, boss.hex))
+            h,
+      ].first;
+      sim.hero = spot;
+      for (var i = 0; i < 8 && boss.telegraph.isEmpty; i++) {
+        sim.wait();
+      }
+      st.heroWorld = hexWorld(sim.hero);
+      st.cam = st.heroWorld;
+      st.afterTurn(sim);
+      for (var i = 0; i < 3; i++) {
+        await tester.pump(const Duration(milliseconds: 130));
+      }
+      final boundary =
+          key.currentContext!.findRenderObject() as RenderRepaintBoundary;
+      await tester.runAsync(() async {
+        final img = await boundary.toImage(pixelRatio: 3);
+        final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
+        File(
+          '$dir/zone_boss.png',
+        ).writeAsBytesSync(bytes!.buffer.asUint8List());
+      });
+    }
+    await shot('zone_meadow', const ZoneScreen(startZone: 'meadow'), settle: 2);
+    // An enemy has just noticed the hero.
+    {
+      final key = GlobalKey();
+      await tester.pumpWidget(
+        RepaintBoundary(
+          key: key,
+          child: const HexApp(home: ZoneScreen(startZone: 'meadow')),
         ),
       );
       await tester.pump(const Duration(milliseconds: 200));
@@ -110,7 +219,7 @@ void main() {
       await tester.pumpWidget(
         RepaintBoundary(
           key: key,
-          child: const HexApp(home: ZoneScreen()),
+          child: const HexApp(home: ZoneScreen(startZone: 'meadow')),
         ),
       );
       await tester.pump(const Duration(milliseconds: 200));
@@ -186,7 +295,7 @@ void main() {
       await tester.pumpWidget(
         RepaintBoundary(
           key: key,
-          child: const HexApp(home: ZoneScreen()),
+          child: const HexApp(home: ZoneScreen(startZone: 'meadow')),
         ),
       );
       await tester.pump(const Duration(milliseconds: 200));

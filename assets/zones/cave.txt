@@ -11,7 +11,7 @@ item ether1 20 8 ether
 enemy knight 8 8 patrol 10,12
 enemy archer 20 6 guard
 enemy golem 23 11 sleep
-enemy mage 14 5 guard
+enemy pyromancer 14 5 guard
 map
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
