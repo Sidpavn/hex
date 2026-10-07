@@ -689,14 +689,6 @@ class _InventoryOverlayState extends State<InventoryOverlay> {
       }
     }
     if (def.isWeapon && !inBag) {
-      if (w.activeWeapon != sel.index) {
-        out.add(
-          btn('Hold this', () {
-            w.activeWeapon = sel.index;
-            _changed('${def.name} in hand.');
-          }, filled: true),
-        );
-      }
       out.add(
         btn('Unequip', () {
           final ok = w.unequip(sel.index);
