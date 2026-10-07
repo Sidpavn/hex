@@ -36,7 +36,7 @@ overworld, or the reverse.
 |---|---|---|
 | Cost | Free, unlimited | Mana |
 | Role | Reliable default | Burst or utility |
-| Identity | Range, damage, sneak | Effect, area, summon |
+| Identity | Range, damage, sneak | Effect, area, conjured orb or creature |
 
 Keep both. Ideas for making weapons differ in feel, not just in numbers:
 
@@ -48,40 +48,53 @@ Keep both. Ideas for making weapons differ in feel, not just in numbers:
 Weapon upgrades stay as tokens at a campfire. Crafting becomes the way to
 *get* a new weapon, not to upgrade one.
 
-## 3. Summons (deferred)
+## 3. Summons (deferred, approach decided)
 
-On hold. Not part of the first slices, and no mana system is needed yet.
-The notes below are kept for later.
+Not part of the first slices. When they come, they follow this approach.
 
-Summons are spells. They cost mana, appear on a hex near the hero, and last
-**3 turns** (decided). Support summons last longer.
+Summons are spells that conjure **orbs and creatures**, not soldiers. A knight
+or archer appearing from a spell reads as awkward, and a person-shaped unit
+needs a walk cycle, a weapon and a reason to exist. A conjured thing is a
+small sprite defined by one rule. They are also overworld-only: the card
+board keeps its own summon cards.
 
-### Combat summons (3 turns)
+### Starter set
 
-- Knight: melee, soaks hits.
-- Archer: ranged, needs line of sight.
-- Golem: high HP, slow, acts as a wall.
-- Cavalry: moves far, one charge, then spent.
-- Mage: low HP, splash damage.
+| Summon | Form | Rule | Needs |
+|---|---|---|---|
+| Ward orb | Stationary orb | Shield aura on adjacent hexes | Shield status |
+| Ember wisp | Floating flame orb | Ranged attack, applies Burn | Burn status |
+| Stone sentinel | Rock creature | High HP, blocks its hex | Nothing |
+| Lantern sprite | Small light creature | Lights dark zones, reveals hidden enemies | Dark-zone light |
+| Thorn bloom | Plant on a hex | Roots enemies next to it | Root status (later) |
 
-### Support summons (5–6 turns, weak in a fight)
-
-- Healer: heals the hero or allies each turn, no attack.
-- Lantern spirit: lights an area (dark zones) and reveals hidden enemies.
-- Decoy / scarecrow: enemies target it instead of the hero.
-- Ward totem: stationary aura (shield or resistance) on adjacent hexes.
-- Scout: moves ahead and reveals line of sight, no attack.
-- Gatherer (later): collects a nearby resource node.
+Build order: ward orb first (no AI, only an aura), then ember wisp (basic
+ranged targeting). If those two work, the rest are variations.
 
 ### Rules
 
-- Cap active summons at 2–3.
-- Show the remaining turns on the unit as a pixel number (no rings, no fades).
+- A summon is a spell: costs mana, appears on a free hex near the hero.
+- Objects first. Orbs and plants do one thing on a timer and never move, so
+  they need no pathing. Add one moving creature (sentinel or sprite) only
+  after objects work.
+- Lifespan in turns, flat 3 to start, tune later. Support summons (ward orb,
+  lantern sprite) can last longer.
+- Cap active summons at 2.
+- Show remaining turns on the sprite as a pixel number (no rings, no fades).
 - Expiry is a one-frame cut, not a dissolve.
 - A summon killed early refunds nothing.
 - Summons act after the hero and before enemies, so outcomes are predictable.
+- Summons lean on the status system (section 4), so build statuses first.
+
+### What this needs first
+
+- A mana pool for the hero: max, regen rule, flat cost per cast.
+- Statuses (slice 1) for the wisp and ward orb.
+- Persisting summon timers in `storage.dart`.
 
 Open: mana only, or mana plus cooldown? Start with mana plus the cap.
+Open: do enemies target summons, or only the hero? (Decoy-style summons
+would need the former.)
 
 ## 4. Status effects
 
@@ -160,7 +173,8 @@ tap-to-use.
   do not scroll.
 - Keep a tap-only path so swipe is a shortcut, not a requirement.
 
-Open: while aiming a spell, does a swipe cancel the aim or switch spell?
+Decided for now: a swipe while aiming moves the selection and ends the aim
+(only Fireball is aimed today). Revisit when a second aimed spell exists.
 Open: exact swipe threshold and axis lock (needs a device test).
 
 ## 6. Progression and pacing (decided approach)
@@ -179,10 +193,10 @@ previous one has been used.
 1. Weapons and sneaking (meadow, training zone).
 2. Fireball, which introduces burn.
 3. Mend and Shield.
-4. ~~First summon (Knight)~~ deferred.
+4. First summon (ward orb), once mana exists. Deferred for now.
 5. Poison from a cave enemy, with the antidote as the first crafted item.
 6. Stun, via a boss mechanic.
-7. ~~Support summons~~ deferred.
+7. More summons (ember wisp, then creatures). Deferred for now.
 8. Scavenging and resource nodes.
 9. Crafting at the camp.
 10. Currency and a trader.

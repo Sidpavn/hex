@@ -125,28 +125,99 @@ Color? tierColor(int level) => switch (level) {
   _ => null,
 };
 
-/// The bar of big slots under the world. Weapons on the left, spells in the
-/// middle, potions on the right; a group only appears once you have
-/// something for it. Tap to use.
+enum QuickKind { weapon, spell, item }
+
+/// One slot on the quick bar. [slot] is the weapon or spell slot, [id] the
+/// spell or item.
+class QuickEntry {
+  const QuickEntry(this.kind, this.id, [this.slot = 0]);
+
+  final QuickKind kind;
+  final String id;
+  final int slot;
+
+  String get key => '${kind.name}:$id:$slot';
+}
+
+/// Everything on the bar, weapons then spells then potions. A group only
+/// appears once you have something for it.
+List<QuickEntry> quickEntries(WorldState world) => [
+  for (var i = 0; i < world.weaponSlots.length; i++)
+    if (world.weaponSlots[i] case final id?)
+      QuickEntry(QuickKind.weapon, id, i),
+  for (var i = 0; i < world.spellSlots.length; i++)
+    if (spellDefs[world.spellSlots[i]] case final def?)
+      QuickEntry(QuickKind.spell, def.id, i),
+  for (final id in const ['potion', 'ether'])
+    if (world.countOf(id) > 0) QuickEntry(QuickKind.item, id),
+];
+
+/// The selected entry: the one named by [key], else the weapon in hand.
+QuickEntry? selectedQuick(
+  List<QuickEntry> entries,
+  String? key,
+  WorldState world,
+) {
+  if (entries.isEmpty) return null;
+  for (final e in entries) {
+    if (e.key == key) return e;
+  }
+  for (final e in entries) {
+    if (e.kind == QuickKind.weapon && e.slot == world.activeWeapon) return e;
+  }
+  return entries.first;
+}
+
+/// The entry [dir] (+1 or -1) away from [from]. With [group] it jumps to the
+/// first entry of the next or previous group instead. Stays put at the ends.
+QuickEntry stepQuick(
+  List<QuickEntry> entries,
+  QuickEntry from,
+  int dir, {
+  bool group = false,
+}) {
+  final at = entries.indexWhere((e) => e.key == from.key);
+  if (at < 0) return from;
+  if (!group) return entries[(at + dir).clamp(0, entries.length - 1)];
+  var i = at + dir;
+  while (i >= 0 && i < entries.length && entries[i].kind == from.kind) {
+    i += dir;
+  }
+  if (i < 0 || i >= entries.length) return from;
+  final kind = entries[i].kind;
+  while (i - dir >= 0 &&
+      i - dir < entries.length &&
+      entries[i - dir].kind == kind) {
+    i -= dir;
+  }
+  return entries[i];
+}
+
+/// The strip of big slots under the world: weapons, then spells, then
+/// potions, with a thin divider between groups. Swiping the screen moves the
+/// selection one slot (a fling jumps a group); tapping the selected slot
+/// uses it and tapping any other slot selects it.
 class QuickBar extends StatelessWidget {
   const QuickBar({
     super.key,
     required this.world,
+    required this.selected,
     required this.targeting,
-    required this.onWeapon,
-    required this.onSpell,
+    required this.onSelect,
     required this.onUse,
     required this.canCast,
     this.pointAt,
   });
 
   final WorldState world;
-  final bool targeting;
-  final void Function(int slot) onWeapon;
-  final void Function(int slot) onSpell;
-  final void Function(String item) onUse;
 
-  /// Whether the spell in the given slot can be cast right now.
+  /// Key of the selected [QuickEntry]; falls back to the weapon in hand.
+  final String? selected;
+  final bool targeting;
+  final void Function(QuickEntry e) onSelect;
+  final void Function(QuickEntry e) onUse;
+
+  /// Whether the spell with the given id can be cast right now.
   final bool Function(String spell) canCast;
 
   /// Item or spell id a quest wants you to use, shown with a star.
@@ -154,61 +225,74 @@ class QuickBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final weapons = <Widget>[
-      for (var i = 0; i < world.weaponSlots.length; i++)
-        if (world.weaponSlots[i] case final id?)
-          ItemSlot(
-            icon: itemOf(id).icon,
-            badge: '${world.damageOf(id)}',
-            corner: world.level(id) > 0 ? '+${world.level(id)}' : null,
-            active: world.activeWeapon == i && !targeting,
-            flag: pointAt == id && world.activeWeapon != i,
-            accent: tierColor(world.level(id)),
-            onTap: () => onWeapon(i),
-          ),
-    ];
-    final spells = <Widget>[
-      for (var i = 0; i < world.spellSlots.length; i++)
-        if (spellDefs[world.spellSlots[i]] case final def?)
-          ItemSlot(
-            icon: def.icon,
-            badge: '${def.cost}',
-            active: def.id == 'fireball' && targeting,
-            dim: !canCast(def.id),
-            flag: pointAt == def.id,
-            onTap: () => onSpell(i),
-          ),
-    ];
-    final items = <Widget>[
-      for (final id in const ['potion', 'ether'])
-        if (world.countOf(id) > 0)
-          ItemSlot(
-            icon: itemOf(id).icon,
-            badge: '${world.countOf(id)}',
-            flag: pointAt == id,
-            onTap: () => onUse(id),
-          ),
-    ];
-    Widget group(List<Widget> slots) => Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (var i = 0; i < slots.length; i++) ...[
-          if (i > 0) const SizedBox(width: 6),
-          slots[i],
-        ],
-      ],
-    );
+    final u = PixelUi.unit(context);
+    final entries = quickEntries(world);
+    final sel = selectedQuick(entries, selected, world);
+    if (sel == null) return const SizedBox.shrink();
+    final side = (12 * _mult + 4) * u;
+    final rise = 2 * u;
     return SizedBox(
       width: double.infinity,
-      child: Wrap(
-        alignment: WrapAlignment.spaceBetween,
-        spacing: 12,
-        runSpacing: 6,
+      height: side + rise,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          for (final g in [weapons, spells, items])
-            if (g.isNotEmpty) group(g),
+          for (var i = 0; i < entries.length; i++) ...[
+            if (i > 0)
+              entries[i].kind != entries[i - 1].kind
+                  ? Container(
+                      width: u,
+                      height: side,
+                      margin: EdgeInsets.symmetric(horizontal: 3 * u),
+                      color: Pal.dimmer,
+                    )
+                  : SizedBox(width: 2 * u),
+            _slot(entries[i], entries[i].key == sel.key, rise),
+          ],
         ],
       ),
+    );
+  }
+
+  static const _mult = 2;
+
+  Widget _slot(QuickEntry e, bool isSel, double rise) {
+    const mult = _mult;
+    final slot = switch (e.kind) {
+      QuickKind.weapon => ItemSlot(
+        icon: itemOf(e.id).icon,
+        badge: '${world.damageOf(e.id)}',
+        corner: world.level(e.id) > 0 ? '+${world.level(e.id)}' : null,
+        mult: mult,
+        selected: isSel,
+        active: world.activeWeapon == e.slot && !targeting,
+        flag: pointAt == e.id && world.activeWeapon != e.slot,
+        accent: tierColor(world.level(e.id)),
+        onTap: () => isSel ? onUse(e) : onSelect(e),
+      ),
+      QuickKind.spell => ItemSlot(
+        icon: spellDefs[e.id]!.icon,
+        badge: '${spellDefs[e.id]!.cost}',
+        mult: mult,
+        selected: isSel,
+        active: e.id == 'fireball' && targeting,
+        dim: !canCast(e.id),
+        flag: pointAt == e.id,
+        onTap: () => isSel ? onUse(e) : onSelect(e),
+      ),
+      QuickKind.item => ItemSlot(
+        icon: itemOf(e.id).icon,
+        badge: '${world.countOf(e.id)}',
+        mult: mult,
+        selected: isSel,
+        flag: pointAt == e.id,
+        onTap: () => isSel ? onUse(e) : onSelect(e),
+      ),
+    };
+    return Padding(
+      padding: EdgeInsets.only(bottom: isSel ? rise : 0),
+      child: slot,
     );
   }
 }

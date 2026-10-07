@@ -330,6 +330,77 @@ void main() {
       expect(world.hp, before - 1);
     });
 
+    group('burn status', () {
+      ZoneSim lit({String enemy = 'golem 9 3 sleep'}) {
+        final s = sim(zoneOf(grass, enemies: [enemy]), hero: at(2, 3));
+        return s;
+      }
+
+      test('standing in fire sets an enemy burning for 1 damage a turn', () {
+        final s = lit();
+        final e = s.enemies.single;
+        s.fire[e.hex] = 5;
+        final hp = e.hp;
+        s.wait();
+        expect(e.hp, hp - 1);
+        expect(e.burn, ZoneSim.burnStatusTurns - 1);
+      });
+
+      test('it keeps burning after the fire is gone, then stops', () {
+        final s = lit();
+        final e = s.enemies.single;
+        e.burn = 2;
+        final hp = e.hp;
+        s.wait();
+        s.wait();
+        expect(e.hp, hp - 2);
+        expect(e.burn, 0);
+        s.wait();
+        expect(e.hp, hp - 2);
+      });
+
+      test('reapplying refreshes the duration and does not stack', () {
+        final s = lit();
+        final e = s.enemies.single;
+        e.burn = 1;
+        s.fire[e.hex] = 5;
+        final hp = e.hp;
+        s.wait();
+        // One damage for the turn, not two, and the timer is back up.
+        expect(e.hp, hp - 1);
+        expect(e.burn, ZoneSim.burnStatusTurns - 1);
+      });
+
+      test('fire-immune enemies do not burn', () {
+        final s = lit(enemy: 'pyromancer 9 3 sleep');
+        final e = s.enemies.single;
+        s.fire[e.hex] = 5;
+        final hp = e.hp;
+        s.wait();
+        expect(e.burn, 0);
+        expect(e.hp, hp);
+      });
+
+      test('a fireball sets the survivors burning', () {
+        final s = sim(
+          zoneOf(grass, enemies: ['golem 8 3 sleep']),
+          hero: at(5, 3),
+        );
+        final e = s.enemies.single;
+        expect(s.castFireball(e.hex), isTrue);
+        expect(e.burn, greaterThan(0));
+      });
+
+      test('burn can kill', () {
+        final s = lit(enemy: 'knight 9 3 sleep');
+        final e = s.enemies.single;
+        e.hp = 1;
+        e.burn = 2;
+        s.wait();
+        expect(s.enemies, isEmpty);
+      });
+    });
+
     test('enemies refuse to path through fire', () {
       final z = zoneOf(grass, enemies: ['knight 9 3 guard']);
       final s = sim(z, hero: at(2, 3));

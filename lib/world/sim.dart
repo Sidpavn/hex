@@ -63,6 +63,10 @@ class Enemy {
   int charge = 0;
   int cool = 0;
 
+  /// Turns of burning left. Each turn end it deals 1 damage. Reapplying
+  /// refreshes it, it does not stack.
+  int burn = 0;
+
   /// Where it was last seen the hero, while alert or searching.
   Hex? lastSeen;
   int _lost = 0;
@@ -218,6 +222,9 @@ class ZoneSim {
 
   /// Turns a hex keeps burning.
   static const burnTurns = 2;
+
+  /// Turns the burn status lasts on a unit.
+  static const burnStatusTurns = 3;
 
   /// Chance a burning forest lights a neighbouring forest each turn.
   static const fireSpread = 0.5;
@@ -492,7 +499,10 @@ class ZoneSim {
       if (_burnable(h)) fire[h] = burnTurns;
       final dmg = h == target ? 2 : 1;
       final e = enemyAt(h);
-      if (e != null && !e.stats.fireImmune) _damageEnemy(e, dmg);
+      if (e != null && !e.stats.fireImmune) {
+        _damageEnemy(e, dmg);
+        if (e.alive) _ignite(e);
+      }
       if (h == hero) _hurtHero(dmg);
     }
     tick();
@@ -551,6 +561,7 @@ class ZoneSim {
       if (heroDown) break;
     }
     _fireStep();
+    _statusStep();
     enemies.removeWhere((e) => !e.alive);
     _regen();
   }
@@ -615,7 +626,7 @@ class ZoneSim {
     final burning = fire.keys.toList();
     for (final h in burning) {
       final e = enemyAt(h);
-      if (e != null && !e.stats.fireImmune) _damageEnemy(e, 1);
+      if (e != null && !e.stats.fireImmune) _ignite(e);
       if (h == hero && !heroDown) _hurtHero(1);
     }
     final lit = <Hex>[];
@@ -642,6 +653,21 @@ class ZoneSim {
     }
     for (final h in lit) {
       fire[h] = burnTurns;
+    }
+  }
+
+  /// Sets [e] burning, or refreshes it if it already is.
+  void _ignite(Enemy e) {
+    if (e.stats.fireImmune || !e.alive) return;
+    e.burn = burnStatusTurns;
+  }
+
+  /// Turn-end statuses: damage first, then tick the duration down.
+  void _statusStep() {
+    for (final e in enemies) {
+      if (!e.alive || e.burn <= 0) continue;
+      _damageEnemy(e, 1);
+      e.burn--;
     }
   }
 

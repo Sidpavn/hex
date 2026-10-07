@@ -658,14 +658,67 @@ class _ZoneScreenState extends State<ZoneScreen>
     };
   }
 
-  /// Weapon slot tapped on the quick bar.
-  void _holdWeapon(int slot) {
-    if (world.weaponSlots[slot] == null) return;
+  /// Key of the selected quick-bar entry (null: the weapon in hand).
+  String? _quickKey;
+  double _swipe = 0;
+  bool _swiped = false;
+
+  /// Selects a quick-bar slot. Choosing a weapon puts it in hand; moving the
+  /// selection off the spell being aimed ends the aim.
+  void _selectQuick(QuickEntry e) {
+    if (e.kind == QuickKind.weapon && world.weaponSlots[e.slot] == null) return;
     setState(() {
-      world.activeWeapon = slot;
+      _quickKey = e.key;
       targeting = false;
+      if (e.kind == QuickKind.weapon) world.activeWeapon = e.slot;
     });
   }
+
+  /// Uses the selected slot: aims or casts a spell, drinks a potion. A
+  /// weapon is already in hand, so tapping it does nothing.
+  void _useQuick(QuickEntry e) {
+    switch (e.kind) {
+      case QuickKind.weapon:
+        break;
+      case QuickKind.spell:
+        _useSpell(e.slot);
+      case QuickKind.item:
+        _drink(e.id);
+    }
+  }
+
+  void _moveQuick(int dir, {bool group = false}) {
+    final entries = quickEntries(world);
+    final cur = selectedQuick(entries, _quickKey, world);
+    if (cur == null) return;
+    final next = stepQuick(entries, cur, dir, group: group);
+    if (next.key != cur.key) _selectQuick(next);
+  }
+
+  /// Swipe anywhere on the world: left moves the selection on, right back.
+  void _swipeUpdate(double dx) {
+    _swipe += dx;
+    if (_swipe.abs() >= _swipeStep) {
+      _moveQuick(_swipe < 0 ? 1 : -1);
+      _swipe = 0;
+      _swiped = true;
+    }
+  }
+
+  void _swipeEnd(double velocity) {
+    if (!_swiped) {
+      if (velocity.abs() > _flingSpeed) {
+        _moveQuick(velocity < 0 ? 1 : -1, group: true);
+      } else if (_swipe.abs() > _swipeStep / 3) {
+        _moveQuick(_swipe < 0 ? 1 : -1);
+      }
+    }
+    _swipe = 0;
+    _swiped = false;
+  }
+
+  static const _swipeStep = 40.0;
+  static const _flingSpeed = 1500.0;
 
   /// Drinks a potion through the game, so it takes a turn.
   bool _drink(String id) {
@@ -742,6 +795,9 @@ class _ZoneScreenState extends State<ZoneScreen>
                 return GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTapUp: (d) => _tap(d.localPosition, size),
+                  onHorizontalDragUpdate: (d) => _swipeUpdate(d.delta.dx),
+                  onHorizontalDragEnd: (d) =>
+                      _swipeEnd(d.velocity.pixelsPerSecond.dx),
                   child: CustomPaint(size: size, painter: _ZonePainter(this)),
                 );
               },
@@ -885,27 +941,34 @@ class _ZoneScreenState extends State<ZoneScreen>
                 ),
               ],
             ),
-            const SizedBox(height: 3),
-            Row(
-              children: [
-                const PxIcon('heart'),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: PxBar(
-                    value: world.hp / WorldState.maxHp,
-                    color: Pal.red,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                for (var i = 0; i < WorldState.maxMana; i++)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 3),
-                    child: _ManaPip(filled: i < world.mana),
-                  ),
-              ],
-            ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Health and mana on one line, just above the quick bar.
+  Widget _vitals() {
+    return ValueListenableBuilder<int>(
+      valueListenable: turn,
+      builder: (context, t, _) => Row(
+        children: [
+          const PxIcon('heart'),
+          const SizedBox(width: 4),
+          Expanded(
+            child: PxBar(
+              value: world.hp / WorldState.maxHp,
+              color: Pal.red,
+              rows: 7,
+            ),
+          ),
+          const SizedBox(width: 12),
+          for (var i = 0; i < WorldState.maxMana; i++)
+            Padding(
+              padding: const EdgeInsets.only(left: 3),
+              child: _ManaPip(filled: i < world.mana),
+            ),
+        ],
       ),
     );
   }
@@ -914,14 +977,21 @@ class _ZoneScreenState extends State<ZoneScreen>
     return Padding(
       key: _barKey,
       padding: const EdgeInsets.only(top: 6),
-      child: QuickBar(
-        pointAt: currentObjective(world)?.hint,
-        world: world,
-        targeting: targeting,
-        canCast: _spellReady,
-        onWeapon: _holdWeapon,
-        onSpell: _useSpell,
-        onUse: (id) => _drink(id),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _vitals(),
+          const SizedBox(height: 6),
+          QuickBar(
+            pointAt: currentObjective(world)?.hint,
+            world: world,
+            selected: _quickKey,
+            targeting: targeting,
+            canCast: _spellReady,
+            onSelect: _selectQuick,
+            onUse: _useQuick,
+          ),
+        ],
       ),
     );
   }
@@ -970,10 +1040,10 @@ class _ManaPip extends StatelessWidget {
   Widget build(BuildContext context) {
     final u = PixelUi.unit(context);
     return Container(
-      width: 4 * u,
-      height: 4 * u,
+      width: 7 * u,
+      height: 7 * u,
       decoration: BoxDecoration(
-        color: filled ? const Color(0xFF78E6F0) : Pal.panelLo,
+        color: filled ? const Color(0xFF78E6F0) : const Color(0xFF2C4A56),
         border: Border.all(color: Pal.ink, width: u),
       ),
     );
@@ -1568,6 +1638,25 @@ class _ZonePainter extends CustomPainter {
         );
       }
       iconTop -= 5;
+    }
+
+    // Burning: a flame beside it, one pip per turn left.
+    if (e.burn > 0) {
+      final b = art.sprite('burn');
+      final x = (img.width / 2).ceilToDouble() + 1;
+      td.blit(canvas, b, ground, x, top, sc);
+      for (var i = 0; i < e.burn; i++) {
+        td.rect(
+          canvas,
+          ground,
+          x + i * 2,
+          top + b.height + 1,
+          1,
+          1,
+          sc,
+          Pal.gold,
+        );
+      }
     }
 
     // What it is thinking.

@@ -190,10 +190,10 @@ void main() {
         home: Material(
           child: QuickBar(
             world: w,
+            selected: null,
             targeting: false,
             pointAt: pointAt,
-            onWeapon: (_) {},
-            onSpell: (_) {},
+            onSelect: (_) {},
             onUse: (_) {},
             canCast: (_) => true,
           ),
@@ -225,5 +225,47 @@ void main() {
     pointAt = 'sword';
     await show();
     expect(flagged(), 0); // already in hand
+  });
+
+  group('quick bar selection', () {
+    final w = WorldState.newGame()
+      ..addItem('sword')
+      ..autoEquip('sword')
+      ..addItem('bow')
+      ..autoEquip('bow')
+      ..learn('mend')
+      ..addItem('potion');
+    final entries = quickEntries(w);
+    QuickEntry at(int i) => entries[i];
+
+    test('orders weapons, then spells, then potions', () {
+      final order = entries.map((e) => e.kind.index).toList();
+      expect(order, [...order]..sort());
+      expect(entries.first.kind, QuickKind.weapon);
+      expect(entries.last.kind, QuickKind.item);
+    });
+
+    test('with nothing chosen, the weapon in hand is selected', () {
+      w.activeWeapon = 1;
+      final sel = selectedQuick(entries, null, w)!;
+      expect(sel.kind, QuickKind.weapon);
+      expect(sel.slot, 1);
+      w.activeWeapon = 0;
+    });
+
+    test('a swipe moves one slot and stops at the ends', () {
+      expect(stepQuick(entries, at(0), 1).key, at(1).key);
+      expect(stepQuick(entries, at(0), -1).key, at(0).key);
+      final last = entries.length - 1;
+      expect(stepQuick(entries, at(last), 1).key, at(last).key);
+    });
+
+    test('a fling jumps to the first slot of the next group', () {
+      final next = stepQuick(entries, at(0), 1, group: true);
+      expect(next.kind, QuickKind.spell);
+      expect(next.key, entries.firstWhere((e) => e.kind == next.kind).key);
+      final back = stepQuick(entries, entries.last, -1, group: true);
+      expect(back.kind, QuickKind.spell);
+    });
   });
 }

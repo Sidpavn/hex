@@ -882,6 +882,14 @@ kk.....kk
 
 # ───────────────────────── awareness marks ─────────────────────────
 
+@sprite burn idle0
+..k..
+.kok.
+kokrk
+korrk
+.krk.
+..k..
+
 @sprite alert idle0
 kkkk
 kyyk
