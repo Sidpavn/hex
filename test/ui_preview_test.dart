@@ -20,6 +20,7 @@ import 'package:hex/ui/inventory_ui.dart';
 import 'package:hex/ui/pixel/pixel_assets.dart';
 import 'package:hex/ui/setup_screen.dart';
 import 'package:hex/ui/stats_screen.dart';
+import 'package:hex/ui/chop_overlay.dart';
 import 'package:hex/ui/zone_screen.dart';
 import 'package:hex/world/quests.dart';
 import 'package:hex/world/sim.dart';
@@ -182,6 +183,56 @@ void main() {
       });
     }
     await shot('zone_meadow', const ZoneScreen(startZone: 'meadow'), settle: 2);
+    await shot(
+      'zone_chop',
+      Scaffold(
+        body: Stack(
+          children: [
+            ChopOverlay(onDone: (_) {}, onQuick: () {}, onCancel: () {}),
+          ],
+        ),
+      ),
+      settle: 1,
+    );
+    // Beside the first broken bridge with the hatchet and some wood.
+    {
+      final key = GlobalKey();
+      final w = WorldState()
+        ..addItem('hatchet')
+        ..addItem('wood', 3);
+      await tester.pumpWidget(
+        RepaintBoundary(
+          key: key,
+          child: HexApp(
+            home: ZoneScreen(startZone: 'meadow', world: w),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 200));
+      final dynamic st = tester.state(find.byType(ZoneScreen));
+      final sim = st.sim as ZoneSim;
+      sim.enemies.clear();
+      final bridge = sim.source.bridges.first;
+      final stand = bridge.first.neighbors.firstWhere(
+        (h) => sim.zone.tiles[h]?.walkable ?? false,
+      );
+      sim.hero = stand;
+      st.heroWorld = hexWorld(stand);
+      st.cam = st.heroWorld;
+      st.afterTurn(sim);
+      for (var i = 0; i < 3; i++) {
+        await tester.pump(const Duration(milliseconds: 130));
+      }
+      final boundary =
+          key.currentContext!.findRenderObject() as RenderRepaintBoundary;
+      await tester.runAsync(() async {
+        final img = await boundary.toImage(pixelRatio: 3);
+        final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
+        File(
+          '$dir/zone_bridge.png',
+        ).writeAsBytesSync(bytes!.buffer.asUint8List());
+      });
+    }
     // An enemy has just noticed the hero.
     {
       final key = GlobalKey();

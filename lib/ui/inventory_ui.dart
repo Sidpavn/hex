@@ -599,7 +599,7 @@ class _InventoryOverlayState extends State<InventoryOverlay> {
                 : null,
             accent: w.bag[i] == null
                 ? null
-                : (w.bag[i]!.def.isQuest
+                : (w.bag[i]!.def.isKept
                       ? Pal.purple
                       : tierColor(w.level(w.bag[i]!.id))),
             selected: _sel == _Sel(_SelKind.bag, i),
@@ -680,6 +680,8 @@ class _InventoryOverlayState extends State<InventoryOverlay> {
                   ItemKind.weapon => 'Weapon',
                   ItemKind.consumable => 'Consumable',
                   ItemKind.quest => 'Quest item',
+                  ItemKind.tool => 'Tool',
+                  ItemKind.material => 'Material',
                 }, style: const TextStyle(color: Pal.dim, fontSize: 12)),
               ],
             ),
@@ -817,7 +819,7 @@ class _InventoryOverlayState extends State<InventoryOverlay> {
         }, filled: true),
       );
     }
-    if (inBag && !def.isQuest) {
+    if (inBag && !def.isKept) {
       out.add(
         btn('Drop', () {
           w.drop(sel.index);
@@ -826,10 +828,12 @@ class _InventoryOverlayState extends State<InventoryOverlay> {
         }),
       );
     }
-    if (def.isQuest) {
+    if (def.isKept) {
       out.add(
-        const Text(
-          'Quest items stay with you until you hand them in.',
+        Text(
+          def.isTool
+              ? 'Tools stay with you.'
+              : 'Quest items stay with you until you hand them in.',
           style: TextStyle(color: Pal.dim, fontSize: 12),
         ),
       );

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hex/game/hex.dart';
 import 'package:hex/game/models.dart';
 import 'package:hex/world/boss.dart';
+import 'package:hex/world/items.dart';
 import 'package:hex/world/sim.dart';
 import 'package:hex/world/world_state.dart';
 import 'package:hex/world/zone.dart';
@@ -100,5 +101,36 @@ void main() {
     s.events.clear();
     s.attack(again);
     expect(s.events.any((e) => e.kind == SimEventKind.learned), isFalse);
+  });
+
+  test('the warlord teaches Shield and its blast leaves no fire', () {
+    final kit = bossKits[UnitType.warlord]!;
+    expect(kit.spell, 'shield');
+    expect(spellDefs.containsKey(kit.spell), isTrue);
+    expect(kit.fire, isFalse);
+    final z = Zone.parse(
+      [
+        'zone t',
+        'name Test',
+        'dark 0',
+        'enemy warlord 12 3 guard',
+        'map',
+        for (var r = 0; r < 7; r++) (r == 3 ? '@' : '.') + '.' * 19,
+      ].join('\n'),
+    );
+    final s = ZoneSim(
+      z,
+      world: WorldState(),
+      heroAt: at(7, 3),
+      rng: math.Random(1),
+    );
+    final boss = s.enemies.single;
+    for (var i = 0; i < 6 && boss.telegraph.isEmpty; i++) {
+      s.wait();
+    }
+    for (var i = 0; i < 4 && boss.telegraph.isNotEmpty; i++) {
+      s.wait();
+    }
+    expect(s.fire, isEmpty);
   });
 }

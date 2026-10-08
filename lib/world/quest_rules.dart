@@ -81,6 +81,18 @@ class Collected extends Condition {
   bool test(WorldState w) => w.collected.contains(key);
 }
 
+/// At least [atLeast] bridges in [zone] have been mended.
+class Repaired extends Condition {
+  const Repaired(this.zone, this.atLeast);
+
+  final String zone;
+  final int atLeast;
+
+  @override
+  bool test(WorldState w) =>
+      w.repaired.where((id) => id.startsWith('$zone#')).length >= atLeast;
+}
+
 /// The hero is hurt.
 class Wounded extends Condition {
   const Wounded();

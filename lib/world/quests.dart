@@ -246,11 +246,23 @@ const List<Quest> quests = [
         ),
       ),
       Rule(
-        QuestAt('lantern', 1),
+        All([QuestAt('lantern', 1), Repaired('meadow', 1)]),
         QuestObjective(
           'cave',
           'Find the lantern in the Hollow Deep.',
           item: 'lantern',
+        ),
+      ),
+      Rule(
+        All([QuestAt('lantern', 1), HasItem('hatchet')]),
+        QuestObjective('meadow', 'Chop trees and mend the bridge.'),
+      ),
+      Rule(
+        QuestAt('lantern', 1),
+        QuestObjective(
+          'mine',
+          'Find the hatchet in the Old Mine.',
+          item: 'hatchet',
         ),
       ),
     ],
@@ -493,10 +505,26 @@ const Map<String, NpcScript> npcScripts = {
         ),
       ),
       Rule(
+        All([QuestAt('lantern', 1), Repaired('meadow', 1)]),
+        Dialogue('Mara', [
+          'The bridge holds again. The cave is north-east, past the ridge.',
+          'Mind the things that sleep in the dark.',
+        ]),
+      ),
+      Rule(
+        All([QuestAt('lantern', 1), HasItem('hatchet')]),
+        Dialogue('Mara', [
+          'That is my husband\'s hatchet. He kept it sharp.',
+          'Chop the trees by the river. Five wood is enough to mend the '
+              'bridge.',
+        ]),
+      ),
+      Rule(
         QuestAt('lantern', 1),
         Dialogue('Mara', [
-          'The cave is north-east, past the river and the ridge.',
-          'Mind the things that sleep in the dark.',
+          'The cave is across the river, but the bridge is broken.',
+          'My husband\'s hatchet is in the old mine, in the north-west corner '
+              'of the meadow. With wood from the trees you can mend it.',
         ]),
       ),
       Rule(
@@ -505,7 +533,7 @@ const Map<String, NpcScript> npcScripts = {
           'Mara',
           [
             'Oh, a traveller! Please, I dropped my lantern in the cave past '
-                'the ridge.',
+                'the ridge, across the river.',
             'It is the only light I have for the winter nights. Would you '
                 'fetch it?',
           ],

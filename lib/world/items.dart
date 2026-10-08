@@ -1,5 +1,5 @@
 /// What kind of thing an item is, which decides where it can go.
-enum ItemKind { weapon, consumable, quest }
+enum ItemKind { weapon, consumable, quest, tool, material }
 
 /// A kind of item. Weapons are fixed and hand-made (no random stats); you make
 /// them stronger by spending tokens at a campfire.
@@ -46,6 +46,10 @@ class ItemDef {
   bool get isWeapon => kind == ItemKind.weapon;
   bool get isConsumable => kind == ItemKind.consumable;
   bool get isQuest => kind == ItemKind.quest;
+  bool get isTool => kind == ItemKind.tool;
+
+  /// Quest items and tools stay with you: they can't be dropped.
+  bool get isKept => isQuest || isTool;
 }
 
 /// A spell the hero can learn and slot.
@@ -153,6 +157,28 @@ const Map<String, ItemDef> itemDefs = {
     stack: 5,
     mana: 2,
   ),
+  'wood': ItemDef(
+    'wood',
+    'Wood',
+    ItemKind.material,
+    'wood',
+    'Cut from trees. Five mend a broken bridge.',
+    stack: 5,
+  ),
+  'hatchet': ItemDef(
+    'hatchet',
+    'Hatchet',
+    ItemKind.tool,
+    'hatchet',
+    'Stand next to a tree and chop it for wood.',
+  ),
+  'pickaxe': ItemDef(
+    'pickaxe',
+    'Pickaxe',
+    ItemKind.tool,
+    'pickaxe',
+    'Breaks rockfalls that block the way.',
+  ),
   'lantern': ItemDef(
     'lantern',
     "Mara's Lantern",
@@ -172,6 +198,14 @@ const Map<String, SpellDef> spellDefs = {
     'Blast a hex for 2 and its ring for 1. Sets forests alight.',
   ),
   'mend': SpellDef('mend', 'Mend', 'heal', 2, 0, 'Restore 3 HP to yourself.'),
+  'shield': SpellDef(
+    'shield',
+    'Shield',
+    'shield',
+    2,
+    0,
+    'Absorb the next 3 damage, for up to 5 turns.',
+  ),
 };
 
 ItemDef itemOf(String id) => itemDefs[id] ?? itemDefs['fists']!;

@@ -110,6 +110,19 @@ counter, and a visible turn count.
 | Stun | Skip the next turn. | Short duration, boss resistance |
 | Shield | Absorbs N damage (`Unit.shield` already exists). | Expires or breaks |
 
+### Built so far (overworld)
+
+- Burn: enemies and the hero. 3 turns, 1 damage at turn end, refreshes.
+  Fire hexes and Fireball apply it. A shield soaks it.
+- Shield: spell, 2 mana, absorbs 3 damage, fades after 5 turns, can't be
+  recast while full. Hero only. Resting clears all statuses.
+- Bosses are special: one per zone, alone in their own spot, never near
+  a portal or another boss.
+- Spells come from boss fights, one per zone. The cave Pyromancer teaches
+  Fireball. The Warlord teaches Shield. Its blast hits harder (3 centre,
+  2 ring) and leaves no fire. It is planned for its own zone beyond the
+  Hollow Deep (section 10), so Shield cannot be learned yet.
+
 ### Second wave
 
 Slow (less movement), Root (cannot move, can act), Weaken (less damage),
@@ -245,5 +258,184 @@ challenge mode.
 2. Quick bar rewrite: bigger slots, larger selected slot, swipe to select,
    tap to use.
 
+3. Broken bridge, wood and the hatchet (section 10): the `broken` tile, wood
+   as a stackable material, chopping a forest tile, repairing a bridge.
+
 These exercise the pipeline (data, tick, rendering, save, UI) with very
 little new content. Summons come after, once a mana system is designed.
+
+## 10. World, quests and locks (draft)
+
+Zones and quests come before more spells or weapons. A zone should make sense
+on its own and give a reason to go back. Bosses are special: one per zone,
+alone in their own spot (section 4), and each teaches a spell.
+
+### Lock and key rules
+
+- A lock is visible before you can open it. You see the broken bridge, the
+  far bank, something worth reaching, and the game says nothing.
+- The key is somewhere else, in another zone. The quest ties them together.
+- A lock never blocks the main path. It guards a shortcut, a side reward or a
+  boss. The main story must stay playable without it.
+- One lock type per new tool, so each tool opens something new.
+- Locks are persistent: a repaired bridge stays repaired across rests and
+  saves.
+
+### Zone map (existing and planned)
+
+The Whispering Meadow is split into a left and a right side by a river. There
+is one bridge, and it starts broken. The Old Mine and the Hollow Deep are
+sub-zones of the meadow: separate maps entered by portal from it. The
+Warlord's zone is a separate map outside the meadow region.
+
+```
+Training Ground -> MEADOW LEFT ~~ 1 broken bridge ~~ MEADOW RIGHT
+                   |                                   |
+                   Old Mine (top-left)                 Hollow Deep
+                   hatchet                             lantern, Pyromancer,
+                                                       pickaxe
+                                                       |
+                                                       rockfall -> Warlord's zone
+                                                                   (Shield)
+```
+
+| Zone | State | Contains |
+|---|---|---|
+| Training Ground | Exists | Tobin, sword, bow, Mend lesson. Gate until training is done. |
+| Meadow, left side | Exists | Arrival from training. Camp, Mara, forests (wood). Only knights. The river blocks the way east. Entrance to the Old Mine in the top-left. |
+| Old Mine | New sub-zone | Dark. A few enemies and the hatchet. No boss. |
+| Meadow, right side | Exists | Reached by repairing a bridge. A mix of archers and knights. More forests. Portal to the Hollow Deep. |
+| Hollow Deep | Exists, to expand | Grows from a single cave into a dungeon: several rooms, dark, with the lantern, War Axe, longbow and potions on the way. The Pyromancer (Fireball) holds one room, alone. The pickaxe is at the end. A rockfall blocks the way on. |
+| Warlord's zone | New, separate map | Reached through the rockfall. The Warlord, alone (Shield). Name to decide. |
+
+The order is forced by the world and not by a gate message. You cannot reach
+the Hollow Deep until you have the hatchet from the Old Mine, wood from the
+left side, and a repaired bridge. You cannot reach the Warlord until you
+have the pickaxe from the Hollow Deep.
+
+The meadow has one river, a single gentle meander with a changing width and
+no second channel. It crosses the whole map, so the bridge is the only way
+over. The bridge sits at a narrow point. The cave portal is on the right
+side.
+
+### Enemies by area (for now)
+
+Only archers and knights while the systems are young. Cavalry and golems come
+later, in new zones.
+
+| Area | Enemies |
+|---|---|
+| Meadow, left | Knights only |
+| Meadow, right | A mix of archers and knights |
+| Old Mine | Knights and archers, few |
+| Hollow Deep | As built (golem and Pyromancer stay) |
+
+### Quest: Mara's lantern, extended
+
+The lantern is in the Hollow Deep, which is across the river, so the quest
+forces the whole chain.
+
+1. Mara asks you to find her lantern in the Hollow Deep, across the river.
+   You see the broken bridge.
+2. She mentions that her late husband's hatchet is in the old mine, in the
+   top-left, and that he used it to repair the bridge.
+3. In the Old Mine you find the hatchet.
+4. Back in the meadow you chop trees for wood, then repair a bridge.
+5. You cross, work through the Hollow Deep dungeon, and find the lantern.
+   The pickaxe is at the far end, for the next goal.
+6. You bring the lantern back to Mara.
+
+Mara mentions the bridge and the hatchet when asked, or when you first see a
+broken bridge. The quest log shows only the next step.
+
+### Chopping and repairing
+
+- Chop: stand next to a forest tile with the hatchet and act on it. It drops
+  1 to 3 wood, by how well you do in the timing strike. The tile becomes grass, so forests deplete
+  and fire and chopping compete for the same trees.
+- A small timing strike (see "Built so far"), always skippable with a quick
+  chop for 1 wood.
+- Repair: stand next to a broken bridge with 5 wood and act on it. The tile
+  becomes a ford.
+- At an average of 2 wood a tree, that is about 3 trees. 5 wood is exactly
+  one bag slot (stack of 5).
+- Both rules reuse the session zone copy that fire already uses. The set of
+  repaired bridges is saved in `WorldState` (like `slain` and `collected`).
+- The pickaxe works the same way on a rockfall tile, with no material.
+
+### Inventory: slots are the weight
+
+No separate weight number. Each item has a stack size, which is how many fit
+in one slot. Bulky things get small stacks, so carrying them costs space.
+6 wood with a stack of 5 is two slots, 5 and 1. This is how `addItem` already
+works.
+
+| Item | Stack |
+|---|---|
+| Weapons, tools (hatchet, pickaxe) | 1 |
+| Potions | 5 |
+| Wood | 5 |
+| Ore or stone (later) | 3 |
+
+- The 16-slot bag is the only limit. "Bag full" is the "too heavy" message.
+- Wood is a new item kind, `material`. Tools stay in the bag, never used up.
+- Quest items stay in the bag and cannot be dropped (this is how `drop`
+  already works).
+- A bigger pack (a quest or boss reward) raises the slot count later.
+
+### Other locks, for later
+
+| Lock | Key | Notes |
+|---|---|---|
+| Broken bridge | Wood (hatchet to cut it) | Built first. |
+| Rockfall | Pickaxe | Built with the pickaxe. |
+| Dark passage | Lantern | The cave is already dark. |
+| Locked gate | A key found in a zone | Plain and clear. |
+| Frozen river | Fire | A later zone. |
+
+### Built so far (meadow slice)
+
+- The meadow has one river and one broken bridge. It must be mended to reach
+  the right side and the Hollow Deep. The old fords are plain water. No lava
+  in the meadow: it belongs in the cave.
+- Tile `b` is a broken bridge. A bridge is a connected run of `b` tiles;
+  mending turns the whole run into a ford. Mended bridges and felled trees
+  are saved (`repaired`, `chopped`, save version 2).
+- Items: `wood` (material, stack 5), `hatchet` and `pickaxe` (tools). Tools
+  and quest items cannot be dropped.
+- A button above the quick bar shows the one thing you can do where you
+  stand: "Chop tree" next to a tree with the hatchet, or "Mend bridge n/5
+  wood" next to a broken bridge. Chopping gives 1 to 3 wood and leaves grass.
+- Old Mine (`mine.txt`): dark sub-zone off the top-left of the meadow, with
+  the hatchet at the far end, a sleeping knight and an archer.
+- Mara points you to the Old Mine, then the trees, then the cave. The quest
+  log follows the same order.
+- Meadow enemies: knights only on the left, archers and knights on the right.
+
+- Chopping is a timing strike: tapping "Chop tree" opens a panel with a
+  marker stepping along a bar, and you tap Strike while it is over the gold
+  cells. Three swings, each hit is one wood, a tree always gives at least
+  one. "Quick chop" skips it for 1 wood. It is not available while an enemy
+  is hostile ("Not now"), and a miss never hurts you. A better tool could
+  widen the gold later.
+
+Not built yet: the Hollow Deep dungeon, the pickaxe and rockfall, the
+Warlord's zone.
+
+### Decided
+
+- Two tools: hatchet (wood) and pickaxe (rock).
+- One bridge, broken at the start, 5 wood to mend. (Two parallel channels
+  looked artificial, so the second bridge was dropped.)
+- A forest tile drops 1 to 3 wood, random.
+- The Hollow Deep becomes a dungeon with the pickaxe at the end.
+- Focus is on the Whispering Meadow first.
+
+### Open questions
+
+1. The dungeon layout: how many rooms, and where the Pyromancer, the lantern
+   and the pickaxe go. The Pyromancer must not sit beside the pickaxe.
+2. Name and look of the Warlord's zone.
+3. Does a damaged bridge show how many wood it still needs (a counter on the
+   tile), or only at the moment you act? Today only the button shows it.
+4. Tuning the timing strike on a phone: step speed and the width of the gold.

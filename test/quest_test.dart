@@ -234,6 +234,12 @@ void main() {
     d.choices.first.apply(w);
     expect(questStage(w, 'lantern'), 1);
     expect(npcMark(mara, w), isNull);
+    // The hatchet comes first, then the bridges, then the cave.
+    expect(currentObjective(w)?.item, 'hatchet');
+    expect(currentObjective(w)?.zone, 'mine');
+    w.addItem('hatchet');
+    expect(currentObjective(w)?.zone, 'meadow');
+    w.repaired.add('meadow#a');
     expect(currentObjective(w)?.zone, 'cave');
 
     // Talking again before finding it only gives a hint.
@@ -352,9 +358,16 @@ void main() {
 
   test('markers point at the target, or at the portal that leads there', () {
     final w = WorldState()..quests['lantern'] = 1;
-    final goal = currentObjective(w)!;
     final meadow = zones['meadow']!;
     final cave = zones['cave']!;
+    // First the hatchet: the meadow marker is the old mine's mouth.
+    final mine = zones['mine']!;
+    final first = currentObjective(w)!;
+    expect(markerHex(meadow, first, zones), meadow.portalHex['3']);
+    final hatchet = mine.items.firstWhere((i) => i.id == 'hatchet');
+    expect(markerHex(mine, first, zones), hatchet.hex);
+    w.repaired.add('meadow#a');
+    final goal = currentObjective(w)!;
     // In the meadow the marker is the cave mouth.
     expect(markerHex(meadow, goal, zones), meadow.portalHex['1']);
     // In the cave it is the lantern itself.
@@ -389,5 +402,29 @@ void main() {
     final meadow = zones['meadow']!;
     expect(findPath(meadow, meadow.spawn, meadow.camps.first), isNotNull);
     expect(findPath(meadow, meadow.spawn, mara.hex), isNotNull);
+  });
+
+  group('save format', () {
+    test('statuses and the version survive a round trip', () {
+      final w = WorldState()
+        ..shield = 2
+        ..shieldTurns = 4
+        ..burn = 1;
+      final json = jsonDecode(jsonEncode(w.toJson())) as Map<String, dynamic>;
+      expect(json['v'], WorldState.saveVersion);
+      final back = WorldState.fromJson(json);
+      expect([back.shield, back.shieldTurns, back.burn], [2, 4, 1]);
+    });
+
+    test('a save from before statuses still loads', () {
+      final json =
+          jsonDecode(jsonEncode(WorldState().toJson())) as Map<String, dynamic>
+            ..remove('v')
+            ..remove('shield')
+            ..remove('shieldTurns')
+            ..remove('burn');
+      final back = WorldState.fromJson(json);
+      expect([back.shield, back.shieldTurns, back.burn], [0, 0, 0]);
+    });
   });
 }

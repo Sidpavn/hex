@@ -62,12 +62,20 @@ class ItemSpawn {
 }
 
 class ZoneTile {
-  const ZoneTile(this.terrain, {this.ford = false, this.portal});
+  const ZoneTile(
+    this.terrain, {
+    this.ford = false,
+    this.broken = false,
+    this.portal,
+  });
 
   final Terrain terrain;
 
   /// Shallow water you can wade across (slow).
   final bool ford;
+
+  /// Water where a bridge used to be. Wood mends it into a ford.
+  final bool broken;
 
   /// Id of the portal on this tile, if any.
   final String? portal;
@@ -147,6 +155,37 @@ class Zone {
   /// World-space bounds in art pixels.
   late final Rect bounds;
 
+  /// The broken bridges as loaded: each is a connected run of broken tiles.
+  late final List<Set<Hex>> bridges = _bridgeGroups();
+
+  List<Set<Hex>> _bridgeGroups() {
+    final left = {
+      for (final e in tiles.entries)
+        if (e.value.broken) e.key,
+    };
+    final out = <Set<Hex>>[];
+    while (left.isNotEmpty) {
+      final group = <Hex>{};
+      final todo = [left.first];
+      while (todo.isNotEmpty) {
+        final h = todo.removeLast();
+        if (!left.remove(h)) continue;
+        group.add(h);
+        todo.addAll(h.neighbors.where(left.contains));
+      }
+      out.add(group);
+    }
+    return out;
+  }
+
+  /// Stable id of a bridge (`zone#q,r` of its first tile), kept in saves.
+  String bridgeId(Set<Hex> bridge) {
+    final first = bridge.reduce(
+      (a, b) => a.q < b.q || (a.q == b.q && a.r < b.r) ? a : b,
+    );
+    return '$id#${first.q},${first.r}';
+  }
+
   Portal? portalAt(Hex h) {
     final id = tiles[h]?.portal;
     return id == null ? null : portals[id];
@@ -180,6 +219,7 @@ class Zone {
             'f' => const ZoneTile(Terrain.forest),
             '~' => const ZoneTile(Terrain.water),
             'w' => const ZoneTile(Terrain.water, ford: true),
+            'b' => const ZoneTile(Terrain.water, broken: true),
             '^' => const ZoneTile(Terrain.mountain),
             'L' => const ZoneTile(Terrain.lava),
             'c' => const ZoneTile(Terrain.crystal),
@@ -287,7 +327,7 @@ class ZoneRepo {
   static void clear() => _cache.clear();
 
   /// Every zone that ships with the game.
-  static const ids = ['training', 'meadow', 'cave'];
+  static const ids = ['training', 'meadow', 'mine', 'cave'];
 
   /// Loads every zone, so quest markers can look across zones.
   static Future<Map<String, Zone>> loadAll([AssetBundle? bundle]) async {

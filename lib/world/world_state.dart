@@ -13,6 +13,9 @@ abstract final class Counts {
   static const postMelee = 'hit:post:melee';
   static const postRanged = 'hit:post:ranged';
   static const castMend = 'cast:mend';
+  static const castShield = 'cast:shield';
+  static const chop = 'chop';
+  static const repair = 'repair';
 }
 
 /// One slot's worth of an item in the bag.
@@ -44,8 +47,18 @@ class WorldState {
   static const int maxUpgrade = 2;
   static const int bagSize = 16;
 
+  /// Bumped when the save layout changes. Saves without it are version 0.
+  static const saveVersion = 2;
+
   int hp = maxHp;
   int mana = maxMana;
+
+  /// Damage the shield will still absorb, and the turns before it fades.
+  int shield = 0;
+  int shieldTurns = 0;
+
+  /// Turns of burning left: 1 damage at the end of each turn.
+  int burn = 0;
   int tokens = 0;
 
   // ───────────────────────── equipment ─────────────────────────
@@ -67,6 +80,11 @@ class WorldState {
 
   /// Enemies killed since the last rest, as `zone#index`.
   final Set<String> slain = {};
+
+  /// Bridges mended (`zone#q,r`, see `Zone.bridgeId`) and trees chopped
+  /// (`zone#q,r`). Both are permanent.
+  final Set<String> repaired = {};
+  final Set<String> chopped = {};
 
   /// Pickups already taken, as `zone#id`.
   final Set<String> collected = {};
@@ -95,8 +113,12 @@ class WorldState {
       'r': w.hex.r,
     };
     return {
+      'v': saveVersion,
       'hp': hp,
       'mana': mana,
+      'shield': shield,
+      'shieldTurns': shieldTurns,
+      'burn': burn,
       'tokens': tokens,
       'weapons': weaponSlots,
       'activeWeapon': activeWeapon,
@@ -107,6 +129,8 @@ class WorldState {
         for (final s in bag) s == null ? null : {'id': s.id, 'n': s.count},
       ],
       'slain': slain.toList(),
+      'repaired': repaired.toList(),
+      'chopped': chopped.toList(),
       'collected': collected.toList(),
       'quests': quests,
       'counts': counts,
@@ -131,6 +155,10 @@ class WorldState {
     final w = WorldState.newGame();
     w.hp = j['hp'] as int;
     w.mana = j['mana'] as int;
+    // Added in version 1; older saves have none.
+    w.shield = j['shield'] as int? ?? 0;
+    w.shieldTurns = j['shieldTurns'] as int? ?? 0;
+    w.burn = j['burn'] as int? ?? 0;
     w.tokens = j['tokens'] as int;
     w.weaponSlots.setAll(0, slots(j['weapons'], w.weaponSlots.length));
     w.activeWeapon = (j['activeWeapon'] as int).clamp(
@@ -146,6 +174,9 @@ class WorldState {
       if (b != null) w.bag[i] = ItemStack(b['id'] as String, b['n'] as int);
     }
     w.slain.addAll((j['slain'] as List).cast<String>());
+    // Added in version 2.
+    w.repaired.addAll(((j['repaired'] as List?) ?? const []).cast<String>());
+    w.chopped.addAll(((j['chopped'] as List?) ?? const []).cast<String>());
     w.collected.addAll((j['collected'] as List).cast<String>());
     w.quests.addAll(ints(j['quests']));
     w.counts.addAll(ints(j['counts']));
@@ -296,10 +327,10 @@ class WorldState {
     return true;
   }
 
-  /// Throws a bag slot away. Quest items can't be dropped.
+  /// Throws a bag slot away. Quest items and tools can't be dropped.
   bool drop(int index) {
     final s = bag[index];
-    if (s == null || s.def.isQuest) return false;
+    if (s == null || s.def.isKept) return false;
     bag[index] = null;
     return true;
   }

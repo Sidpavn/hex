@@ -18,6 +18,7 @@ import 'pixel/hex_art.dart';
 import 'pixel/pixel_assets.dart';
 import 'pixel/terrain_draw.dart';
 import 'widgets.dart';
+import 'chop_overlay.dart';
 import 'inventory_ui.dart';
 import 'zone_fx.dart';
 import 'zone_overlays.dart';
@@ -109,6 +110,9 @@ class _ZoneScreenState extends State<ZoneScreen>
 
   /// Spell targeting: the next tap on a valid hex throws a Fireball.
   bool targeting = false;
+
+  /// The tree being chopped in the timing game, if it is open.
+  Hex? chopping;
   NpcSpawn? talking;
   Dialogue? dialogue;
   bool campOpen = false;
@@ -490,6 +494,8 @@ class _ZoneScreenState extends State<ZoneScreen>
           });
           fx.burst(at, sparkRed, when, count: 10, speed: 70);
           texts.add(_FloatText(at, '-${ev.amount}', Pal.red, delay: when));
+        case SimEventKind.blocked:
+          texts.add(_FloatText(at, 'Blocked ${ev.amount}', Pal.blue));
         case SimEventKind.regen:
           texts.add(_FloatText(at, '+${ev.amount}', Pal.green));
         case SimEventKind.heroDown:
@@ -526,6 +532,13 @@ class _ZoneScreenState extends State<ZoneScreen>
           HapticFeedback.selectionClick();
         case SimEventKind.bagFull:
           texts.add(_FloatText(at, 'Bag full', Pal.red));
+        case SimEventKind.chopped:
+          texts.add(_FloatText(at, '+${ev.amount} wood', Pal.goldLight));
+          fx.burst(at, sparkGold, 0, count: 8, speed: 40);
+          HapticFeedback.selectionClick();
+        case SimEventKind.repaired:
+          texts.add(_FloatText(at, 'Bridge mended', Pal.green));
+          HapticFeedback.mediumImpact();
         case SimEventKind.telegraph:
           // Stop auto-travel: the player has to choose where to stand.
           _clearRoute();
@@ -542,11 +555,22 @@ class _ZoneScreenState extends State<ZoneScreen>
         case SimEventKind.learned:
           final spell = spellDefs[ev.note];
           if (spell != null) {
-            talking = NpcSpawn('boss', 'Pyromancer', ev.hex, ev.unit!);
+            talking = NpcSpawn(
+              'boss',
+              unitStats[ev.unit]!.name,
+              ev.hex,
+              ev.unit!,
+            );
+            final use = world.spellSlots.contains(spell.id)
+                ? 'Tap it on the quick bar'
+                : 'Put it in a spell slot in your pack, then tap it on the '
+                      'quick bar';
+            final aim = spell.range > 0
+                ? ', then tap a hex up to ${spell.range} away.'
+                : '.';
             dialogue = Dialogue(spell.name, [
               'You learned ${spell.name}. ${spell.desc}',
-              'It costs ${spell.cost} mana. Tap it on the quick bar, then '
-                  'tap a hex up to ${ZoneSim.fireballRange} away.',
+              'It costs ${spell.cost} mana. $use$aim',
             ]);
           }
         case SimEventKind.gateClosed:
@@ -567,7 +591,8 @@ class _ZoneScreenState extends State<ZoneScreen>
   }
 
   void _tap(Offset local, Size size) {
-    final z = zone;
+    // The session's map: mended bridges and felled trees only show here.
+    final z = sim?.zone;
     final s = sim;
     if (z == null || s == null || s.heroDown) return;
     final view = ZoneView(size, _dpr, cam, z, _inset);
@@ -645,6 +670,9 @@ class _ZoneScreenState extends State<ZoneScreen>
       case 'mend':
         setState(() => targeting = false);
         if (s.castMend()) afterTurn(s);
+      case 'shield':
+        setState(() => targeting = false);
+        if (s.castShield()) afterTurn(s);
     }
   }
 
@@ -654,6 +682,8 @@ class _ZoneScreenState extends State<ZoneScreen>
     return switch (id) {
       'fireball' => s.mana >= ZoneSim.fireballCost,
       'mend' => s.mana >= ZoneSim.mendCost && s.heroHp < ZoneSim.heroMaxHp,
+      'shield' =>
+        s.mana >= ZoneSim.shieldCost && world.shield < ZoneSim.shieldAbsorb,
       _ => false,
     };
   }
@@ -878,7 +908,14 @@ class _ZoneScreenState extends State<ZoneScreen>
               ),
             ),
           ),
+          if (s != null && !s.heroDown && path.isEmpty) _contextAction(s),
           if (s != null && s.heroDown) _fallenOverlay(),
+          if (chopping != null && s != null)
+            ChopOverlay(
+              onDone: (hits) => _finishChop(s, hits),
+              onQuick: () => _finishChop(s, 1),
+              onCancel: () => setState(() => chopping = null),
+            ),
           if (campOpen && s != null)
             CampOverlay(
               world: world,
@@ -947,6 +984,65 @@ class _ZoneScreenState extends State<ZoneScreen>
     );
   }
 
+  /// The one thing you can do where you stand: mend a bridge or chop a tree.
+  /// Sits just above the quick bar and is hidden when there is nothing to do.
+  Widget _contextAction(ZoneSim s) {
+    final bridge = s.bridgeNear();
+    final tree = s.treeNear();
+    if (bridge == null && tree == null) return const SizedBox.shrink();
+    final String label;
+    final VoidCallback? onTap;
+    if (bridge != null) {
+      final have = math.min(world.countOf('wood'), ZoneSim.woodPerBridge);
+      label = 'Mend bridge  $have/${ZoneSim.woodPerBridge} wood';
+      onTap = () {
+        if (have < ZoneSim.woodPerBridge) {
+          setState(
+            () => texts.add(
+              _FloatText(
+                heroWorld + const Offset(0, -12),
+                'Needs ${ZoneSim.woodPerBridge} wood',
+                Pal.red,
+              ),
+            ),
+          );
+        } else if (s.repair()) {
+          afterTurn(s);
+        }
+      };
+    } else {
+      label = 'Chop tree';
+      onTap = () {
+        if (s.danger) {
+          setState(
+            () => texts.add(
+              _FloatText(heroWorld + const Offset(0, -12), 'Not now', Pal.red),
+            ),
+          );
+        } else {
+          setState(() => chopping = s.treeNear());
+        }
+      };
+    }
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: _inset.bottom,
+      child: Center(
+        child: SizedBox(
+          width: 240,
+          child: GoldButton(label: label, onTap: onTap),
+        ),
+      ),
+    );
+  }
+
+  void _finishChop(ZoneSim s, int hits) {
+    final tree = chopping;
+    setState(() => chopping = null);
+    if (tree != null && s.chop(tree, hits: hits)) afterTurn(s);
+  }
+
   /// Health and mana on one line, just above the quick bar.
   Widget _vitals() {
     return ValueListenableBuilder<int>(
@@ -962,12 +1058,32 @@ class _ZoneScreenState extends State<ZoneScreen>
               rows: 7,
             ),
           ),
+          if (world.shield > 0) _status('shield', world.shield),
+          if (world.burn > 0) _status('burn', world.burn),
           const SizedBox(width: 12),
           for (var i = 0; i < WorldState.maxMana; i++)
             Padding(
               padding: const EdgeInsets.only(left: 3),
               child: _ManaPip(filled: i < world.mana),
             ),
+        ],
+      ),
+    );
+  }
+
+  /// A status on the hero: its icon and one pip per point or turn left.
+  Widget _status(String icon, int n) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 8),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          PxIcon(icon),
+          const SizedBox(width: 3),
+          PxText(
+            '$n',
+            style: const TextStyle(color: Pal.text, fontSize: 15, height: 1),
+          ),
         ],
       ),
     );
@@ -1154,6 +1270,9 @@ class _ZonePainter extends CustomPainter {
         final post = art.sprite('bridge_post');
         if (!bridgeAt(h.q - 1, h.r)) td.blit(canvas, post, c, -12, -6, sc);
         if (!bridgeAt(h.q + 1, h.r)) td.blit(canvas, post, c, 8, -6, sc);
+      }
+      if (tile.broken) {
+        td.blit(canvas, art.sprite('bridge_broken'), c, -12, -8, sc);
       }
       final portal = zone.portalAt(h);
       if (portal != null) {

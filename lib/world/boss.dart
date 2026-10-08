@@ -11,6 +11,7 @@ class BossKit {
     this.warn = 2,
     this.cooldown = 3,
     this.range = 6,
+    this.fire = true,
   });
 
   /// Id in `spellDefs`, and what the hero learns on the kill.
@@ -32,8 +33,19 @@ class BossKit {
 
   /// How far away it will start a cast.
   final int range;
+
+  /// Whether the blast sets the ground alight.
+  final bool fire;
 }
 
 const Map<UnitType, BossKit> bossKits = {
   UnitType.pyromancer: BossKit(spell: 'fireball', hp: 12),
+  // A heavy blow that is hard to dodge outright: Shield is the answer.
+  UnitType.warlord: BossKit(
+    spell: 'shield',
+    hp: 10,
+    center: 3,
+    ring: 2,
+    fire: false,
+  ),
 };

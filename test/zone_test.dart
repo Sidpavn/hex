@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hex/data/storage.dart';
 import 'package:hex/game/hex.dart';
+import 'package:hex/game/models.dart';
 import 'package:hex/ui/inventory_ui.dart';
 import 'package:hex/ui/pixel/pixel_assets.dart';
 import 'package:hex/ui/zone_screen.dart';
@@ -20,6 +21,18 @@ Map<String, Zone> _load() {
     zones[z.id] = z;
   }
   return zones;
+}
+
+/// [z] with every broken bridge mended, for tests that only care about layout.
+Zone mended(Zone z) {
+  final bridges = z.bridges;
+  final c = z.copy();
+  for (final b in bridges) {
+    for (final h in b) {
+      c.tiles[h] = const ZoneTile(Terrain.water, ford: true);
+    }
+  }
+  return c;
 }
 
 void main() {
@@ -50,7 +63,7 @@ void main() {
         );
         // The spawn can walk to every portal in its zone.
         expect(
-          findPath(z, z.spawn, here!),
+          findPath(mended(z), z.spawn, here!),
           isNotNull,
           reason: '${z.id}: cannot reach portal ${p.id}',
         );
@@ -59,7 +72,9 @@ void main() {
   });
 
   test('pathfinding avoids water and prefers cheap ground', () {
-    final z = Zone.parse(File('assets/zones/meadow.txt').readAsStringSync());
+    final z = mended(
+      Zone.parse(File('assets/zones/meadow.txt').readAsStringSync()),
+    );
     final path = findPath(z, z.spawn, z.portalHex['1']!)!;
     expect(path, isNotEmpty);
     for (final h in path) {
@@ -109,23 +124,31 @@ void main() {
   testWidgets('walking into the cave mouth loads the cave and back', (
     tester,
   ) async {
+    final world = WorldState();
     await tester.runAsync(() async {
       await PixelAssets.load();
-      await ZoneRepo.load('meadow');
+      final m = await ZoneRepo.load('meadow');
       await ZoneRepo.load('cave');
+      world.repaired.addAll([for (final b in m.bridges) m.bridgeId(b)]);
     });
     tester.view.physicalSize = const Size(1170, 2532);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
-      const MaterialApp(home: ZoneScreen(startZone: 'meadow')),
+      MaterialApp(
+        home: ZoneScreen(startZone: 'meadow', world: world),
+      ),
     );
     await tester.pump(const Duration(milliseconds: 100));
     final dynamic st = tester.state(find.byType(ZoneScreen));
     final meadow = st.zone as Zone;
     // Keep the walk uninterrupted: this test is about portals, not enemies.
     (st.sim as ZoneSim).enemies.clear();
-    st.path = findPath(meadow, st.heroHex as Hex, meadow.portalHex['1']!)!;
+    st.path = findPath(
+      (st.sim as ZoneSim).zone,
+      st.heroHex as Hex,
+      meadow.portalHex['1']!,
+    )!;
     for (var i = 0; i < 400 && (st.zone as Zone).id == 'meadow'; i++) {
       await tester.pump(const Duration(milliseconds: 50));
     }

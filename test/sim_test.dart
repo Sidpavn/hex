@@ -401,6 +401,76 @@ void main() {
       });
     });
 
+    group('hero statuses', () {
+      test('fire sets the hero burning, and it outlasts the fire', () {
+        final world = WorldState();
+        final s = sim(zoneOf(grass), hero: at(4, 3), world: world);
+        s.fire[at(4, 3)] = 1;
+        final before = world.hp;
+        s.wait();
+        expect(world.hp, before - 1);
+        expect(world.burn, ZoneSim.burnStatusTurns - 1);
+        s.hero = at(6, 3);
+        s.wait();
+        s.wait();
+        expect(world.hp, before - 3);
+        expect(world.burn, 0);
+        s.wait();
+        expect(world.hp, before - 3);
+      });
+
+      test('shield costs mana and absorbs damage before HP', () {
+        final world = WorldState();
+        final s = sim(zoneOf(grass), hero: at(4, 3), world: world);
+        expect(s.castShield(), isTrue);
+        expect(world.mana, WorldState.maxMana - ZoneSim.shieldCost);
+        expect(world.shield, ZoneSim.shieldAbsorb);
+        // Can't recast while it is still full.
+        expect(s.castShield(), isFalse);
+        s.fire[at(4, 3)] = 1;
+        final before = world.hp;
+        s.wait();
+        // Burn's 1 damage is soaked.
+        expect(world.hp, before);
+        expect(world.shield, ZoneSim.shieldAbsorb - 1);
+        expect(s.events.any((e) => e.kind == SimEventKind.blocked), isTrue);
+      });
+
+      test('once the shield is spent, damage reaches HP', () {
+        final world = WorldState()
+          ..shield = 1
+          ..shieldTurns = 5
+          ..burn = 2;
+        final s = sim(zoneOf(grass), hero: at(4, 3), world: world);
+        final before = world.hp;
+        s.wait(); // the shield soaks the first tick
+        expect(world.hp, before);
+        expect(world.shield, 0);
+        s.wait(); // nothing left for the second
+        expect(world.hp, before - 1);
+      });
+
+      test('the shield fades after its turns', () {
+        final world = WorldState();
+        final s = sim(zoneOf(grass), hero: at(4, 3), world: world);
+        s.castShield();
+        for (var i = 0; i < ZoneSim.shieldLasts - 1; i++) {
+          s.wait();
+        }
+        expect(world.shield, 0);
+      });
+
+      test('resting clears statuses', () {
+        final world = WorldState()
+          ..shield = 2
+          ..shieldTurns = 3
+          ..burn = 2;
+        final s = sim(zoneOf(grass), hero: at(4, 3), world: world);
+        s.rest(at(4, 3));
+        expect([world.shield, world.shieldTurns, world.burn], [0, 0, 0]);
+      });
+    });
+
     test('enemies refuse to path through fire', () {
       final z = zoneOf(grass, enemies: ['knight 9 3 guard']);
       final s = sim(z, hero: at(2, 3));

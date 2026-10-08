@@ -134,6 +134,15 @@ enum SimEventKind {
 
   /// An enemy attacked the hero (from [SimEvent.from]).
   enemySwing,
+
+  /// The hero chopped the tree at [SimEvent.hex] for [SimEvent.amount] wood.
+  chopped,
+
+  /// The hero mended the bridge touching [SimEvent.hex].
+  repaired,
+
+  /// The hero's shield soaked [SimEvent.amount] damage.
+  blocked,
 }
 
 class SimEvent {
@@ -174,6 +183,7 @@ class ZoneSim {
       world = world ?? WorldState(),
       rng = rng ?? math.Random(),
       hero = heroAt ?? source.spawn {
+    _applyWorld();
     _spawn();
   }
 
@@ -226,6 +236,10 @@ class ZoneSim {
   /// Turns the burn status lasts on a unit.
   static const burnStatusTurns = 3;
 
+  static const shieldCost = 2;
+  static const shieldAbsorb = 3;
+  static const shieldLasts = 5;
+
   /// Chance a burning forest lights a neighbouring forest each turn.
   static const fireSpread = 0.5;
 
@@ -266,14 +280,101 @@ class ZoneSim {
     world
       ..hp = WorldState.maxHp
       ..mana = WorldState.maxMana
+      ..shield = 0
+      ..shieldTurns = 0
+      ..burn = 0
       ..slain.clear();
     fire.clear();
     zone.tiles
       ..clear()
       ..addAll(source.tiles);
+    _applyWorld();
     _calm = 0;
     events.clear();
     _spawn();
+  }
+
+  /// Lays the permanent changes (mended bridges, felled trees) over [zone].
+  void _applyWorld() {
+    for (final bridge in source.bridges) {
+      if (world.repaired.contains(source.bridgeId(bridge))) {
+        for (final h in bridge) {
+          zone.tiles[h] = const ZoneTile(Terrain.water, ford: true);
+        }
+      }
+    }
+    for (final key in world.chopped) {
+      if (!key.startsWith('${source.id}#')) continue;
+      final qr = key.substring(source.id.length + 1).split(',');
+      final h = Hex(int.parse(qr[0]), int.parse(qr[1]));
+      if (zone.tiles[h]?.terrain == Terrain.forest) {
+        zone.tiles[h] = const ZoneTile(Terrain.grass);
+      }
+    }
+  }
+
+  // ───────────────────────── trees and bridges ─────────────────────────
+
+  /// Wood a bridge takes.
+  static const woodPerBridge = 5;
+
+  /// A tree next to the hero that the hatchet can fell, or null.
+  Hex? treeNear() {
+    if (heroDown || !world.hasItem('hatchet')) return null;
+    for (final h in hero.neighbors) {
+      if (zone.tiles[h]?.terrain == Terrain.forest && enemyAt(h) == null) {
+        return h;
+      }
+    }
+    return null;
+  }
+
+  /// A broken bridge touching the hero's hex, or null.
+  Set<Hex>? bridgeNear() {
+    if (heroDown) return null;
+    for (final b in source.bridges) {
+      if (world.repaired.contains(source.bridgeId(b))) continue;
+      if (hero.neighbors.any(b.contains)) return b;
+    }
+    return null;
+  }
+
+  /// Fells the tree at [tree]. Each of the [hits] (0 to 3) from the timing
+  /// game is a piece of wood, and a tree always gives at least one. The
+  /// tree is gone for good.
+  bool chop(Hex tree, {int hits = 1}) {
+    if (treeNear() == null ||
+        hero.distanceTo(tree) != 1 ||
+        zone.tiles[tree]?.terrain != Terrain.forest) {
+      return false;
+    }
+    if (!world.canAdd('wood')) {
+      events.add(SimEvent(SimEventKind.bagFull, hero));
+      return false;
+    }
+    final n = hits.clamp(1, 3);
+    final got = n - world.addItem('wood', n);
+    zone.tiles[tree] = const ZoneTile(Terrain.grass);
+    world.chopped.add('${source.id}#${tree.q},${tree.r}');
+    world.bump(Counts.chop);
+    events.add(SimEvent(SimEventKind.chopped, tree, got));
+    tick();
+    return true;
+  }
+
+  /// Mends the broken bridge by the hero with [woodPerBridge] wood.
+  bool repair() {
+    final bridge = bridgeNear();
+    if (bridge == null || world.countOf('wood') < woodPerBridge) return false;
+    world.removeItem('wood', woodPerBridge);
+    for (final h in bridge) {
+      zone.tiles[h] = const ZoneTile(Terrain.water, ford: true);
+    }
+    world.repaired.add(source.bridgeId(bridge));
+    world.bump(Counts.repair);
+    events.add(SimEvent(SimEventKind.repaired, bridge.first));
+    tick();
+    return true;
   }
 
   /// Falls back to the zone start (used when there is no campsite yet).
@@ -522,6 +623,20 @@ class ZoneSim {
     return true;
   }
 
+  /// Raises a shield that soaks the next [shieldAbsorb] damage. Not while
+  /// the one you have is still full.
+  bool castShield() {
+    if (mana < shieldCost || heroDown || world.shield >= shieldAbsorb) {
+      return false;
+    }
+    world.mana -= shieldCost;
+    world.bump(Counts.castShield);
+    world.shield = shieldAbsorb;
+    world.shieldTurns = shieldLasts;
+    tick();
+    return true;
+  }
+
   /// Drinks one [id] from the bag. Does nothing if it wouldn't help.
   bool useItem(String id) {
     final def = itemOf(id);
@@ -546,6 +661,14 @@ class ZoneSim {
   }
 
   void _hurtHero(int dmg) {
+    final soaked = math.min(world.shield, dmg);
+    if (soaked > 0) {
+      world.shield -= soaked;
+      dmg -= soaked;
+      if (world.shield == 0) world.shieldTurns = 0;
+      events.add(SimEvent(SimEventKind.blocked, hero, soaked));
+      if (dmg <= 0) return;
+    }
     world.hp -= dmg;
     events.add(SimEvent(SimEventKind.hitHero, hero, dmg));
     if (heroDown) events.add(SimEvent(SimEventKind.heroDown, hero));
@@ -611,7 +734,7 @@ class ZoneSim {
       SimEvent(SimEventKind.spell, target, 0, false, e.hex, true, e.type),
     );
     for (final h in e.telegraph) {
-      if (_burnable(h)) fire[h] = burnTurns;
+      if (kit.fire && _burnable(h)) fire[h] = burnTurns;
       if (h == hero) _hurtHero(h == target ? kit.center : kit.ring);
     }
     e.telegraph = {};
@@ -627,7 +750,7 @@ class ZoneSim {
     for (final h in burning) {
       final e = enemyAt(h);
       if (e != null && !e.stats.fireImmune) _ignite(e);
-      if (h == hero && !heroDown) _hurtHero(1);
+      if (h == hero && !heroDown) world.burn = burnStatusTurns;
     }
     final lit = <Hex>[];
     for (final h in burning) {
@@ -664,6 +787,11 @@ class ZoneSim {
 
   /// Turn-end statuses: damage first, then tick the duration down.
   void _statusStep() {
+    if (!heroDown && world.burn > 0) {
+      _hurtHero(1);
+      world.burn--;
+    }
+    if (world.shieldTurns > 0 && --world.shieldTurns == 0) world.shield = 0;
     for (final e in enemies) {
       if (!e.alive || e.burn <= 0) continue;
       _damageEnemy(e, 1);
