@@ -1,5 +1,5 @@
 /// What kind of thing an item is, which decides where it can go.
-enum ItemKind { weapon, consumable, quest, tool, material }
+enum ItemKind { weapon, consumable, quest, tool, material, lore }
 
 /// A kind of item. Weapons are fixed and hand-made (no random stats); you make
 /// them stronger by spending tokens at a campfire.
@@ -47,6 +47,9 @@ class ItemDef {
   bool get isConsumable => kind == ItemKind.consumable;
   bool get isQuest => kind == ItemKind.quest;
   bool get isTool => kind == ItemKind.tool;
+
+  /// A scroll: read on pickup and kept in the journal, never in the bag.
+  bool get isLore => kind == ItemKind.lore;
 
   /// Quest items and tools stay with you: they can't be dropped.
   bool get isKept => isQuest || isTool;
@@ -162,8 +165,8 @@ const Map<String, ItemDef> itemDefs = {
     'Wood',
     ItemKind.material,
     'wood',
-    'Cut from trees. Five mend a broken bridge.',
-    stack: 5,
+    'Cut from trees. Thirty mend a broken bridge.',
+    stack: 10,
   ),
   'hatchet': ItemDef(
     'hatchet',
@@ -185,6 +188,27 @@ const Map<String, ItemDef> itemDefs = {
     ItemKind.quest,
     'lantern',
     'Mara would like this back.',
+  ),
+  'scroll_orders': ItemDef(
+    'scroll_orders',
+    'Scroll',
+    ItemKind.lore,
+    'scroll',
+    'Read it in the journal.',
+  ),
+  'scroll_survey': ItemDef(
+    'scroll_survey',
+    'Scroll',
+    ItemKind.lore,
+    'scroll',
+    'Read it in the journal.',
+  ),
+  'scroll_woodcutter': ItemDef(
+    'scroll_woodcutter',
+    'Scroll',
+    ItemKind.lore,
+    'scroll',
+    'Read it in the journal.',
   ),
 };
 

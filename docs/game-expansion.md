@@ -286,17 +286,18 @@ alone in their own spot (section 4), and each teaches a spell.
 The Whispering Meadow is split into a left and a right side by a river. There
 is one bridge, and it starts broken. The Old Mine and the Hollow Deep are
 sub-zones of the meadow: separate maps entered by portal from it. The
-Warlord's zone is a separate map outside the meadow region.
+Quarry (the Warlord's zone) is a separate map outside the meadow region.
 
 ```
 Training Ground -> MEADOW LEFT ~~ 1 broken bridge ~~ MEADOW RIGHT
                    |                                   |
                    Old Mine (top-left)                 Hollow Deep
                    hatchet                             lantern, Pyromancer,
-                                                       pickaxe
                                                        |
-                                                       rockfall -> Warlord's zone
-                                                                   (Shield)
+                                                       rockfall + charge
+                                                       (needs Fireball)
+                                                       |
+                                                       Quarry (Shield)
 ```
 
 | Zone | State | Contains |
@@ -305,13 +306,13 @@ Training Ground -> MEADOW LEFT ~~ 1 broken bridge ~~ MEADOW RIGHT
 | Meadow, left side | Exists | Arrival from training. Camp, Mara, forests (wood). Only knights. The river blocks the way east. Entrance to the Old Mine in the top-left. |
 | Old Mine | New sub-zone | Dark. A few enemies and the hatchet. No boss. |
 | Meadow, right side | Exists | Reached by repairing a bridge. A mix of archers and knights. More forests. Portal to the Hollow Deep. |
-| Hollow Deep | Exists, to expand | Grows from a single cave into a dungeon: several rooms, dark, with the lantern, War Axe, longbow and potions on the way. The Pyromancer (Fireball) holds one room, alone. The pickaxe is at the end. A rockfall blocks the way on. |
-| Warlord's zone | New, separate map | Reached through the rockfall. The Warlord, alone (Shield). Name to decide. |
+| Hollow Deep | Exists, to rebuild | A dungeon of four rooms (section 11): the lantern first, then the rockfall and its charge, then the Pyromancer (Fireball) by another route. Blasting the rockfall opens the way on. |
+| Quarry | New, separate map | Reached through the rockfall. The Warlord, alone, at the far end (Shield). It is the last zone of the Marches (section 12). |
 
 The order is forced by the world and not by a gate message. You cannot reach
 the Hollow Deep until you have the hatchet from the Old Mine, wood from the
 left side, and a repaired bridge. You cannot reach the Warlord until you
-have the pickaxe from the Hollow Deep.
+have Fireball from the Pyromancer and blasted the rockfall.
 
 The meadow has one river, a single gentle meander with a changing width and
 no second channel. It crosses the whole map, so the bridge is the only way
@@ -342,7 +343,7 @@ forces the whole chain.
 3. In the Old Mine you find the hatchet.
 4. Back in the meadow you chop trees for wood, then repair a bridge.
 5. You cross, work through the Hollow Deep dungeon, and find the lantern.
-   The pickaxe is at the far end, for the next goal.
+   The rockfall and its charge are further in, for the next goal.
 6. You bring the lantern back to Mara.
 
 Mara mentions the bridge and the hatchet when asked, or when you first see a
@@ -355,26 +356,27 @@ broken bridge. The quest log shows only the next step.
   and fire and chopping compete for the same trees.
 - A small timing strike (see "Built so far"), always skippable with a quick
   chop for 1 wood.
-- Repair: stand next to a broken bridge with 5 wood and act on it. The tile
+- Repair: stand next to a broken bridge with 30 wood and act on it. The tile
   becomes a ford.
-- At an average of 2 wood a tree, that is about 3 trees. 5 wood is exactly
-  one bag slot (stack of 5).
+- At an average of 2 wood a tree, that is about 15 trees. 30 wood is three
+  bag slots (stack of 10).
 - Both rules reuse the session zone copy that fire already uses. The set of
   repaired bridges is saved in `WorldState` (like `slain` and `collected`).
-- The pickaxe works the same way on a rockfall tile, with no material.
+- The rockfall is not opened with a tool. See section 11: a charge and
+  Fireball.
 
 ### Inventory: slots are the weight
 
 No separate weight number. Each item has a stack size, which is how many fit
 in one slot. Bulky things get small stacks, so carrying them costs space.
-6 wood with a stack of 5 is two slots, 5 and 1. This is how `addItem` already
+11 wood with a stack of 10 is two slots, 10 and 1. This is how `addItem` already
 works.
 
 | Item | Stack |
 |---|---|
-| Weapons, tools (hatchet, pickaxe) | 1 |
+| Weapons, tools (hatchet) | 1 |
 | Potions | 5 |
-| Wood | 5 |
+| Wood | 10 |
 | Ore or stone (later) | 3 |
 
 - The 16-slot bag is the only limit. "Bag full" is the "too heavy" message.
@@ -388,7 +390,7 @@ works.
 | Lock | Key | Notes |
 |---|---|---|
 | Broken bridge | Wood (hatchet to cut it) | Built first. |
-| Rockfall | Pickaxe | Built with the pickaxe. |
+| Rockfall | Fireball, lit on a charge beside it | Section 11. |
 | Dark passage | Lantern | The cave is already dark. |
 | Locked gate | A key found in a zone | Plain and clear. |
 | Frozen river | Fire | A later zone. |
@@ -401,7 +403,7 @@ works.
 - Tile `b` is a broken bridge. A bridge is a connected run of `b` tiles;
   mending turns the whole run into a ford. Mended bridges and felled trees
   are saved (`repaired`, `chopped`, save version 2).
-- Items: `wood` (material, stack 5), `hatchet` and `pickaxe` (tools). Tools
+- Items: `wood` (material, stack 10) and `hatchet` (tool). Tools
   and quest items cannot be dropped.
 - A button above the quick bar shows the one thing you can do where you
   stand: "Chop tree" next to a tree with the hatchet, or "Mend bridge n/5
@@ -419,23 +421,239 @@ works.
   is hostile ("Not now"), and a miss never hurts you. A better tool could
   widen the gold later.
 
-Not built yet: the Hollow Deep dungeon, the pickaxe and rockfall, the
-Warlord's zone.
+Not built yet: the Hollow Deep dungeon, the rockfall and charge, the
+Quarry.
 
 ### Decided
 
-- Two tools: hatchet (wood) and pickaxe (rock).
-- One bridge, broken at the start, 5 wood to mend. (Two parallel channels
+- One tool, the hatchet (wood). The rockfall is opened by Fireball, not a
+  tool. A pickaxe may return later for ore nodes in the Quarry.
+- One bridge, broken at the start, 30 wood to mend. (Two parallel channels
   looked artificial, so the second bridge was dropped.)
 - A forest tile drops 1 to 3 wood, random.
-- The Hollow Deep becomes a dungeon with the pickaxe at the end.
+- The Hollow Deep becomes a four-room dungeon (section 11). The lantern
+  comes first, the Pyromancer is reached by another route.
+- The Quarry is the Warlord's zone and ends the Marches. The city comes
+  after it (section 12).
 - Focus is on the Whispering Meadow first.
 
 ### Open questions
 
-1. The dungeon layout: how many rooms, and where the Pyromancer, the lantern
-   and the pickaxe go. The Pyromancer must not sit beside the pickaxe.
-2. Name and look of the Warlord's zone.
+1. The room layout of the Hollow Deep (section 11), drawn as a map.
+2. Look of the Quarry.
 3. Does a damaged bridge show how many wood it still needs (a counter on the
    tile), or only at the moment you act? Today only the button shows it.
 4. Tuning the timing strike on a phone: step speed and the width of the gold.
+
+## 11. The Hollow Deep (draft)
+
+Today the cave is one open cavern, and the lantern sits two tiles from the
+Pyromancer. It becomes a dungeon of four rooms. The player sees the lock
+before they hold the key, and the boss is never met by accident.
+
+```
+Entrance (camp)
+   |
+ Room A: first fights, potion, longbow
+   |
+ Room B: the lantern (on the main route, no boss)
+   |
+ Hub J: a wide hall where the routes split
+   |-- south: Room C, the rockfall and the charge (dead end for now)
+   |-- north: Room D, the Pyromancer (Fireball)
+   |
+ back to Room C: light the charge, the rubble opens -> Quarry
+```
+
+### Order of play
+
+1. The lantern comes first and sits on the main route. Picking it up lets
+   the player finish Mara's quest.
+2. Room C shows a blocked exit and an inert charge. Weapons and arrows do
+   nothing to it, so the player knows the answer is elsewhere.
+3. The route to the Pyromancer branches away from Room C. The player has to
+   turn back to take it, so the boss is not met by accident. The golem and
+   the archer guard that route.
+4. Fireball ends the fight and opens the way. The player backtracks through a
+   cleared dungeon, lights the charge from a safe distance and the rubble
+   clears.
+
+### Charge and rockfall rules
+
+- The charge has its own sprite (a crate of powder with a fuse), so it does
+  not read as a barrel. Seeing it is the hint. Nobody tells the player.
+- Only the hero's Fireball, or a hex it set burning, detonates it. Weapons,
+  arrows, knights and the Pyromancer's fire do not. Enemy fire could set it
+  off as a trap in a later zone.
+- The blast radius is smaller than Fireball's range, so the player can light
+  it from a safe distance. Standing in the blast hurts the hero.
+- The blast turns the rubble into floor, once. A `blasted` set in
+  `WorldState`, like `repaired` and `chopped`, keeps it across rests and
+  saves. That needs a save version bump.
+- Keep Room D far from Room C so the Pyromancer's fire cannot reach the
+  charge.
+
+### Charge and rockfall, as built
+
+- Zone file tiles: `X` is rubble, `T` is a charge. Neither is walkable. Rubble
+  is a mountain tile with a `rubble` flag, so it blocks sight too. A charge is
+  a floor tile with a `charge` flag. Both draw a sprite over the tile
+  (`rubble`, `charge` in `sprites.txt`).
+- Only the hero's Fireball sets a charge off: if the charge is the target or
+  in its ring of six. Weapons, and boss fire, never do.
+- The blast hurts everything on the charge's hex and the six around it for 3
+  (`ZoneSim.chargeDamage`), the hero included, and shield soaks it. Fireball
+  range is 4, so standing 3 or 4 hexes away is safe.
+- It clears every run of rubble with a hex within 2 of the charge
+  (`chargeReach`). The charge hex becomes floor.
+- A `blasted` set in `WorldState` (`zone#q,r` of the charge) keeps it open
+  across rests and saves. The save version is 4.
+- A `blasted` event drives a shake, a burst and "Rockfall cleared".
+
+Hints for the player (built):
+
+- Tapping the crate shows "Blasting powder. Fire sets it off." It says what
+  it is and nothing about Fireball.
+- The crate has a flame mark on its front, so it reads as explosive.
+- The survey scroll in Room C says the Watch left powder by the rubble and
+  that nobody would put a flame near it.
+- Tobin's last training line gives the quest "Reopen the road". Its log entry
+  says "Find a way past the rockfall in the Hollow Deep" and, only once
+  Fireball is known, "Light the powder by the rockfall with Fireball." It
+  finishes when the charge goes off (`Quest.finishedWhen`). The Mara quest
+  keeps priority for the map marker while it is active.
+
+Not done yet: the Quarry portal behind the rubble.
+
+### Mara's quest and the log
+
+Mara's objective ends with the lantern. A second quest, from Tobin, covers the
+road: "Reopen the road" (reach the rockfall, learn Fireball, blast it). It is
+built. The quest log shows only the next step, as before.
+
+### The dark
+
+The cave is dark. The lantern is Mara's and stays a quest item: it does not
+grow the light radius, because handing it over would take that away. If the
+dungeon needs more light, that is a separate item, a miner's lamp found
+deeper in, that the player keeps.
+
+### Built layout
+
+`assets/zones/cave.txt` is built (33 by 22, columns by rows, odd-r):
+
+- Room A, entrance cavern (bottom left): camp and the longbow. No enemy
+  waits here. Portal at col 3, row 19.
+- Room B, lantern room (left): lantern at (8,9), a small pool, a patrolling
+  knight, a potion. It is the only way on from A.
+- Hub J (centre): crystals and a lava patch in the middle, an archer on guard,
+  a potion. The routes split here.
+- Room C, dead end (bottom right): reached by a corridor south of the hub.
+  The east end (col 25, rows 18 to 19) is where the rockfall and the charge
+  go. Holds an ether potion.
+- Room D, Pyromancer (top): reached by a corridor north of the hub past a
+  sleeping golem. The War Axe is in an alcove off that corridor. The boss is
+  at (20,2), 25 hexes from the entrance and 17 or more from Room C.
+
+The rockfall and charge are built (see "Charge and rockfall, as built"). The
+map is 33 columns wide: Room C's east end holds the charge (col 25, row 18) and
+two hexes of rubble (col 26, rows 18 and 19). Behind them is a short corridor
+(cols 27 to 31) that ends in nothing until the Quarry portal exists.
+
+### Open questions
+
+1. Does the Pyromancer fight stay "alone in his own spot" (section 4) when
+   the golem and archer guard the route to him? The layout assumes yes: only
+   the golem is on that route, and it sleeps.
+2. Where the rockfall tile and the charge go in Room C, once they exist.
+
+## 12. World and lore (draft)
+
+The Marches are the first of six regions. A city sits where six old roads
+meet. The player reaches it only after the Marches.
+
+### Lore
+
+The city kept six roads open, with a warden on each. The wardens stopped
+reporting and the council shut the gates from the city side. The Watch still
+sends recruits to the nearest road to learn the work. That is Tobin's
+Training Ground. The player is one of those recruits.
+
+| Place | In the story |
+|---|---|
+| Training Ground | The Watch's outpost on the south road. |
+| Meadow | Abandoned holdings along that road. Mara's husband was a woodcutter who went to mend the bridge and did not return. |
+| Old Mine, Hollow Deep | The holding's mine and the cave the south warden's road ran through. |
+| Rockfall | What shut the south road. Reopening it is the recruit's real task. |
+| Quarry | Where the south warden ended up. The Warlord holds it. |
+
+### The Marches (region 1)
+
+```
+Training -> Meadow L -> Old Mine -> Meadow R -> Hollow Deep -> Quarry
+```
+
+The chain teaches one new thing per zone before any open map:
+
+| Zone | Teaches |
+|---|---|
+| Training | Move, sneak, weapons, Mend |
+| Meadow left | Explore, the broken bridge |
+| Old Mine | Dark zones, the hatchet |
+| Meadow right | Wood and the bridge, ranged enemies |
+| Hollow Deep | Dungeon rooms, the lantern, Fireball |
+| Quarry | Using Fireball on the world; Shield from the Warlord |
+
+### The city (later)
+
+After the Quarry the road opens onto the city, called Sixways for now. It
+is a neutral hub: no fighting, no enemies, enforced by a `safe` flag in the
+zone file. Shops, quest givers and minigames are NPC stalls around a central
+square, in one map. The card board is played at an arena table, which links
+the two combat systems.
+
+Six gates lead out, one per region. Gate one is the road the player came by.
+The others open by proof: a boss reward carried back to the city, using the
+existing `Gate` and `closedGate` code. Three regions get planned first and
+the rest stay sealed with a line of lore. Each region maps to a lock in
+section 10: a frozen river (fire), a marsh (poison, antidote) and a
+quarry-like region for ore.
+
+### Open questions
+
+1. Name of the city and of each region.
+2. Which three regions come first.
+3. Where the city's `safe` flag lives and what it switches off in `ZoneSim`.
+
+## 13. Lore pickups (draft)
+
+Scrolls the player finds and reads. They tell the story of the world without
+dialogue, and each one should be about the place it lies in.
+
+### Rules (built)
+
+- A scroll is an item of kind `lore`, placed with a normal `item` line in the
+  zone file. Its text lives in `lib/world/lore.dart` (`loreDefs`), keyed by
+  the item id.
+- Walking onto it reads it at once, in a panel, and files it in the journal
+  (`WorldState.scrolls`, saved from version 3). It never takes a bag slot, so
+  a full bag does not stop it.
+- The journal lists every scroll found, in the order found. Tap one to read it
+  again. The list is hidden until the first scroll.
+- Scrolls are 2 to 3 short lines, plain. One idea each.
+- Scrolls are optional. Nothing is locked behind reading them.
+- Pickups are saved in `collected` like other items, so a scroll is read once
+  and not offered again.
+
+### First scrolls
+
+| Place | What it tells |
+|---|---|
+| Training Ground, `scroll_orders` | Why Tobin is there: the Watch holds this post and trains recruits for the south road. Built, next to Tobin. |
+| Hollow Deep Room C, `scroll_survey` | How the rock blocked the route: the roof came down, the warden's crew was on the far side. Built, in Room C. |
+| Hollow Deep Room B, `scroll_woodcutter` | A note from Mara's husband about the bridge and the groaning ground. Built, near the lantern. |
+
+### Open
+
+1. A distinct sprite per scroll type. All three use one `scroll` sprite today.
+2. Whether the journal gets its own screen once there are many scrolls.

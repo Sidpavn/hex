@@ -16,6 +16,7 @@ abstract final class Counts {
   static const castShield = 'cast:shield';
   static const chop = 'chop';
   static const repair = 'repair';
+  static const blast = 'blast';
 }
 
 /// One slot's worth of an item in the bag.
@@ -48,7 +49,7 @@ class WorldState {
   static const int bagSize = 16;
 
   /// Bumped when the save layout changes. Saves without it are version 0.
-  static const saveVersion = 2;
+  static const saveVersion = 4;
 
   int hp = maxHp;
   int mana = maxMana;
@@ -86,8 +87,14 @@ class WorldState {
   final Set<String> repaired = {};
   final Set<String> chopped = {};
 
+  /// Charges that have gone off (`zone#q,r`, see `Zone.chargeId`). Permanent.
+  final Set<String> blasted = {};
+
   /// Pickups already taken, as `zone#id`.
   final Set<String> collected = {};
+
+  /// Scrolls read so far (ids in `loreDefs`), in the order found.
+  final List<String> scrolls = [];
 
   /// Quest id to stage.
   final Map<String, int> quests = {};
@@ -131,7 +138,9 @@ class WorldState {
       'slain': slain.toList(),
       'repaired': repaired.toList(),
       'chopped': chopped.toList(),
+      'blasted': blasted.toList(),
       'collected': collected.toList(),
+      'scrolls': scrolls,
       'quests': quests,
       'counts': counts,
       if (camp != null) 'camp': where(camp!),
@@ -177,7 +186,11 @@ class WorldState {
     // Added in version 2.
     w.repaired.addAll(((j['repaired'] as List?) ?? const []).cast<String>());
     w.chopped.addAll(((j['chopped'] as List?) ?? const []).cast<String>());
+    // Added in version 4.
+    w.blasted.addAll(((j['blasted'] as List?) ?? const []).cast<String>());
     w.collected.addAll((j['collected'] as List).cast<String>());
+    // Added in version 3.
+    w.scrolls.addAll(((j['scrolls'] as List?) ?? const []).cast<String>());
     w.quests.addAll(ints(j['quests']));
     w.counts.addAll(ints(j['counts']));
     if (j['camp'] != null) w.camp = where(j['camp']);

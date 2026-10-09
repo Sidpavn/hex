@@ -676,6 +676,20 @@ kkk.kkk.kkk.
 ...kkkkk....
 ............
 
+@sprite scroll idle0
+............
+.kkkkkkkkkk.
+kaAAAAAAAAak
+.kkkkkkkkkk.
+..kwwwwwwk..
+..kwkkkkwk..
+..kwwwwwwk..
+..kwkkkwwk..
+..kwwwwwwk..
+.kkkkkkkkkk.
+kaAAAAAAAAak
+.kkkkkkkkkk.
+
 @sprite book idle0
 ............
 ............
@@ -988,6 +1002,34 @@ AAAAAAA..........AAAAAAA
 kkkkkkk..........kkkkkkk
 .BBBBBB..........BBBBBB.
 ..B.B.B...........B.B...
+
+@sprite rubble idle0
+......................
+.......kkkk...........
+......kmmmmk..kkk.....
+.....kmmMMmmkkmmmk....
+..kkkkmMMMMmkmMMmk....
+.kmmmkmmMMmkkmMMMmkk..
+kmmMMmkkmmkmmmMMMMmk..
+kmMMMMmkkkmmMMkkMMMmk.
+kmMMmmmmkkmMMMkkkmMMk.
+.kmmMMMMmkmMMMMkmmmmk.
+..kkmmmmkkmmmmkkkmmk..
+....kkkkk.kkkkk.kkkk..
+
+@sprite charge idle0
+..........y.....
+.........ko.....
+........kk......
+.kkkkkkkkkkkkk..
+kaaaaaaaaaaaaak.
+kaAAAAAAAAAAAak.
+kaArrrrorrrrAak.
+kaArrrooyorrAak.
+kaArrooyyoorAak.
+kaAAAAAAAAAAAak.
+kaaaaaaaaaaaaak.
+.kkkkkkkkkkkkk..
 
 @sprite bridge_post idle0
 .kk.

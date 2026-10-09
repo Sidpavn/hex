@@ -107,7 +107,9 @@ void main() {
       talkTo(tobin, w).choices.single.apply(w);
       expect(w.quests['training'], 5);
       expect(npcMark(tobin, w), isNull);
-      expect(currentObjective(w), isNull);
+      // The road is next: the objective names the rockfall.
+      expect(w.quests['road'], 1);
+      expect(currentObjective(w)?.zone, 'cave');
     });
 
     test(
@@ -259,6 +261,56 @@ void main() {
     expect(npcMark(mara, w), isNull);
   });
 
+  test('Tobin lets a hurried player skip the training, after one warning', () {
+    final tobin = zones['training']!.npcs.firstWhere((n) => n.id == 'trainer');
+    final w = WorldState.newGame();
+    final offer = talkTo(tobin, w);
+    final skip = offer.choices.singleWhere(
+      (c) => c.text == 'Skip the training',
+    );
+    // Choosing it changes nothing yet: he tries to talk you out of it.
+    skip.apply(w);
+    expect(w.quests['training'], isNull);
+    final warning = skip.reply!;
+    expect(warning.choices.map((c) => c.text), [
+      'Show me, then',
+      'Skip it anyway',
+    ]);
+    // Backing out starts the training as usual.
+    final back = warning.choices.first..apply(w);
+    expect(w.quests['training'], 1);
+    expect(back.reply, isNull);
+
+    // Skipping anyway hands over everything the lessons give.
+    final fresh = WorldState.newGame();
+    final go = warning.choices.last..apply(fresh);
+    expect(fresh.quests['training'], 5);
+    expect(fresh.quests['road'], 1);
+    expect(fresh.hasItem('sword'), isTrue);
+    expect(fresh.hasItem('bow'), isTrue);
+    expect(fresh.knownSpells, contains('mend'));
+    expect(go.reply!.choices, isEmpty);
+    // The sword and bow on the ground are gone, and the gate is open.
+    expect(fresh.collected, containsAll(['training#sword', 'training#bow']));
+    expect(closedGate('training', '1', fresh), isNull);
+    expect(npcMark(tobin, fresh), isNull);
+  });
+
+  test(
+    'the road quest hints at fire once Fireball is known, then finishes',
+    () {
+      final w = WorldState.newGame()..quests['road'] = 1;
+      expect(currentObjective(w)?.text, contains('way past the rockfall'));
+      w.learn('fireball');
+      expect(currentObjective(w)?.text, contains('Fireball'));
+      final road = questById('road')!;
+      expect(road.isDone(w), isFalse);
+      w.blasted.add('cave#16,18');
+      expect(road.isDone(w), isTrue);
+      expect(currentObjective(w), isNull);
+    },
+  );
+
   group('saving', () {
     tearDown(Storage.clearMemory);
 
@@ -351,7 +403,7 @@ void main() {
     expect(w.tokens, 3);
   });
 
-  test('the cave boss guards the lantern', () {
+  test('the Pyromancer holds the far room of the cave', () {
     final cave = zones['cave']!;
     expect(cave.enemies.any((e) => e.type == UnitType.pyromancer), isTrue);
   });
@@ -414,6 +466,15 @@ void main() {
       expect(json['v'], WorldState.saveVersion);
       final back = WorldState.fromJson(json);
       expect([back.shield, back.shieldTurns, back.burn], [2, 4, 1]);
+    });
+
+    test('scrolls read survive a round trip', () {
+      final w = WorldState()
+        ..scrolls.addAll(['scroll_survey', 'scroll_orders']);
+      final back = WorldState.fromJson(
+        jsonDecode(jsonEncode(w.toJson())) as Map<String, dynamic>,
+      );
+      expect(back.scrolls, ['scroll_survey', 'scroll_orders']);
     });
 
     test('a save from before statuses still loads', () {

@@ -93,6 +93,26 @@ class Repaired extends Condition {
       w.repaired.where((id) => id.startsWith('$zone#')).length >= atLeast;
 }
 
+/// The hero has learned [spell].
+class Knows extends Condition {
+  const Knows(this.spell);
+
+  final String spell;
+
+  @override
+  bool test(WorldState w) => w.knownSpells.contains(spell);
+}
+
+/// A charge in [zone] has gone off.
+class Blasted extends Condition {
+  const Blasted(this.zone);
+
+  final String zone;
+
+  @override
+  bool test(WorldState w) => w.blasted.any((id) => id.startsWith('$zone#'));
+}
+
 /// The hero is hurt.
 class Wounded extends Condition {
   const Wounded();
@@ -201,6 +221,17 @@ class SetQuest extends Effect {
 
   @override
   void apply(WorldState w) => w.quests[quest] = stage;
+}
+
+/// Marks a pickup as taken (`zone#id`) without picking it up, so its copy on
+/// the ground is gone.
+class Collect extends Effect {
+  const Collect(this.key);
+
+  final String key;
+
+  @override
+  void apply(WorldState w) => w.collected.add(key);
 }
 
 /// Zeroes a counter, so a lesson only counts what you do after it starts.

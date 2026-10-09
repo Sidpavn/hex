@@ -7,6 +7,7 @@ npc trainer Tobin 8 6 knight
 enemy post 14 5 guard
 item sword 11 5 sword
 item bow 15 7 bow
+item orders 9 4 scroll_orders
 map
 ^^^^^^^^^^^^^^^^^^^^^^^^
 ^^^^^^^^........^^^^^^^^

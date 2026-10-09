@@ -18,12 +18,16 @@ class Dialogue {
 }
 
 class DialogueChoice {
-  const DialogueChoice(this.text, [this.effects = const []])
+  const DialogueChoice(this.text, [this.effects = const [], this.reply])
     : showGains = false;
 
   /// A choice that hands something in: the label lists what you get, taken
   /// from [effects] so the text can't drift from what happens.
-  const DialogueChoice.reward(this.text, this.effects) : showGains = true;
+  const DialogueChoice.reward(this.text, this.effects, [this.reply])
+    : showGains = true;
+
+  /// What is said next, once the effects are applied. Null ends the talk.
+  final Dialogue? reply;
 
   final String text;
   final bool showGains;
@@ -90,6 +94,7 @@ class Quest {
     required this.objectives,
     this.requires = const Always(),
     this.doneStage = 2,
+    this.finishedWhen,
   });
 
   final String id;
@@ -107,9 +112,14 @@ class Quest {
   /// Where to go next, by situation. No match means no objective.
   final List<Rule<QuestObjective>> objectives;
 
+  /// Finishes the quest on its own, once started, without anyone to hand it
+  /// in to.
+  final Condition? finishedWhen;
+
   int stage(WorldState w) => w.quests[id] ?? 0;
   bool isListed(WorldState w) => stage(w) > 0 || requires.test(w);
-  bool isDone(WorldState w) => stage(w) >= doneStage;
+  bool isDone(WorldState w) =>
+      stage(w) >= doneStage || (stage(w) > 0 && finishedWhen?.test(w) == true);
   bool isActive(WorldState w) => stage(w) > 0 && !isDone(w);
 
   QuestObjective? objective(WorldState w) {
@@ -267,7 +277,66 @@ const List<Quest> quests = [
       ),
     ],
   ),
+  Quest(
+    id: 'road',
+    title: 'Reopen the road',
+    giver: 'Tobin',
+    summary:
+        'A rockfall buried the south road beyond the Hollow Deep. Find a way '
+        'through.',
+    finishedWhen: Blasted('cave'),
+    objectives: [
+      Rule(
+        All([QuestAt('road', 1), Knows('fireball')]),
+        QuestObjective(
+          'cave',
+          'Light the powder by the rockfall with Fireball.',
+        ),
+      ),
+      Rule(
+        QuestAt('road', 1),
+        QuestObjective(
+          'cave',
+          'Find a way past the rockfall in the Hollow Deep.',
+        ),
+      ),
+    ],
+  ),
 ];
+
+/// Tobin's answer to someone in a hurry: one more chance, then the lot.
+const _skipTraining = Dialogue(
+  'Tobin',
+  [
+    'Skip it? In a hurry, are we?',
+    'The meadow is full of things that bite. I would feel better if you knew '
+        'which end of a sword to hold.',
+  ],
+  [
+    DialogueChoice('Show me, then', [
+      SetQuest('training', 1),
+      ResetCount(Counts.postMelee),
+      ResetCount(Counts.postRanged),
+    ]),
+    DialogueChoice('Skip it anyway', [
+      GiveItem('sword'),
+      GiveItem('bow'),
+      Collect('training#sword'),
+      Collect('training#bow'),
+      LearnSpell('mend'),
+      SetQuest('training', 5),
+      SetQuest('road', 1),
+    ], _skipped),
+  ],
+);
+
+const _skipped = Dialogue('Tobin', [
+  'Fine. Take the sword, the bow and a healing spell for when you trip over '
+      'something.',
+  'Do not tell the post. It will take it personally.',
+  'The south road is buried under a rockfall past the Hollow Deep. Someone '
+      'has to reopen it. Go on, then.',
+]);
 
 const Map<String, NpcScript> npcScripts = {
   'trainer': NpcScript(
@@ -321,9 +390,16 @@ const Map<String, NpcScript> npcScripts = {
         All([QuestAt('training', 4), Count(Counts.castMend, 1)]),
         Dialogue(
           'Tobin',
-          ['That is everything I can teach you here.'],
           [
-            DialogueChoice('Thanks', [SetQuest('training', 5)]),
+            'That is everything I can teach you here.',
+            'The south road is buried under a rockfall past the Hollow Deep. '
+                'Find a way to reopen it.',
+          ],
+          [
+            DialogueChoice('Thanks', [
+              SetQuest('training', 5),
+              SetQuest('road', 1),
+            ]),
           ],
         ),
       ),
@@ -470,6 +546,7 @@ const Map<String, NpcScript> npcScripts = {
               ResetCount(Counts.postMelee),
               ResetCount(Counts.postRanged),
             ]),
+            DialogueChoice('Skip the training', [], _skipTraining),
             DialogueChoice('Not now'),
           ],
         ),
@@ -515,7 +592,7 @@ const Map<String, NpcScript> npcScripts = {
         All([QuestAt('lantern', 1), HasItem('hatchet')]),
         Dialogue('Mara', [
           'That is my husband\'s hatchet. He kept it sharp.',
-          'Chop the trees by the river. Five wood is enough to mend the '
+          'Chop the trees by the river. Thirty wood is enough to mend the '
               'bridge.',
         ]),
       ),
@@ -534,6 +611,9 @@ const Map<String, NpcScript> npcScripts = {
           [
             'Oh, a traveller! Please, I dropped my lantern in the cave past '
                 'the ridge, across the river.',
+            'The bridge over the river is broken. My husband\'s hatchet is in '
+                'the old mine, in the north-west corner of the meadow. Chop '
+                'trees with it and mend the bridge.',
             'It is the only light I have for the winter nights. Would you '
                 'fetch it?',
           ],

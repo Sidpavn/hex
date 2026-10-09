@@ -187,9 +187,7 @@ void main() {
       'zone_chop',
       Scaffold(
         body: Stack(
-          children: [
-            ChopOverlay(onDone: (_) {}, onQuick: () {}, onCancel: () {}),
-          ],
+          children: [ChopOverlay(onDone: (_) {}, onCancel: () {})],
         ),
       ),
       settle: 1,

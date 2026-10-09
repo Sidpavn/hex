@@ -682,6 +682,7 @@ class _InventoryOverlayState extends State<InventoryOverlay> {
                   ItemKind.quest => 'Quest item',
                   ItemKind.tool => 'Tool',
                   ItemKind.material => 'Material',
+                  ItemKind.lore => 'Scroll',
                 }, style: const TextStyle(color: Pal.dim, fontSize: 12)),
               ],
             ),

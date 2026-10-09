@@ -117,7 +117,7 @@ void main() {
       );
     });
 
-    test('each hit from the timing game is one wood, never fewer than one', () {
+    test('each hit from the timing game is one wood', () {
       final got = <int>[];
       for (final hits in [0, 1, 2, 3]) {
         final w = WorldState()..addItem('hatchet');
@@ -125,7 +125,16 @@ void main() {
         s.chop(tree, hits: hits);
         got.add(w.countOf('wood'));
       }
-      expect(got, [1, 1, 2, 3]);
+      expect(got, [0, 1, 2, 3]);
+    });
+
+    test('no hits leaves the tree standing', () {
+      final w = WorldState()..addItem('hatchet');
+      final (s, tree) = beside(w);
+      expect(s.chop(tree, hits: 0), isTrue);
+      expect(s.zone.tiles[tree]!.terrain, Terrain.forest);
+      expect(w.chopped, isEmpty);
+      expect(s.treeNear(), isNotNull);
     });
 
     test('a felled tree stays felled, even after a rest', () {
@@ -148,12 +157,12 @@ void main() {
       expect(s.events.any((e) => e.kind == SimEventKind.bagFull), isTrue);
     });
 
-    test('wood stacks to five, so six takes two slots', () {
+    test('wood stacks to ten, so eleven takes two slots', () {
       final w = WorldState();
       final before = w.bag.where((s) => s != null).length;
-      w.addItem('wood', 6);
+      w.addItem('wood', 11);
       expect(w.bag.where((s) => s != null).length, before + 2);
-      expect(w.countOf('wood'), 6);
+      expect(w.countOf('wood'), 11);
     });
 
     test('tools cannot be dropped', () {
@@ -172,8 +181,8 @@ void main() {
       return (sim(meadow, w, hero: stand), bridge);
     }
 
-    test('takes five wood and turns the planks into a ford', () {
-      final w = WorldState()..addItem('wood', 5);
+    test('takes thirty wood and turns the planks into a ford', () {
+      final w = WorldState()..addItem('wood', 30);
       final (s, bridge) = atBridge(w, 0);
       expect(s.bridgeNear(), isNotNull);
       expect(s.repair(), isTrue);
@@ -185,16 +194,16 @@ void main() {
       expect(w.repaired, contains(meadow.bridgeId(bridge)));
     });
 
-    test('four wood is not enough', () {
-      final w = WorldState()..addItem('wood', 4);
+    test('twenty-nine wood is not enough', () {
+      final w = WorldState()..addItem('wood', 29);
       final (s, bridge) = atBridge(w, 0);
       expect(s.repair(), isFalse);
-      expect(w.countOf('wood'), 4);
+      expect(w.countOf('wood'), 29);
       expect(s.zone.tiles[bridge.first]!.walkable, isFalse);
     });
 
     test('a mended bridge stays mended', () {
-      final w = WorldState()..addItem('wood', 5);
+      final w = WorldState()..addItem('wood', 30);
       final (s, bridge) = atBridge(w, 0);
       s.repair();
       s.rest(s.hero);
@@ -203,7 +212,7 @@ void main() {
     });
 
     test('nothing to mend away from a bridge', () {
-      final w = WorldState()..addItem('wood', 5);
+      final w = WorldState()..addItem('wood', 30);
       final s = sim(meadow, w);
       expect(s.bridgeNear(), isNull);
       expect(s.repair(), isFalse);
@@ -221,7 +230,7 @@ void main() {
 
   test('after mending, the hero can walk across the bridge', () {
     final bridge = meadow.bridges.first;
-    final w = WorldState()..addItem('wood', 5);
+    final w = WorldState()..addItem('wood', 30);
     final probe = sim(meadow, w);
     final stand = bankOf(probe, bridge.first);
     final s = sim(meadow, w, hero: stand);

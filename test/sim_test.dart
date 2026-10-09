@@ -4,6 +4,8 @@ import 'dart:math' as math;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hex/game/hex.dart';
 import 'package:hex/game/models.dart';
+import 'package:hex/world/items.dart';
+import 'package:hex/world/lore.dart';
 import 'package:hex/world/sim.dart';
 import 'package:hex/world/world_state.dart';
 import 'package:hex/world/zone.dart';
@@ -515,6 +517,47 @@ void main() {
     expect(s.events.any((e) => e.kind == SimEventKind.pickup), isTrue);
     expect(s.groundItems, isEmpty);
     expect(sim(z, world: world).groundItems, isEmpty);
+  });
+
+  test(
+    'a scroll is read where it lies and goes to the journal, not the bag',
+    () {
+      final z = Zone.parse(
+        [
+          'zone t',
+          'name Test',
+          'dark 0',
+          'item s 5 2 scroll_orders',
+          'map',
+          '@......',
+          '.......',
+          '.......',
+        ].join('\n'),
+      );
+      final world = WorldState();
+      // A full bag does not stop a scroll.
+      for (var i = 0; i < world.bag.length; i++) {
+        world.bag[i] = ItemStack('lantern', 1);
+      }
+      final s = sim(z, hero: at(4, 2), world: world);
+      expect(s.moveHero(at(5, 2)), isTrue);
+      expect(world.scrolls, ['scroll_orders']);
+      final read = s.events.singleWhere((e) => e.kind == SimEventKind.scroll);
+      expect(read.note, 'scroll_orders');
+      expect(world.hasItem('scroll_orders'), isFalse);
+      expect(s.groundItems, isEmpty);
+      // Taken once: a fresh visit does not offer it again.
+      expect(sim(z, world: world).groundItems, isEmpty);
+    },
+  );
+
+  test('every scroll in a zone has text', () {
+    for (final id in itemDefs.keys.where((i) => itemOf(i).isLore)) {
+      expect(loreDefs[id]?.lines, isNotEmpty, reason: id);
+    }
+    for (final id in loreDefs.keys) {
+      expect(itemOf(id).isLore, isTrue, reason: id);
+    }
   });
 
   test('water, lava and mountains block the hero; bridges do not', () {

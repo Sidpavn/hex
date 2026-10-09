@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../world/lore.dart';
 import '../world/quests.dart';
 import '../world/world_state.dart';
 import '../world/zone.dart';
@@ -224,10 +225,14 @@ class QuestLogOverlay extends StatelessWidget {
     super.key,
     required this.world,
     required this.onClose,
+    required this.onRead,
   });
 
   final WorldState world;
   final VoidCallback onClose;
+
+  /// Open the scroll with this id.
+  final void Function(String id) onRead;
 
   @override
   Widget build(BuildContext context) {
@@ -264,10 +269,47 @@ class QuestLogOverlay extends StatelessWidget {
                     padding: const EdgeInsets.only(bottom: 10),
                     child: _QuestEntry(
                       info: q,
-                      stage: q.stage(world),
+                      stage: q.isDone(world) ? q.doneStage : q.stage(world),
                       objective: q.objective(world),
                     ),
                   ),
+                if (world.scrolls.isNotEmpty) ...[
+                  const Text(
+                    'Scrolls',
+                    style: TextStyle(color: Pal.gold, fontSize: 15),
+                  ),
+                  const SizedBox(height: 4),
+                  for (final id in world.scrolls)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => onRead(id),
+                        child: PixelBox(
+                          color: Pal.panelLo,
+                          shadow: false,
+                          padding: const EdgeInsets.all(8),
+                          child: Row(
+                            children: [
+                              const PxIcon('scroll'),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  loreDefs[id]?.title ?? 'Scroll',
+                                  style: const TextStyle(
+                                    color: Pal.text,
+                                    fontSize: 15,
+                                    height: 1,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 6),
+                ],
                 PxText(
                   ':token: ${world.tokens} tokens'
                   '${_carried(world).isEmpty ? '' : '   Carrying: ${_carried(world)}'}',
@@ -337,6 +379,69 @@ class _QuestEntry extends StatelessWidget {
             ],
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// A scroll's text, in full.
+class ScrollOverlay extends StatelessWidget {
+  const ScrollOverlay({super.key, required this.id, required this.onClose});
+
+  final String id;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final lore = loreDefs[id];
+    return ModalFrame(
+      onDismiss: onClose,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 360),
+          child: PixelBox(
+            border: Pal.gold,
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    const PxIcon('scroll', mult: 2),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        lore?.title ?? 'Scroll',
+                        style: const TextStyle(
+                          color: Pal.gold,
+                          fontSize: 22,
+                          height: 1,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                for (final line in lore?.lines ?? const <String>[])
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      line,
+                      style: const TextStyle(
+                        color: Pal.text,
+                        fontSize: 15,
+                        height: 1.05,
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 4),
+                GoldButton(label: 'Close', filled: false, onTap: onClose),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

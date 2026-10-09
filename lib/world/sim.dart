@@ -143,6 +143,13 @@ enum SimEventKind {
 
   /// The hero's shield soaked [SimEvent.amount] damage.
   blocked,
+
+  /// The hero picked up the scroll named in [SimEvent.note] and reads it.
+  scroll,
+
+  /// A charge went off at [SimEvent.hex], clearing [SimEvent.amount] hexes of
+  /// rubble.
+  blasted,
 }
 
 class SimEvent {
@@ -303,6 +310,9 @@ class ZoneSim {
         }
       }
     }
+    for (final c in source.charges) {
+      if (world.blasted.contains(source.chargeId(c))) _clearBlast(c);
+    }
     for (final key in world.chopped) {
       if (!key.startsWith('${source.id}#')) continue;
       final qr = key.substring(source.id.length + 1).split(',');
@@ -313,10 +323,52 @@ class ZoneSim {
     }
   }
 
+  // ───────────────────────── charges and rockfalls ─────────────────────────
+
+  /// Hexes around a charge that the blast hurts, and how much it hurts.
+  static const chargeRadius = 1;
+  static const chargeDamage = 3;
+
+  /// Rubble this close to a charge is cleared by it.
+  static const chargeReach = 2;
+
+  /// Turns the charge at [c] and every run of rubble touching its reach into
+  /// floor. Returns how many hexes of rubble went.
+  int _clearBlast(Hex c) {
+    zone.tiles[c] = const ZoneTile(Terrain.grass);
+    final todo = [
+      for (final e in zone.tiles.entries)
+        if (e.value.rubble && e.key.distanceTo(c) <= chargeReach) e.key,
+    ];
+    var cleared = 0;
+    while (todo.isNotEmpty) {
+      final h = todo.removeLast();
+      if (zone.tiles[h]?.rubble != true) continue;
+      zone.tiles[h] = const ZoneTile(Terrain.grass);
+      cleared++;
+      todo.addAll(h.neighbors);
+    }
+    return cleared;
+  }
+
+  /// Sets off the charge at [c]: hurts everything beside it, clears the
+  /// rubble and remembers it for good.
+  void _detonate(Hex c) {
+    world.blasted.add(source.chargeId(c));
+    world.bump(Counts.blast);
+    fire.remove(c);
+    for (final h in [c, ...c.neighbors]) {
+      final e = enemyAt(h);
+      if (e != null) _damageEnemy(e, chargeDamage);
+      if (h == hero) _hurtHero(chargeDamage);
+    }
+    events.add(SimEvent(SimEventKind.blasted, c, _clearBlast(c)));
+  }
+
   // ───────────────────────── trees and bridges ─────────────────────────
 
   /// Wood a bridge takes.
-  static const woodPerBridge = 5;
+  static const woodPerBridge = 30;
 
   /// A tree next to the hero that the hatchet can fell, or null.
   Hex? treeNear() {
@@ -339,9 +391,9 @@ class ZoneSim {
     return null;
   }
 
-  /// Fells the tree at [tree]. Each of the [hits] (0 to 3) from the timing
-  /// game is a piece of wood, and a tree always gives at least one. The
-  /// tree is gone for good.
+  /// Chops the tree at [tree]. Each of the [hits] (0 to 3) from the timing
+  /// game is a piece of wood. With no hits the swings still cost a turn but
+  /// the tree stays standing; otherwise it is gone for good.
   bool chop(Hex tree, {int hits = 1}) {
     if (treeNear() == null ||
         hero.distanceTo(tree) != 1 ||
@@ -352,7 +404,12 @@ class ZoneSim {
       events.add(SimEvent(SimEventKind.bagFull, hero));
       return false;
     }
-    final n = hits.clamp(1, 3);
+    final n = hits.clamp(0, 3);
+    if (n == 0) {
+      events.add(SimEvent(SimEventKind.chopped, tree, 0));
+      tick();
+      return true;
+    }
     final got = n - world.addItem('wood', n);
     zone.tiles[tree] = const ZoneTile(Terrain.grass);
     world.chopped.add('${source.id}#${tree.q},${tree.r}');
@@ -464,7 +521,26 @@ class ZoneSim {
     hero = to;
     final item = itemAt(to);
     if (item != null) {
-      if (world.canAdd(item.itemId)) {
+      if (itemOf(item.itemId).isLore) {
+        // Scrolls are read where they lie and filed in the journal, so they
+        // never need a bag slot.
+        if (!world.scrolls.contains(item.itemId)) {
+          world.scrolls.add(item.itemId);
+        }
+        world.collected.add('${source.id}#${item.id}');
+        events.add(
+          SimEvent(
+            SimEventKind.scroll,
+            to,
+            0,
+            false,
+            null,
+            false,
+            null,
+            item.itemId,
+          ),
+        );
+      } else if (world.canAdd(item.itemId)) {
         world.addItem(item.itemId);
         world.autoEquip(item.itemId);
         world.collected.add('${source.id}#${item.id}');
@@ -605,6 +681,11 @@ class ZoneSim {
         if (e.alive) _ignite(e);
       }
       if (h == hero) _hurtHero(dmg);
+    }
+    // Only the hero's own Fireball sets a charge off: boss fire and weapons
+    // do not.
+    for (final h in [target, ...target.neighbors]) {
+      if (zone.tiles[h]?.charge ?? false) _detonate(h);
     }
     tick();
     return true;

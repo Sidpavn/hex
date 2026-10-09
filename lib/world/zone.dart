@@ -66,6 +66,8 @@ class ZoneTile {
     this.terrain, {
     this.ford = false,
     this.broken = false,
+    this.rubble = false,
+    this.charge = false,
     this.portal,
   });
 
@@ -77,14 +79,23 @@ class ZoneTile {
   /// Water where a bridge used to be. Wood mends it into a ford.
   final bool broken;
 
+  /// Fallen rock across a passage. A connected run of rubble is cleared
+  /// together when a nearby charge goes off.
+  final bool rubble;
+
+  /// A crate of blasting powder. It blocks the hex and only goes off when
+  /// the hero's Fireball reaches it.
+  final bool charge;
+
   /// Id of the portal on this tile, if any.
   final String? portal;
 
   bool get walkable =>
-      ford ||
-      (terrain != Terrain.water &&
-          terrain != Terrain.lava &&
-          terrain != Terrain.mountain);
+      !charge &&
+      (ford ||
+          (terrain != Terrain.water &&
+              terrain != Terrain.lava &&
+              terrain != Terrain.mountain));
 
   int get cost => ford || terrain == Terrain.forest ? 2 : 1;
 }
@@ -186,6 +197,15 @@ class Zone {
     return '$id#${first.q},${first.r}';
   }
 
+  /// Where the charges are as loaded.
+  late final List<Hex> charges = [
+    for (final e in tiles.entries)
+      if (e.value.charge) e.key,
+  ];
+
+  /// Stable id of a charge (`zone#q,r`), kept in saves once it has gone off.
+  String chargeId(Hex h) => '$id#${h.q},${h.r}';
+
   Portal? portalAt(Hex h) {
     final id = tiles[h]?.portal;
     return id == null ? null : portals[id];
@@ -221,6 +241,8 @@ class Zone {
             'w' => const ZoneTile(Terrain.water, ford: true),
             'b' => const ZoneTile(Terrain.water, broken: true),
             '^' => const ZoneTile(Terrain.mountain),
+            'X' => const ZoneTile(Terrain.mountain, rubble: true),
+            'T' => const ZoneTile(Terrain.grass, charge: true),
             'L' => const ZoneTile(Terrain.lava),
             'c' => const ZoneTile(Terrain.crystal),
             _ => ZoneTile(Terrain.grass, portal: portal),

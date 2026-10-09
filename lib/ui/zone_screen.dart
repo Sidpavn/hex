@@ -117,6 +117,9 @@ class _ZoneScreenState extends State<ZoneScreen>
   Dialogue? dialogue;
   bool campOpen = false;
   bool journalOpen = false;
+
+  /// The scroll being read (an id in `loreDefs`), if any.
+  String? reading;
   bool packOpen = false;
   bool packAtCamp = false;
 
@@ -530,12 +533,41 @@ class _ZoneScreenState extends State<ZoneScreen>
           );
           fx.burst(at, sparkGold, 0, count: 12, speed: 55);
           HapticFeedback.selectionClick();
+        case SimEventKind.blasted:
+          _clearRoute();
+          fx.at(cursor, () => fx.shake = math.max(fx.shake, 1));
+          fx.burst(
+            at,
+            const [Color(0xFFFA9632), Color(0xFFFFE08A), Color(0xFFA0AABE)],
+            cursor,
+            count: 26,
+            speed: 110,
+            life: 0.6,
+            size: 3,
+          );
+          texts.add(
+            _FloatText(
+              at,
+              ev.amount > 0 ? 'Rockfall cleared' : 'Charge blown',
+              Pal.goldLight,
+              delay: cursor,
+            ),
+          );
+          HapticFeedback.heavyImpact();
+        case SimEventKind.scroll:
+          _clearRoute();
+          reading = ev.note;
+          HapticFeedback.selectionClick();
         case SimEventKind.bagFull:
           texts.add(_FloatText(at, 'Bag full', Pal.red));
         case SimEventKind.chopped:
-          texts.add(_FloatText(at, '+${ev.amount} wood', Pal.goldLight));
-          fx.burst(at, sparkGold, 0, count: 8, speed: 40);
-          HapticFeedback.selectionClick();
+          if (ev.amount == 0) {
+            texts.add(_FloatText(at, 'Missed', Pal.dim));
+          } else {
+            texts.add(_FloatText(at, '+${ev.amount} wood', Pal.goldLight));
+            fx.burst(at, sparkGold, 0, count: 8, speed: 40);
+            HapticFeedback.selectionClick();
+          }
         case SimEventKind.repaired:
           texts.add(_FloatText(at, 'Bridge mended', Pal.green));
           HapticFeedback.mediumImpact();
@@ -613,6 +645,19 @@ class _ZoneScreenState extends State<ZoneScreen>
         s.wait();
         afterTurn(s);
       }
+      return;
+    }
+    if (z.tiles[target]?.charge ?? false) {
+      // Looking at the crate says what it is and nothing more.
+      setState(() {
+        texts.add(
+          _FloatText(
+            hexWorld(target) + const Offset(0, -16),
+            'Blasting powder. Fire sets it off.',
+            Pal.goldLight,
+          ),
+        );
+      });
       return;
     }
     if (!(z.tiles[target]?.walkable ?? false)) return;
@@ -798,10 +843,15 @@ class _ZoneScreenState extends State<ZoneScreen>
   }
 
   void _endTalk(DialogueChoice? choice) {
+    final reply = choice?.reply;
     setState(() {
       choice?.apply(world);
-      talking = null;
-      dialogue = null;
+      if (reply != null) {
+        dialogue = reply;
+      } else {
+        talking = null;
+        dialogue = null;
+      }
     });
     _save();
   }
@@ -913,7 +963,6 @@ class _ZoneScreenState extends State<ZoneScreen>
           if (chopping != null && s != null)
             ChopOverlay(
               onDone: (hits) => _finishChop(s, hits),
-              onQuick: () => _finishChop(s, 1),
               onCancel: () => setState(() => chopping = null),
             ),
           if (campOpen && s != null)
@@ -939,9 +988,19 @@ class _ZoneScreenState extends State<ZoneScreen>
             QuestLogOverlay(
               world: world,
               onClose: () => setState(() => journalOpen = false),
+              onRead: (id) => setState(() => reading = id),
+            ),
+          if (reading != null)
+            ScrollOverlay(
+              id: reading!,
+              onClose: () {
+                setState(() => reading = null);
+                _save();
+              },
             ),
           if (dialogue != null && talking != null)
             DialogueOverlay(
+              key: ObjectKey(dialogue),
               npc: talking!,
               dialogue: dialogue!,
               onClose: _endTalk,
@@ -1274,6 +1333,8 @@ class _ZonePainter extends CustomPainter {
       if (tile.broken) {
         td.blit(canvas, art.sprite('bridge_broken'), c, -12, -8, sc);
       }
+      if (tile.rubble) td.blit(canvas, art.sprite('rubble'), c, -11, -10, sc);
+      if (tile.charge) td.blit(canvas, art.sprite('charge'), c, -8, -10, sc);
       final portal = zone.portalAt(h);
       if (portal != null) {
         td.blit(canvas, art.sprite(portal.sprite), c, -8, -9, sc);
