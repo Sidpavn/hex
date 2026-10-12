@@ -107,7 +107,10 @@ class TerrainDraw {
     int openEdges = 0,
     int cliffSE = 0,
     int cliffSW = 0,
+    Terrain? ground,
   }) {
+    // A crystal sits on whatever the zone's floor is made of.
+    final base = ground ?? terrain;
     final variant = (hash01(q, r, 7) * HexArt.variants).floor();
     final frames = HexArt.framesOf(terrain);
     final frame = frames == 1 ? 0 : _tick(time, 3, hash01(q, r, 8) * frames);
@@ -115,7 +118,7 @@ class TerrainDraw {
 
     blit(
       canvas,
-      art.tile(terrain, variant, frame),
+      art.tile(base, variant, frame),
       c,
       -HexArt.w / 2,
       -HexArt.h / 2 + (sunk ? 2 : 0),
@@ -133,7 +136,7 @@ class TerrainDraw {
         -HexArt.h / 2,
         s,
         filter: ColorFilter.mode(
-          Color(0xFF000000 | HexArt.sideOf(terrain)),
+          Color(0xFF000000 | HexArt.sideOf(base)),
           BlendMode.srcIn,
         ),
       );
@@ -142,7 +145,7 @@ class TerrainDraw {
     // Edges that have no neighbouring tile get their own outline.
     if (openEdges != 0) {
       final line = ColorFilter.mode(
-        Color(HexArt.outlineOf(terrain)),
+        Color(HexArt.outlineOf(base)),
         BlendMode.srcIn,
       );
       for (final e in const {1: 'edgeE', 2: 'edgeSE', 4: 'edgeSW'}.entries) {
@@ -183,6 +186,7 @@ class TerrainDraw {
           rect(canvas, c, 3, -8, 3, 1, s, Colors.white);
         }
       case Terrain.grass:
+      case Terrain.stone:
       case Terrain.water:
       case Terrain.lava:
         break;

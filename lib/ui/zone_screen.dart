@@ -499,6 +499,18 @@ class _ZoneScreenState extends State<ZoneScreen>
           texts.add(_FloatText(at, '-${ev.amount}', Pal.red, delay: when));
         case SimEventKind.blocked:
           texts.add(_FloatText(at, 'Blocked ${ev.amount}', Pal.blue));
+        case SimEventKind.enemyBlocked:
+          texts.add(_FloatText(at, 'Blocked ${ev.amount}', Pal.blue));
+        case SimEventKind.shieldUp:
+          texts.add(_FloatText(at, 'Shield', Pal.blue));
+          fx.burst(
+            at,
+            const [Color(0xFF78E6F0), Color(0xFF3C96C8)],
+            0,
+            count: 10,
+            speed: 50,
+          );
+          HapticFeedback.lightImpact();
         case SimEventKind.regen:
           texts.add(_FloatText(at, '+${ev.amount}', Pal.green));
         case SimEventKind.heroDown:
@@ -595,7 +607,8 @@ class _ZoneScreenState extends State<ZoneScreen>
             );
             final use = world.spellSlots.contains(spell.id)
                 ? 'Tap it on the quick bar'
-                : 'Put it in a spell slot in your pack, then tap it on the '
+                : 'Your spell slots are full. Open your pack, pick it under '
+                      'Spare spells and put it in a slot, then tap it on the '
                       'quick bar';
             final aim = spell.range > 0
                 ? ', then tap a hex up to ${spell.range} away.'
@@ -645,19 +658,6 @@ class _ZoneScreenState extends State<ZoneScreen>
         s.wait();
         afterTurn(s);
       }
-      return;
-    }
-    if (z.tiles[target]?.charge ?? false) {
-      // Looking at the crate says what it is and nothing more.
-      setState(() {
-        texts.add(
-          _FloatText(
-            hexWorld(target) + const Offset(0, -16),
-            'Blasting powder. Fire sets it off.',
-            Pal.goldLight,
-          ),
-        );
-      });
       return;
     }
     if (!(z.tiles[target]?.walkable ?? false)) return;
@@ -1235,10 +1235,17 @@ class _ZonePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _ZonePainter old) => true;
 
-  TextPainter _pixelText(String t, double size, Color c) {
+  /// Text as a painter, cached. With [maxWidth] a long line wraps and each
+  /// line is centred on the longest.
+  TextPainter _pixelText(
+    String t,
+    double size,
+    Color c, {
+    double maxWidth = double.infinity,
+  }) {
     if (_text.length > 80) _text.clear();
     return _text.putIfAbsent(
-      '$t@$size@${c.toARGB32()}',
+      '$t@$size@${c.toARGB32()}@$maxWidth',
       () => TextPainter(
         text: TextSpan(
           text: t,
@@ -1249,8 +1256,10 @@ class _ZonePainter extends CustomPainter {
             color: c,
           ),
         ),
+        textAlign: TextAlign.center,
+        textWidthBasis: TextWidthBasis.longestLine,
         textDirection: TextDirection.ltr,
-      )..layout(),
+      )..layout(maxWidth: maxWidth),
     );
   }
 
@@ -1314,6 +1323,7 @@ class _ZonePainter extends CustomPainter {
         h.r,
         time,
         filter: tint,
+        ground: tile.terrain == Terrain.crystal ? zone.floor : null,
         cliffSE: cliffSE,
         cliffSW: cliffSW,
         openEdges: openEdgesFor(
@@ -1557,6 +1567,9 @@ class _ZonePainter extends CustomPainter {
               ? const ColorFilter.mode(Colors.white, BlendMode.srcATop)
               : null,
         );
+        if (sim.world.shield > 0) {
+          _shieldBubble(canvas, td, art, ground, img.height - bob, time, sc);
+        }
       },
     ));
     order.sort((a, b) => a.y.compareTo(b.y));
@@ -1739,8 +1752,10 @@ class _ZonePainter extends CustomPainter {
       final age = t.age - t.delay;
       final pos = snap(v.toScreen(t.world + Offset(0, -age * 18)));
       final fs = 16 * sc;
-      final fill = _pixelText(t.text, fs, t.color);
-      final line = _pixelText(t.text, fs, Pal.ink);
+      // Long messages wrap to a second line instead of running off screen.
+      final wrap = math.min(fs * 9, size.width * 0.8);
+      final fill = _pixelText(t.text, fs, t.color, maxWidth: wrap);
+      final line = _pixelText(t.text, fs, Pal.ink, maxWidth: wrap);
       final o = pos - Offset((fill.width / 2).floorToDouble(), fill.height / 2);
       for (final d in const [
         Offset(-1, 0),
@@ -1753,6 +1768,29 @@ class _ZonePainter extends CustomPainter {
       fill.paint(canvas, o);
     }
     canvas.restore();
+  }
+
+  /// A thin bubble around a unit while its shield holds. Two frames step
+  /// the highlight along the rim.
+  void _shieldBubble(
+    Canvas canvas,
+    TerrainDraw td,
+    PixelAssets art,
+    Offset ground,
+    double unitHeight,
+    double time,
+    double sc,
+  ) {
+    final frame = (time * 3).floor().isEven ? 'idle0' : 'idle1';
+    final bubble = art.sprite('shield_fx', frame);
+    td.blit(
+      canvas,
+      bubble,
+      ground,
+      -(bubble.width / 2).floorToDouble(),
+      6 - unitHeight / 2 - bubble.height / 2,
+      sc,
+    );
   }
 
   void _enemy(
@@ -1789,6 +1827,9 @@ class _ZonePainter extends CustomPainter {
       sc,
       filter: filter,
     );
+    if (e.shield > 0) {
+      _shieldBubble(canvas, td, art, ground, img.height.toDouble(), time, sc);
+    }
 
     // Health pips once it has been hurt.
     final max = e.maxHp;

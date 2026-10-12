@@ -305,7 +305,25 @@ void main() {
       expect(currentObjective(w)?.text, contains('Fireball'));
       final road = questById('road')!;
       expect(road.isDone(w), isFalse);
+      // Once the rockfall is open the marker leads through the door and up.
       w.blasted.add('cave#16,18');
+      expect(road.isDone(w), isFalse);
+      final goal = currentObjective(w)!;
+      expect(goal.zone, 'quarry3');
+      expect(
+        markerHex(zones['cave']!, goal, zones),
+        zones['cave']!.portalHex['2'],
+      );
+      expect(
+        markerHex(zones['quarry1']!, goal, zones),
+        zones['quarry1']!.portalHex['2'],
+      );
+      expect(
+        markerHex(zones['quarry3']!, goal, zones),
+        zones['quarry3']!.enemies.single.hex,
+      );
+      // The road is open for good once the Warlord has taught Shield.
+      w.learn('shield');
       expect(road.isDone(w), isTrue);
       expect(currentObjective(w), isNull);
     },

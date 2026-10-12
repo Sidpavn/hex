@@ -8,7 +8,7 @@ extension TeamX on Team {
   Team get other => this == Team.player ? Team.enemy : Team.player;
 }
 
-enum Terrain { grass, forest, water, lava, crystal, mountain }
+enum Terrain { grass, forest, water, lava, crystal, mountain, stone }
 
 class Tile {
   Tile(this.terrain, {this.fire = 0, this.introDelay = 0});

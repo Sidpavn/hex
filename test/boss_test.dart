@@ -133,4 +133,75 @@ void main() {
     }
     expect(s.fire, isEmpty);
   });
+
+  group('the Warlord\'s shield', () {
+    (ZoneSim, Enemy) duel(WorldState w) {
+      final z = Zone.parse(
+        [
+          'zone t',
+          'name Test',
+          'dark 0',
+          'enemy warlord 5 3 sleep',
+          'map',
+          for (var r = 0; r < 7; r++) (r == 3 ? '@' : '.') + '.' * 19,
+        ].join('\n'),
+      );
+      final s = ZoneSim(z, world: w, heroAt: at(4, 3), rng: math.Random(1));
+      return (s, s.enemies.single);
+    }
+
+    test('goes up once, when he is hurt down to half', () {
+      final w = WorldState()..hp = 99;
+      final (s, boss) = duel(w);
+      final d = w.damageOf(w.weaponId);
+      boss.hp = 5 + d;
+      boss.awareness = Awareness.alert;
+      expect(boss.shield, 0);
+      s.attack(boss);
+      expect(boss.hp, 5);
+      expect(boss.shield, bossKits[UnitType.warlord]!.shield);
+      expect(
+        s.events.where((e) => e.kind == SimEventKind.shieldUp),
+        hasLength(1),
+      );
+    });
+
+    test('soaks damage before his hit points, then fades', () {
+      final w = WorldState()..hp = 99;
+      final (s, boss) = duel(w);
+      boss.hp = 5;
+      boss.shield = 3;
+      boss.shielded = true;
+      boss.shieldTurns = 5;
+      boss.awareness = Awareness.alert;
+      s.events.clear();
+      s.attack(boss);
+      final soaked = math.min(3, w.damageOf(w.weaponId));
+      expect(
+        s.events.firstWhere((e) => e.kind == SimEventKind.enemyBlocked).amount,
+        soaked,
+      );
+      expect(boss.hp, 5 - (w.damageOf(w.weaponId) - soaked));
+      // It does not come back, and it runs out with time.
+      for (var i = 0; i < 6; i++) {
+        s.wait();
+      }
+      expect(boss.shield, 0);
+      final hp = boss.hp;
+      s.events.clear();
+      boss.hp = 3;
+      s.attack(boss);
+      expect(s.events.any((e) => e.kind == SimEventKind.shieldUp), isFalse);
+      expect(boss.hp, lessThan(3));
+      expect(hp, isNonNegative);
+    });
+  });
+
+  test('casting Shield raises the hero\'s shield and says so', () {
+    final w = WorldState()..learn('shield');
+    final s = ZoneSim(arena(), world: w, heroAt: at(7, 3));
+    expect(s.castShield(), isTrue);
+    expect(w.shield, ZoneSim.shieldAbsorb);
+    expect(s.events.any((e) => e.kind == SimEventKind.shieldUp), isTrue);
+  });
 }

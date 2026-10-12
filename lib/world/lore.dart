@@ -23,6 +23,17 @@ const Map<String, Lore> loreDefs = {
     'We left blasting powder by the rubble. None of us would put a flame '
         'near it.',
   ]),
+  'scroll_crew': Lore('Crew log, the quarry', [
+    'We cut stone for the road until the pass came down. Half the crew went '
+        'up the ladders to look for another way out.',
+    'The golems were ours once. We set them to guard the cut. Nobody told '
+        'them to stop.',
+  ]),
+  'scroll_warden': Lore('The warden\'s last order', [
+    'I hold the gate. The road stays shut until I am relieved.',
+    'If the gate is barred, it is barred from this side. Do not come up '
+        'alone.',
+  ]),
   'scroll_woodcutter': Lore('Note on a post', [
     'Mended the bridge again. The planks rot faster than I can cut them. '
         'Mara says leave it, but the road must stay open.',

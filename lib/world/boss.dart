@@ -12,6 +12,8 @@ class BossKit {
     this.cooldown = 3,
     this.range = 6,
     this.fire = true,
+    this.shield = 0,
+    this.shieldBelow = 0.5,
   });
 
   /// Id in `spellDefs`, and what the hero learns on the kill.
@@ -36,6 +38,11 @@ class BossKit {
 
   /// Whether the blast sets the ground alight.
   final bool fire;
+
+  /// Damage a shield soaks, raised once when its hit points fall to
+  /// [shieldBelow] of the maximum. Zero means it never shields.
+  final int shield;
+  final double shieldBelow;
 }
 
 const Map<UnitType, BossKit> bossKits = {
@@ -47,5 +54,6 @@ const Map<UnitType, BossKit> bossKits = {
     center: 3,
     ring: 2,
     fire: false,
+    shield: 3,
   ),
 };

@@ -100,6 +100,8 @@ class HexArt {
     Terrain.water: [0xFF4690DC, 0xFF3674C8, 0xFF78BEF0, 0xFF224A8C],
     Terrain.lava: [0xFFC83C28, 0xFFA02828, 0xFFFA9632, 0xFF641E28],
     Terrain.mountain: [0xFF82869A, 0xFF6E7286, 0xFFA0A6B4, 0xFF464A60],
+    // A paler, warmer grey than the mountains, so floor and wall read apart.
+    Terrain.stone: [0xFFA09E96, 0xFF8A8880, 0xFFB8B6AC, 0xFF58564E],
   };
 
   static int _darken(int argb, double f) {

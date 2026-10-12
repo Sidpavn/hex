@@ -123,6 +123,7 @@ class Zone {
     required this.portals,
     required this.portalHex,
     required this.dark,
+    this.floor = Terrain.grass,
     this.enemies = const [],
     this.camps = const [],
     this.npcs = const [],
@@ -154,6 +155,9 @@ class Zone {
 
   /// Dark zones (caves) only light the hexes near the hero.
   final bool dark;
+
+  /// What plain floor is made of: grass, or grey stone in a quarry.
+  final Terrain floor;
 
   /// Creatures that live here.
   final List<EnemySpawn> enemies;
@@ -214,6 +218,7 @@ class Zone {
   static Zone parse(String text) {
     String id = '', name = '';
     var dark = false;
+    var floor = Terrain.grass;
     final portals = <String, Portal>{};
     final tiles = <Hex, ZoneTile>{};
     final portalHex = <String, Hex>{};
@@ -242,10 +247,10 @@ class Zone {
             'b' => const ZoneTile(Terrain.water, broken: true),
             '^' => const ZoneTile(Terrain.mountain),
             'X' => const ZoneTile(Terrain.mountain, rubble: true),
-            'T' => const ZoneTile(Terrain.grass, charge: true),
+            'T' => ZoneTile(floor, charge: true),
             'L' => const ZoneTile(Terrain.lava),
             'c' => const ZoneTile(Terrain.crystal),
-            _ => ZoneTile(Terrain.grass, portal: portal),
+            _ => ZoneTile(floor, portal: portal),
           };
         }
         row++;
@@ -259,6 +264,8 @@ class Zone {
           name = line.substring(5);
         case 'dark':
           dark = p[1] == '1';
+        case 'floor':
+          floor = Terrain.values.byName(p[1]);
         case 'portal':
           portals[p[1]] = Portal(
             p[1],
@@ -314,6 +321,7 @@ class Zone {
       portals: portals,
       portalHex: portalHex,
       dark: dark,
+      floor: floor,
       enemies: enemies,
       camps: camps,
       npcs: npcs,
@@ -334,6 +342,7 @@ class Zone {
     portals: portals,
     portalHex: portalHex,
     dark: dark,
+    floor: floor,
     enemies: enemies,
     camps: camps,
     npcs: npcs,
@@ -349,7 +358,16 @@ class ZoneRepo {
   static void clear() => _cache.clear();
 
   /// Every zone that ships with the game.
-  static const ids = ['training', 'meadow', 'mine', 'cave'];
+  static const ids = [
+    'training',
+    'meadow',
+    'mine',
+    'cave',
+    'quarry1',
+    'quarry2',
+    'quarry3',
+    'sixways',
+  ];
 
   /// Loads every zone, so quest markers can look across zones.
   static Future<Map<String, Zone>> loadAll([AssetBundle? bundle]) async {

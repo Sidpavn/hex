@@ -339,7 +339,7 @@ class ReachRuler extends StatelessWidget {
   }
 }
 
-enum _SelKind { bag, weapon, spell }
+enum _SelKind { bag, weapon, spell, spare }
 
 class _Sel {
   const _Sel(this.kind, this.index);
@@ -421,6 +421,7 @@ class _InventoryOverlayState extends State<InventoryOverlay> {
                   const SizedBox(height: 10),
                   _label('Equipped'),
                   _equipment(),
+                  ..._spareSpells(),
                   const SizedBox(height: 10),
                   _label('Bag'),
                   _bag(u),
@@ -624,6 +625,8 @@ class _InventoryOverlayState extends State<InventoryOverlay> {
       );
     } else if (sel.kind == _SelKind.spell) {
       body = _spellDetail(sel.index);
+    } else if (sel.kind == _SelKind.spare) {
+      body = _spareDetail(sel.index);
     } else {
       final id = _selectedItemId;
       body = id == null ? _emptySlot(sel) : _itemDetail(id, sel);
@@ -842,42 +845,120 @@ class _InventoryOverlayState extends State<InventoryOverlay> {
     return out;
   }
 
+  /// A spell's icon, name, cost and what it does.
+  List<Widget> _spellInfo(SpellDef def) => [
+    Row(
+      children: [
+        PxIcon(def.icon, mult: 2),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                def.name,
+                style: const TextStyle(
+                  color: Pal.text,
+                  fontSize: 19,
+                  height: 1,
+                ),
+              ),
+              PxText(
+                ':bolt: ${def.cost} mana'
+                '${def.needsTarget ? '   Range ${def.range}' : '   Self'}',
+                style: const TextStyle(color: Pal.dim, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+    const SizedBox(height: 6),
+    Text(def.desc, style: const TextStyle(color: Pal.text, fontSize: 14)),
+  ];
+
+  /// Spells you know that are in no slot, so they cannot be used yet.
+  List<String> get _spare => [
+    for (final s in w.knownSpells)
+      if (!w.spellSlots.contains(s) && spellDefs.containsKey(s)) s,
+  ];
+
+  List<Widget> _spareSpells() {
+    final spare = _spare;
+    if (spare.isEmpty) return const [];
+    return [
+      const SizedBox(height: 10),
+      _label('Spare spells'),
+      Wrap(
+        spacing: 8,
+        runSpacing: 6,
+        children: [
+          for (var i = 0; i < spare.length; i++)
+            ItemSlot(
+              icon: spellDefs[spare[i]]!.icon,
+              badge: '${spellDefs[spare[i]]!.cost}',
+              selected: _sel == _Sel(_SelKind.spare, i),
+              onTap: () => setState(() {
+                _sel = _Sel(_SelKind.spare, i);
+                _note = null;
+              }),
+            ),
+        ],
+      ),
+    ];
+  }
+
+  Widget _spareDetail(int index) {
+    final spare = _spare;
+    final def = index < spare.length ? spellDefs[spare[index]] : null;
+    if (def == null) {
+      return const Text(
+        'Tap an item to see what it does.',
+        style: TextStyle(color: Pal.dim, fontSize: 14),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ..._spellInfo(def),
+        const SizedBox(height: 8),
+        const Text(
+          'Put it in a spell slot to use it:',
+          style: TextStyle(color: Pal.gold, fontSize: 14),
+        ),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 8,
+          runSpacing: 6,
+          children: [
+            for (var slot = 0; slot < w.spellSlots.length; slot++)
+              SizedBox(
+                width: 150,
+                child: GoldButton(
+                  label: 'Spell ${slot + 1}',
+                  filled: slot == 0,
+                  onTap: () {
+                    w.slotSpell(slot, def.id);
+                    setState(() => _sel = null);
+                    _changed('${def.name} ready.');
+                  },
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
   Widget _spellDetail(int slot) {
     final id = w.spellSlots[slot];
     final def = id == null ? null : spellDefs[id];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (def != null) ...[
-          Row(
-            children: [
-              PxIcon(def.icon, mult: 2),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      def.name,
-                      style: const TextStyle(
-                        color: Pal.text,
-                        fontSize: 19,
-                        height: 1,
-                      ),
-                    ),
-                    PxText(
-                      ':bolt: ${def.cost} mana'
-                      '${def.needsTarget ? '   Range ${def.range}' : '   Self'}',
-                      style: const TextStyle(color: Pal.dim, fontSize: 12),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(def.desc, style: const TextStyle(color: Pal.text, fontSize: 14)),
-        ] else
+        if (def != null)
+          ..._spellInfo(def)
+        else
           const Text(
             'Empty spell slot.',
             style: TextStyle(color: Pal.dim, fontSize: 14),

@@ -23,13 +23,19 @@ Map<String, Zone> _load() {
   return zones;
 }
 
-/// [z] with every broken bridge mended, for tests that only care about layout.
+/// [z] with every broken bridge mended and every rockfall blasted, for tests
+/// that only care about layout.
 Zone mended(Zone z) {
   final bridges = z.bridges;
   final c = z.copy();
   for (final b in bridges) {
     for (final h in b) {
       c.tiles[h] = const ZoneTile(Terrain.water, ford: true);
+    }
+  }
+  for (final e in z.tiles.entries) {
+    if (e.value.rubble || e.value.charge) {
+      c.tiles[e.key] = const ZoneTile(Terrain.grass);
     }
   }
   return c;

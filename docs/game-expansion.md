@@ -115,7 +115,7 @@ counter, and a visible turn count.
 - Burn: enemies and the hero. 3 turns, 1 damage at turn end, refreshes.
   Fire hexes and Fireball apply it. A shield soaks it.
 - Shield: spell, 2 mana, absorbs 3 damage, fades after 5 turns, can't be
-  recast while full. Hero only. Resting clears all statuses.
+  recast while full. The hero casts it. The Warlord raises one too (below). Resting clears all statuses.
 - Bosses are special: one per zone, alone in their own spot, never near
   a portal or another boss.
 - Spells come from boss fights, one per zone. The cave Pyromancer teaches
@@ -512,16 +512,16 @@ Entrance (camp)
 
 Hints for the player (built):
 
-- Tapping the crate shows "Blasting powder. Fire sets it off." It says what
-  it is and nothing about Fireball.
 - The crate has a flame mark on its front, so it reads as explosive.
 - The survey scroll in Room C says the Watch left powder by the rubble and
   that nobody would put a flame near it.
 - Tobin's last training line gives the quest "Reopen the road". Its log entry
   says "Find a way past the rockfall in the Hollow Deep" and, only once
   Fireball is known, "Light the powder by the rockfall with Fireball." It
-  finishes when the charge goes off (`Quest.finishedWhen`). The Mara quest
-  keeps priority for the map marker while it is active.
+  finishes once Shield is learned from the Warlord (`Quest.finishedWhen`).
+  After the charge goes off its marker leads through the door and up the
+  quarry. The Mara quest keeps priority for the map marker while it is
+  active.
 
 Not done yet: the Quarry portal behind the rubble.
 
@@ -657,3 +657,86 @@ dialogue, and each one should be about the place it lies in.
 
 1. A distinct sprite per scroll type. All three use one `scroll` sprite today.
 2. Whether the journal gets its own screen once there are many scrolls.
+
+## 14. The Quarry (draft)
+
+The last zone of the Marches. It is entered through the cave's blasted
+rockfall and ends with the Warlord. It is the first place golems appear.
+
+### Decided
+
+- **Fireball hurts the Warlord.** Neither he nor golems are fire-immune
+  (`fireImmune` is only set on the Pyromancer). Burn works on them too.
+- **Open area, with connected areas.** Not a dark dungeon like the cave: it is
+  lit and you can see across it.
+- **Vertical.** The quarry is cut into tiers and you climb it.
+- **Only golems.** No knights, archers or cavalry. Golems have 8 HP, move one
+  hex a turn and hit for 3, so they are slow and hit hard.
+
+### Structure (built)
+
+Three zones, one per level, joined by ladders. You start at the bottom and
+climb. Each level is an open, lit area.
+
+```
+Hollow Deep --(blasted rockfall)--> Quarry Floor   (quarry1)
+                                      |  ladder
+                                    Quarry Terrace (quarry2)
+                                      |  ladder
+                                    Quarry Rim     (quarry3)  <- the Warlord
+                                      |  gate, shut until Shield is learned
+                                    Sixways (placeholder)
+```
+
+| Zone | Layout | Enemies | Other |
+|---|---|---|---|
+| Quarry Floor | One wide yard, entry bottom left, ladder top right | 1 golem, asleep | Camp by the ladder, a potion, the crew's log (scroll) |
+| Quarry Terrace | Two yards joined by a gap on the right, so the route doubles back: you cross the lower yard, go up the gap, then cross the upper yard to the ladder | 2 golems, one on guard and one patrolling | Camp at the arrival, a potion, an ether |
+| Quarry Rim | A wide arena with single pillars for cover | The Warlord, alone | Camp at the arrival, a potion, the warden's last order (scroll), the gate in the top right corner |
+
+- The cave's blasted rockfall opens onto a short corridor. Its end is a door
+  into Quarry Floor (cave portal 2).
+- The Warlord stands at least 8 hexes from the ladder and the gate.
+- The gate at Quarry Rim is a normal gate (`quarry3#2`). It opens once the
+  player knows Shield, which only the Warlord's defeat teaches.
+- The gate leads to `sixways`, a small empty placeholder zone with a camp and
+  nothing else, so the door works. The real city replaces it.
+- The ladder is a portal with a `ladder` sprite.
+- The floor is grey stone (`Terrain.stone`, set per zone with a `floor stone`
+  line in the zone file). It is paler and warmer than the mountain walls so
+  floor and wall read apart. Stone does not burn, and a blasted rockfall
+  leaves the zone's own floor. Crystals sit on the zone's floor too. The
+  cave, mine and meadow keep grass; one `floor stone` line changes any zone.
+- The cave door uses the bright `cave_exit` sprite, so it shows up in the
+  dark. Once the rockfall is open, the "Reopen the road" quest points through
+  the door and up the quarry to the Warlord, and finishes when Shield is
+  learned.
+
+### Shield visuals and the Warlord's shield (built)
+
+- A shielded unit, the hero or the Warlord, has a thin cyan bubble drawn around
+  it for as long as the shield holds. It steps between two frames, with no
+  glow or fade. A "Shield" text and a few sparks mark the moment it goes up,
+  and "Blocked n" shows what it soaked.
+- The Warlord raises a shield once per fight, the first time he is hurt down
+  to half his hit points. It soaks 3 damage and lasts 5 turns, the same as the
+  hero's. Both numbers are in `BossKit` (`shield`, `shieldBelow`), so another
+  boss can use it or the Warlord can lose it by setting `shield` to 0.
+- Spells you know but have not put in a slot show under "Spare spells" in the
+  pack. Tap one and choose a slot for it. The learn message points there when
+  the two slots are full.
+
+### What it teaches
+
+Using Fireball on the world and on slow enemies: kite a golem, burn it, then
+finish it. The player has 4 mana, so they cast twice, then switch to weapons.
+The Warlord is the test of everything: Shield comes from beating him.
+
+### Ideas, not decided
+
+- A second charge guarding a side area, so the blast is used again.
+
+### Open questions
+
+1. Golem counts and positions are a first guess, until the zones are played.
+2. Whether the Warlord should leave his post to chase, or stay on guard.

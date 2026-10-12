@@ -284,8 +284,16 @@ const List<Quest> quests = [
     summary:
         'A rockfall buried the south road beyond the Hollow Deep. Find a way '
         'through.',
-    finishedWhen: Blasted('cave'),
+    finishedWhen: Knows('shield'),
     objectives: [
+      Rule(
+        All([QuestAt('road', 1), Blasted('cave')]),
+        QuestObjective(
+          'quarry3',
+          'Go through the opened rockfall and climb the quarry.',
+          unit: UnitType.warlord,
+        ),
+      ),
       Rule(
         All([QuestAt('road', 1), Knows('fireball')]),
         QuestObjective(
@@ -639,6 +647,10 @@ class Gate {
 
 const Map<String, Gate> gates = {
   'training#1': Gate(QuestFrom('training', 5), 'Finish your training first.'),
+  'quarry3#2': Gate(
+    Knows('shield'),
+    'The gate is barred. The Warlord holds it.',
+  ),
 };
 
 /// The gate stopping [portal] in [zone], or null if it is open.

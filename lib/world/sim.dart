@@ -67,6 +67,12 @@ class Enemy {
   /// refreshes it, it does not stack.
   int burn = 0;
 
+  /// Damage its shield will still soak, and the turns before it fades. A boss
+  /// raises its shield once per fight ([shielded]).
+  int shield = 0;
+  int shieldTurns = 0;
+  bool shielded = false;
+
   /// Where it was last seen the hero, while alert or searching.
   Hex? lastSeen;
   int _lost = 0;
@@ -143,6 +149,13 @@ enum SimEventKind {
 
   /// The hero's shield soaked [SimEvent.amount] damage.
   blocked,
+
+  /// A shield went up at [SimEvent.hex]: the hero's, or a boss's if
+  /// [SimEvent.unit] is set.
+  shieldUp,
+
+  /// An enemy's shield soaked [SimEvent.amount] damage at [SimEvent.hex].
+  enemyBlocked,
 
   /// The hero picked up the scroll named in [SimEvent.note] and reads it.
   scroll,
@@ -335,7 +348,8 @@ class ZoneSim {
   /// Turns the charge at [c] and every run of rubble touching its reach into
   /// floor. Returns how many hexes of rubble went.
   int _clearBlast(Hex c) {
-    zone.tiles[c] = const ZoneTile(Terrain.grass);
+    final floor = ZoneTile(source.floor);
+    zone.tiles[c] = floor;
     final todo = [
       for (final e in zone.tiles.entries)
         if (e.value.rubble && e.key.distanceTo(c) <= chargeReach) e.key,
@@ -344,7 +358,7 @@ class ZoneSim {
     while (todo.isNotEmpty) {
       final h = todo.removeLast();
       if (zone.tiles[h]?.rubble != true) continue;
-      zone.tiles[h] = const ZoneTile(Terrain.grass);
+      zone.tiles[h] = floor;
       cleared++;
       todo.addAll(h.neighbors);
     }
@@ -611,7 +625,29 @@ class ZoneSim {
       );
       return;
     }
-    e.hp -= total;
+    var through = total;
+    if (e.shield > 0) {
+      final soaked = math.min(e.shield, through);
+      e.shield -= soaked;
+      through -= soaked;
+      if (e.shield == 0) e.shieldTurns = 0;
+      events.add(
+        SimEvent(
+          SimEventKind.enemyBlocked,
+          e.hex,
+          soaked,
+          false,
+          null,
+          false,
+          e.type,
+        ),
+      );
+      if (through <= 0) {
+        if (e.alive) _noticeHero(e);
+        return;
+      }
+    }
+    e.hp -= through;
     if (!e.alive) {
       world.slain.add(e.key);
       world.bump(Counts.kill(e.type));
@@ -636,14 +672,39 @@ class ZoneSim {
       SimEvent(
         e.alive ? SimEventKind.hitEnemy : SimEventKind.killedEnemy,
         e.hex,
-        total,
+        through,
         sneak,
         null,
         false,
         e.type,
       ),
     );
-    if (e.alive) _noticeHero(e);
+    if (e.alive) {
+      _raiseShield(e);
+      _noticeHero(e);
+    }
+  }
+
+  /// A boss with a shield puts it up the first time it is hurt down to the
+  /// kit's threshold.
+  void _raiseShield(Enemy e) {
+    final kit = bossKits[e.type];
+    if (kit == null || kit.shield == 0 || e.shielded) return;
+    if (e.hp > e.maxHp * kit.shieldBelow) return;
+    e.shielded = true;
+    e.shield = kit.shield;
+    e.shieldTurns = shieldLasts;
+    events.add(
+      SimEvent(
+        SimEventKind.shieldUp,
+        e.hex,
+        kit.shield,
+        false,
+        null,
+        false,
+        e.type,
+      ),
+    );
   }
 
   /// Whether Fireball can be thrown at [target] right now.
@@ -661,7 +722,8 @@ class ZoneSim {
     return t != null &&
         t != Terrain.water &&
         t != Terrain.lava &&
-        t != Terrain.mountain;
+        t != Terrain.mountain &&
+        t != Terrain.stone;
   }
 
   /// Blasts [target] for 2 and its ring for 1, and sets the ground alight.
@@ -714,6 +776,7 @@ class ZoneSim {
     world.bump(Counts.castShield);
     world.shield = shieldAbsorb;
     world.shieldTurns = shieldLasts;
+    events.add(SimEvent(SimEventKind.shieldUp, hero));
     tick();
     return true;
   }
@@ -874,6 +937,7 @@ class ZoneSim {
     }
     if (world.shieldTurns > 0 && --world.shieldTurns == 0) world.shield = 0;
     for (final e in enemies) {
+      if (e.shieldTurns > 0 && --e.shieldTurns == 0) e.shield = 0;
       if (!e.alive || e.burn <= 0) continue;
       _damageEnemy(e, 1);
       e.burn--;
