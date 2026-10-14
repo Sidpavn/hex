@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hex/game/hex.dart';
 import 'package:hex/game/models.dart';
+import 'package:hex/world/items.dart';
 import 'package:hex/world/pathfinding.dart';
 import 'package:hex/world/quests.dart';
 import 'package:hex/world/sim.dart';
@@ -145,6 +146,107 @@ void main() {
     for (final h in [target, Hex(target.q + 1, target.r)]) {
       expect(s.zone.tiles[h]!.terrain, Terrain.stone);
       expect(s.zone.tiles[h]!.walkable, isTrue);
+    }
+  });
+
+  test('the longbow sits in a chest on the terrace, guarded by golems', () {
+    final z = zones['quarry2']!;
+    final chest = z.items.singleWhere((i) => i.chest);
+    expect(chest.itemId, 'longbow');
+    final guards = z.enemies.where((e) => e.hex.distanceTo(chest.hex) <= 4);
+    expect(guards.length, greaterThanOrEqualTo(2));
+    for (final id in zones.keys) {
+      for (final i in zones[id]!.items) {
+        if (id == 'training') continue;
+        expect(
+          itemOf(i.itemId).isWeapon,
+          i.chest,
+          reason: '$id ${i.id}: only chests hold weapons outside training',
+        );
+      }
+    }
+  });
+
+  test('stepping on the chest shows it; taking it adds the weapon once', () {
+    final z = zones['quarry2']!;
+    final chest = z.items.singleWhere((i) => i.chest);
+    final from = chest.hex.neighbors.firstWhere(
+      (h) => z.tiles[h]?.walkable ?? false,
+    );
+    final w = WorldState();
+    final s = ZoneSim(z, world: w, heroAt: from);
+    s.enemies.clear();
+    expect(s.moveHero(chest.hex), isTrue);
+    expect(s.events.any((e) => e.kind == SimEventKind.chestOpened), isTrue);
+    expect(w.countOf('longbow'), 0);
+    expect(s.takeChest(), isTrue);
+    expect(w.countOf('longbow'), 1);
+    expect(s.takeChest(), isFalse);
+    expect(s.itemAt(chest.hex), isNull);
+  });
+
+  test('a full bag leaves the chest closed', () {
+    final z = zones['quarry2']!;
+    final chest = z.items.singleWhere((i) => i.chest);
+    final w = WorldState();
+    while (w.canAdd('axe')) {
+      w.addItem('axe');
+    }
+    final s = ZoneSim(z, world: w, heroAt: chest.hex);
+    expect(s.takeChest(), isFalse);
+    expect(s.itemAt(chest.hex), isNotNull);
+  });
+
+  test('rock is marked one turn, then lands and hurts what is under it', () {
+    final z = zones['quarry2']!;
+    expect(z.rockEvery, greaterThan(0));
+    final s = ZoneSim(z, world: WorldState(), heroAt: z.spawn);
+    s.enemies.clear();
+    while (s.rockWarn.isEmpty) {
+      s.wait();
+    }
+    final marked = s.rockWarn.toSet();
+    expect(marked, hasLength(z.rockCount));
+    // Stand on a marked hex and the rock finds the hero.
+    s.events.clear();
+    final before = s.heroHp;
+    s.hero = marked.first;
+    s.wait();
+    expect(s.events.where((e) => e.kind == SimEventKind.rockLand), isNotEmpty);
+    expect(s.heroHp, before - ZoneSim.rockDamage);
+  });
+
+  test('stepping off a marked hex dodges the rock', () {
+    final z = zones['quarry2']!;
+    final s = ZoneSim(z, world: WorldState(), heroAt: z.spawn);
+    s.enemies.clear();
+    while (s.rockWarn.isEmpty) {
+      s.wait();
+    }
+    final marked = s.rockWarn.toSet();
+    final spot = marked.first;
+    s.hero = spot;
+    final out = spot.neighbors.firstWhere(
+      (h) => (s.zone.tiles[h]?.walkable ?? false) && !marked.contains(h),
+    );
+    final before = s.heroHp;
+    expect(s.moveHero(out), isTrue);
+    expect(s.heroHp, before);
+  });
+
+  test('the lift joins the floor and the rim but has no power yet', () {
+    final low = zones['quarry1']!;
+    final high = zones['quarry3']!;
+    expect(low.portals['3']!.toZone, 'quarry3');
+    expect(high.portals['3']!.toZone, 'quarry1');
+    final w = WorldState();
+    expect(closedGate('quarry1', '3', w), isNotNull);
+    expect(closedGate('quarry3', '3', w), isNotNull);
+  });
+
+  test('the cave no longer holds weapons', () {
+    for (final i in zones['cave']!.items) {
+      expect(itemOf(i.itemId).isWeapon, isFalse, reason: i.id);
     }
   });
 }

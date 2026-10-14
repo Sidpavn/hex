@@ -1251,3 +1251,52 @@ kmMkknkkMmk.
 ..kkkkkkkk..
 ............
 ............
+
+# ───────────────────────── quarry ─────────────────────────
+
+@sprite chest idle0
+..kkkkkkkkkk..
+.kaaaaaaaaaak.
+kayaaaaaaaayak
+kayAAAAAAAAyak
+kkkkkkyykkkkkk
+kayAkyyyykAyak
+kayAkyYYykAyak
+kayAAkkkkkAyak
+kaaAAAAAAAAaak
+kkkkkkkkkkkkkk
+
+@sprite chest open
+..kkkkkkkkkk..
+.kAAAAAAAAAAk.
+kAAAAAAAAAAAAk
+kkkkkkkkkkkkkk
+kNNNNNNNNNNNNk
+kNkkkkkkkkkkNk
+kayAAAAAAAAyak
+kayAAAAAAAAyak
+kaaAAAAAAAAaak
+kkkkkkkkkkkkkk
+
+@sprite lift idle0
+..kkkkkkkkkkkk..
+..kmmmmmmmmmmk..
+..kak......kak..
+..kak......kak..
+..kak......kak..
+..kak......kak..
+kkkkkkkkkkkkkkkk
+kMMMMMMMMMMMMMMk
+kMmmmkkkkkkmmmMk
+kMmmmkRRRRkmmmMk
+kMMMMMMMMMMMMMMk
+kkkkkkkkkkkkkkkk
+
+@sprite rock idle0
+..kkkk..
+.kmmmmk.
+kmmmMMmk
+kmmMMMMk
+kmMMMMMk
+.kMMMMk.
+..kkkk..

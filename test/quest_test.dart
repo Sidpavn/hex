@@ -123,7 +123,7 @@ void main() {
         w.autoEquip('bow');
         expect(w.weaponId, 'sword');
         expect(currentObjective(w)?.hint, 'bow');
-        expect(talkTo(tobin, w).lines.join(' '), contains('quick bar'));
+        expect(talkTo(tobin, w).lines.join(' '), contains('bottom row'));
         w.activeWeapon = w.weaponSlots.indexOf('bow');
         expect(currentObjective(w)?.hint, isNull);
         expect(currentObjective(w)?.unit, UnitType.post);

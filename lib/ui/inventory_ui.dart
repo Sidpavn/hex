@@ -21,6 +21,8 @@ class ItemSlot extends StatelessWidget {
     this.accent,
     this.flag = false,
     this.mult = 2,
+    this.pad = 0,
+    this.onPress,
   });
 
   final VoidCallback? onTap;
@@ -39,25 +41,35 @@ class ItemSlot extends StatelessWidget {
   final bool active;
   final bool dim;
 
-  /// Border colour for special items.
+  /// Colour of the upgrade level shown in the corner.
   final Color? accent;
 
   /// Marks the slot as the one a quest wants you to use.
   final bool flag;
   final int mult;
 
+  /// Called with true when a finger goes down on the slot and false when it
+  /// lifts or the touch is cancelled.
+  final void Function(bool down)? onPress;
+
+  /// Extra border around the icon, in art pixels.
+  final int pad;
+
   @override
   Widget build(BuildContext context) {
     final u = PixelUi.unit(context);
-    final size = (12 * mult + 4) * u;
-    final border = selected || flag
+    final size = (12 * mult + 4 + pad) * u;
+    final border = selected
         ? Pal.goldLight
         : active
         ? Pal.gold
-        : (accent ?? Pal.ink);
+        : Pal.ink;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
+      onTapDown: onPress == null ? null : (_) => onPress!(true),
+      onTapUp: onPress == null ? null : (_) => onPress!(false),
+      onTapCancel: onPress == null ? null : () => onPress!(false),
       child: SizedBox(
         width: size,
         height: size,
@@ -89,8 +101,8 @@ class ItemSlot extends StatelessWidget {
                   top: 1 * u,
                   child: Text(
                     corner!,
-                    style: const TextStyle(
-                      color: Pal.goldLight,
+                    style: TextStyle(
+                      color: accent ?? Pal.goldLight,
                       fontSize: 11,
                       height: 1,
                     ),
@@ -194,9 +206,9 @@ QuickEntry stepQuick(
 }
 
 /// The strip of big slots under the world: weapons, then spells, then
-/// potions, with a thin divider between groups. Swiping the screen moves the
-/// selection one slot (a fling jumps a group); tapping the selected slot
-/// uses it and tapping any other slot selects it.
+/// potions, with a thin divider between groups. Tapping a weapon takes it in
+/// hand; tapping a spell or potion uses it at once. Swiping the world
+/// changes weapon.
 class QuickBar extends StatelessWidget {
   const QuickBar({
     super.key,
@@ -205,6 +217,7 @@ class QuickBar extends StatelessWidget {
     required this.targeting,
     required this.onSelect,
     required this.onUse,
+    this.onPreview,
     required this.canCast,
     this.pointAt,
   });
@@ -216,6 +229,9 @@ class QuickBar extends StatelessWidget {
   final bool targeting;
   final void Function(QuickEntry e) onSelect;
   final void Function(QuickEntry e) onUse;
+
+  /// A weapon slot is held down (the entry) or let go (null).
+  final void Function(QuickEntry? e)? onPreview;
 
   /// Whether the spell with the given id can be cast right now.
   final bool Function(String spell) canCast;
@@ -229,7 +245,7 @@ class QuickBar extends StatelessWidget {
     final entries = quickEntries(world);
     final sel = selectedQuick(entries, selected, world);
     if (sel == null) return const SizedBox.shrink();
-    final side = (12 * _mult + 4) * u;
+    final side = (12 * _mult + 4 + _pad) * u;
     final rise = 2 * u;
     return SizedBox(
       width: double.infinity,
@@ -256,6 +272,7 @@ class QuickBar extends StatelessWidget {
   }
 
   static const _mult = 2;
+  static const _pad = 4;
 
   Widget _slot(QuickEntry e, bool isSel, double rise) {
     const mult = _mult;
@@ -265,29 +282,31 @@ class QuickBar extends StatelessWidget {
         badge: '${world.damageOf(e.id)}',
         corner: world.level(e.id) > 0 ? '+${world.level(e.id)}' : null,
         mult: mult,
+        pad: _pad,
         selected: isSel,
         active: world.activeWeapon == e.slot && !targeting,
         flag: pointAt == e.id && world.activeWeapon != e.slot,
         accent: tierColor(world.level(e.id)),
-        onTap: () => isSel ? onUse(e) : onSelect(e),
+        onTap: () => onSelect(e),
+        onPress: (down) => onPreview?.call(down ? e : null),
       ),
       QuickKind.spell => ItemSlot(
         icon: spellDefs[e.id]!.icon,
         badge: '${spellDefs[e.id]!.cost}',
         mult: mult,
-        selected: isSel,
+        pad: _pad,
         active: e.id == 'fireball' && targeting,
         dim: !canCast(e.id),
         flag: pointAt == e.id,
-        onTap: () => isSel ? onUse(e) : onSelect(e),
+        onTap: () => onUse(e),
       ),
       QuickKind.item => ItemSlot(
         icon: itemOf(e.id).icon,
         badge: '${world.countOf(e.id)}',
         mult: mult,
-        selected: isSel,
+        pad: _pad,
         flag: pointAt == e.id,
-        onTap: () => isSel ? onUse(e) : onSelect(e),
+        onTap: () => onUse(e),
       ),
     };
     return Padding(

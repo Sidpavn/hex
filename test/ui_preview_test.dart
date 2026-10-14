@@ -262,6 +262,52 @@ void main() {
         ).writeAsBytesSync(bytes!.buffer.asUint8List());
       });
     }
+    // The quarry terrace: rock marked on the floor, then the chest opened.
+    {
+      final key = GlobalKey();
+      await tester.pumpWidget(
+        RepaintBoundary(
+          key: key,
+          child: const HexApp(home: ZoneScreen(startZone: 'quarry2')),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 200));
+      final dynamic st = tester.state(find.byType(ZoneScreen));
+      final sim = st.sim as ZoneSim;
+      final chest = sim.source.items.firstWhere((i) => i.chest);
+      final stand = chest.hex.neighbors.firstWhere(
+        (h) => sim.zone.tiles[h]?.walkable ?? false,
+      );
+      sim.hero = stand;
+      st.heroWorld = hexWorld(stand);
+      st.cam = st.heroWorld;
+      sim.enemies.clear();
+      while (sim.rockWarn.isEmpty) {
+        sim.wait();
+      }
+      st.afterTurn(sim);
+      for (var i = 0; i < 3; i++) {
+        await tester.pump(const Duration(milliseconds: 130));
+      }
+      Future<void> grab(String name) async {
+        final boundary =
+            key.currentContext!.findRenderObject() as RenderRepaintBoundary;
+        await tester.runAsync(() async {
+          final img = await boundary.toImage(pixelRatio: 3);
+          final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
+          File('$dir/$name.png').writeAsBytesSync(bytes!.buffer.asUint8List());
+        });
+      }
+
+      await grab('quarry_rocks');
+      sim.rockWarn = {};
+      sim.moveHero(chest.hex);
+      st.afterTurn(sim);
+      for (var i = 0; i < 12; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      await grab('quarry_chest');
+    }
     // Mara, the camp, the HUD, a dialogue, the camp menu and spell targeting.
     {
       final key = GlobalKey();
@@ -417,6 +463,16 @@ void main() {
       await grab('fx_explosion');
     }
     await shot('zone_cave', const ZoneScreen(startZone: 'cave'), settle: 2);
+    await shot(
+      'zone_quarry1',
+      const ZoneScreen(startZone: 'quarry1'),
+      settle: 2,
+    );
+    await shot(
+      'zone_quarry3',
+      const ZoneScreen(startZone: 'quarry3'),
+      settle: 2,
+    );
     await shot('menu', const MenuScreen());
     await shot('campaign', const CampaignScreen());
     await shot('setup', const SetupScreen(mode: GameMode.skirmish));

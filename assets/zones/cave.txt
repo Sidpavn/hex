@@ -4,10 +4,8 @@ dark 1
 portal 1 meadow 1 cave_exit
 portal 2 quarry1 1 cave_exit
 camp 5 18
-item longbow 8 17 longbow
 item potion1 4 12 potion
 item lantern 8 9 lantern
-item axe 14 6 axe
 item potion2 15 14 potion
 item ether1 24 20 ether
 item survey 24 19 scroll_survey

@@ -200,7 +200,7 @@ const List<Quest> quests = [
         ]),
         QuestObjective(
           'training',
-          'Tap the bow on the quick bar to hold it.',
+          'Tap the bow in the bottom row to hold it.',
           hint: 'bow',
         ),
       ),
@@ -229,7 +229,7 @@ const List<Quest> quests = [
         All([QuestAt('training', 4), Not(Count(Counts.castMend, 1))]),
         QuestObjective(
           'training',
-          'Cast Mend from the quick bar.',
+          'Cast Mend from the bottom row.',
           hint: 'mend',
         ),
       ),
@@ -413,7 +413,7 @@ const Map<String, NpcScript> npcScripts = {
       ),
       Rule(
         All([QuestAt('training', 4), Wounded()]),
-        Dialogue('Tobin', ['Tap Mend on the quick bar. It costs 2 mana.']),
+        Dialogue('Tobin', ['Tap Mend in the bottom row. It costs 2 mana.']),
       ),
       Rule(
         QuestAt('training', 4),
@@ -462,7 +462,7 @@ const Map<String, NpcScript> npcScripts = {
       Rule(
         All([QuestAt('training', 2), HasItem('bow'), Not(Holding('bow'))]),
         Dialogue('Tobin', [
-          'You are still holding the sword. Tap the bow on the quick bar '
+          'You are still holding the sword. Tap the bow in the bottom row '
               'to take it in hand.',
           'Then step back 2 to 4 hexes from the post and tap it.',
         ]),
@@ -651,6 +651,15 @@ const Map<String, Gate> gates = {
     Knows('shield'),
     'The gate is barred. The Warlord holds it.',
   ),
+  // The lift has no power. Nothing in the game gives a power cell yet.
+  'quarry3#3': Gate(
+    HasItem('power_cell'),
+    'The lift is dead. It needs a power cell.',
+  ),
+  'quarry1#3': Gate(
+    HasItem('power_cell'),
+    'The lift is dead. It needs a power cell.',
+  ),
 };
 
 /// The gate stopping [portal] in [zone], or null if it is open.
@@ -725,7 +734,9 @@ Hex? markerHex(Zone current, QuestObjective o, Map<String, Zone> zones) {
   // Breadth-first search over zone links for the first portal on the way.
   final firstStep = <String, Hex>{};
   final queue = <String>[];
-  for (final p in current.portals.values) {
+  // The lift has no power yet, so the marker never routes through it.
+  bool usable(Portal p) => p.sprite != 'lift';
+  for (final p in current.portals.values.where(usable)) {
     final hex = current.portalHex[p.id];
     if (hex != null && !firstStep.containsKey(p.toZone)) {
       firstStep[p.toZone] = hex;
@@ -738,7 +749,7 @@ Hex? markerHex(Zone current, QuestObjective o, Map<String, Zone> zones) {
     if (id == o.zone) return firstStep[id];
     final z = zones[id];
     if (z == null) continue;
-    for (final p in z.portals.values) {
+    for (final p in z.portals.values.where(usable)) {
       if (seen.add(p.toZone)) {
         firstStep[p.toZone] = firstStep[id]!;
         queue.add(p.toZone);

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -18,6 +19,7 @@ import 'pixel/hex_art.dart';
 import 'pixel/pixel_assets.dart';
 import 'pixel/terrain_draw.dart';
 import 'widgets.dart';
+import 'chest_overlay.dart';
 import 'chop_overlay.dart';
 import 'inventory_ui.dart';
 import 'zone_fx.dart';
@@ -67,6 +69,17 @@ class ZoneView {
   Offset toWorld(Offset screen) => (screen - origin) / scale;
 }
 
+/// Seconds a rock takes to fall.
+const _rockFall = 0.2;
+
+class _Rock {
+  _Rock(this.hex);
+
+  final Hex hex;
+  double age = 0;
+  bool landed = false;
+}
+
 class _FloatText {
   _FloatText(this.world, this.text, this.color, {this.delay = 0});
 
@@ -108,6 +121,25 @@ class _ZoneScreenState extends State<ZoneScreen>
   late final WorldState world = widget.world ?? WorldState.newGame();
   Map<String, Zone> zones = {};
 
+  /// Weapon slot being held down: its reach is painted on the board.
+  String? previewWeapon;
+  Timer? _previewTimer;
+
+  /// A finger resting on a weapon slot shows its reach, but only after a
+  /// short hold so a plain tap doesn't flash it.
+  static const _previewDelay = Duration(milliseconds: 300);
+
+  void _previewReach(QuickEntry? e) {
+    _previewTimer?.cancel();
+    if (e == null) {
+      if (previewWeapon != null) setState(() => previewWeapon = null);
+      return;
+    }
+    _previewTimer = Timer(_previewDelay, () {
+      if (mounted) setState(() => previewWeapon = e.id);
+    });
+  }
+
   /// Spell targeting: the next tap on a valid hex throws a Fireball.
   bool targeting = false;
 
@@ -120,7 +152,18 @@ class _ZoneScreenState extends State<ZoneScreen>
 
   /// The scroll being read (an id in `loreDefs`), if any.
   String? reading;
+
+  /// The chest being looked into, until its item is taken or left.
+  ItemSpawn? openChest;
+
+  /// Rocks in the air: where they land and how long they have been falling.
+  final rocks = <_Rock>[];
   bool packOpen = false;
+
+  /// What the player had last time they opened Pack and Journal, so the
+  /// buttons can show a dot when something changed.
+  int? _seenBag;
+  String? _seenObjective;
   bool packAtCamp = false;
 
   /// What the current route is for: an enemy to strike, an NPC to talk to, or
@@ -205,6 +248,7 @@ class _ZoneScreenState extends State<ZoneScreen>
 
   @override
   void dispose() {
+    _previewTimer?.cancel();
     _ticker.dispose();
     tick.dispose();
     turn.dispose();
@@ -270,6 +314,25 @@ class _ZoneScreenState extends State<ZoneScreen>
       heroKick *= settle;
       for (final e in s.enemies) {
         e.kick *= settle;
+      }
+      for (final r in List.of(rocks)) {
+        r.age += dt;
+        if (!r.landed && r.age >= _rockFall) {
+          r.landed = true;
+          final at = hexWorld(r.hex);
+          fx.shake = math.max(fx.shake, 0.6);
+          fx.burst(
+            at,
+            const [Color(0xFFA0AABE), Color(0xFF68728C), Color(0xFFF4F4EA)],
+            0,
+            count: 10,
+            speed: 50,
+            life: 0.4,
+            size: 2,
+          );
+          HapticFeedback.mediumImpact();
+        }
+        if (r.age >= _rockFall + 0.4) rocks.remove(r);
       }
       for (final t in List.of(texts)) {
         t.age += dt;
@@ -566,6 +629,21 @@ class _ZoneScreenState extends State<ZoneScreen>
             ),
           );
           HapticFeedback.heavyImpact();
+        case SimEventKind.chestOpened:
+          _clearRoute();
+          openChest = s.itemAt(ev.hex);
+          HapticFeedback.mediumImpact();
+        case SimEventKind.rockWarn:
+          // The rock lands once the next move is made, so only the hex we
+          // would step onto matters: stop there, otherwise keep walking.
+          if (path.isNotEmpty && path.first == ev.hex) {
+            _clearRoute();
+            HapticFeedback.selectionClick();
+          } else if (ev.hex == s.hero) {
+            HapticFeedback.selectionClick();
+          }
+        case SimEventKind.rockLand:
+          rocks.add(_Rock(ev.hex));
         case SimEventKind.scroll:
           _clearRoute();
           reading = ev.note;
@@ -606,10 +684,10 @@ class _ZoneScreenState extends State<ZoneScreen>
               ev.unit!,
             );
             final use = world.spellSlots.contains(spell.id)
-                ? 'Tap it on the quick bar'
+                ? 'Tap it in the row at the bottom'
                 : 'Your spell slots are full. Open your pack, pick it under '
                       'Spare spells and put it in a slot, then tap it on the '
-                      'quick bar';
+                      'row at the bottom';
             final aim = spell.range > 0
                 ? ', then tap a hex up to ${spell.range} away.'
                 : '.';
@@ -639,7 +717,7 @@ class _ZoneScreenState extends State<ZoneScreen>
     // The session's map: mended bridges and felled trees only show here.
     final z = sim?.zone;
     final s = sim;
-    if (z == null || s == null || s.heroDown) return;
+    if (z == null || s == null || s.heroDown || openChest != null) return;
     final view = ZoneView(size, _dpr, cam, z, _inset);
     final target = hexAtWorld(view.toWorld(local));
 
@@ -667,6 +745,26 @@ class _ZoneScreenState extends State<ZoneScreen>
       s.attack(foe);
       afterTurn(s);
       return;
+    }
+    if (foe != null && !moving && foe.alive) {
+      // Say why nothing happened, and what would work.
+      final alt = s.slotReaching(foe);
+      final tooFar = s.hero.distanceTo(foe.hex) > world.weapon.maxRange;
+      if (alt != null || !tooFar) {
+        final fix = alt == null
+            ? ''
+            : ': switch to ${itemOf(world.weaponSlots[alt]!).name}';
+        setState(
+          () => texts.add(
+            _FloatText(
+              heroWorld + const Offset(0, -16),
+              '${s.whyNotReach(foe)}$fix',
+              Pal.red,
+            ),
+          ),
+        );
+        return;
+      }
     }
     final npc = s.npcAt(target);
     if (npc != null && !moving && s.hero.distanceTo(target) <= 1) {
@@ -763,7 +861,10 @@ class _ZoneScreenState extends State<ZoneScreen>
   }
 
   void _moveQuick(int dir, {bool group = false}) {
-    final entries = quickEntries(world);
+    final entries = [
+      for (final e in quickEntries(world))
+        if (e.kind == QuickKind.weapon) e,
+    ];
     final cur = selectedQuick(entries, _quickKey, world);
     if (cur == null) return;
     final next = stepQuick(entries, cur, dir, group: group);
@@ -862,6 +963,8 @@ class _ZoneScreenState extends State<ZoneScreen>
     final z = zone;
     final s = sim;
     final objective = currentObjective(world);
+    _seenBag ??= _bagSig;
+    _seenObjective ??= objective?.text ?? '';
     WidgetsBinding.instance.addPostFrameCallback((_) => _measure());
     return Scaffold(
       backgroundColor: const Color(0xFF10181C),
@@ -905,27 +1008,6 @@ class _ZoneScreenState extends State<ZoneScreen>
                           ),
                           const SizedBox(width: 4),
                           Expanded(child: _hud(z, s)),
-                          const SizedBox(width: 8),
-                          GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: () => setState(() {
-                              packOpen = true;
-                              packAtCamp = false;
-                            }),
-                            child: PixelBox(
-                              padding: const EdgeInsets.all(6),
-                              child: const PxIcon('pack'),
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: () => setState(() => journalOpen = true),
-                            child: PixelBox(
-                              padding: const EdgeInsets.all(6),
-                              child: const PxIcon('book'),
-                            ),
-                          ),
                         ],
                       ),
                       if (objective != null)
@@ -933,18 +1015,22 @@ class _ZoneScreenState extends State<ZoneScreen>
                           padding: const EdgeInsets.only(top: 6),
                           child: Align(
                             alignment: Alignment.centerLeft,
-                            child: PixelBox(
-                              color: Pal.panelLo,
-                              shadow: false,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              child: PxText(
-                                ':star: ${objective.text}',
-                                style: const TextStyle(
-                                  color: Pal.goldLight,
-                                  fontSize: 13,
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: _openJournal,
+                              child: PixelBox(
+                                color: Pal.panelLo,
+                                shadow: false,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                child: PxText(
+                                  ':star: ${objective.text}',
+                                  style: const TextStyle(
+                                    color: Pal.goldLight,
+                                    fontSize: 13,
+                                  ),
                                 ),
                               ),
                             ),
@@ -982,13 +1068,26 @@ class _ZoneScreenState extends State<ZoneScreen>
               atCamp: packAtCamp,
               onChanged: () => setState(() {}),
               onUse: _drink,
-              onClose: () => setState(() => packOpen = false),
+              onClose: () => setState(() {
+                packOpen = false;
+                _seenBag = _bagSig;
+              }),
             ),
           if (journalOpen)
             QuestLogOverlay(
               world: world,
-              onClose: () => setState(() => journalOpen = false),
+              onClose: () => setState(() {
+                journalOpen = false;
+                _seenObjective = currentObjective(world)?.text ?? '';
+              }),
               onRead: (id) => setState(() => reading = id),
+            ),
+          if (openChest != null && s != null)
+            ChestOverlay(
+              itemId: openChest!.itemId,
+              canTake: world.canAdd(openChest!.itemId),
+              onTake: () => _takeChest(s),
+              onLeave: () => setState(() => openChest = null),
             ),
           if (reading != null)
             ScrollOverlay(
@@ -1048,10 +1147,18 @@ class _ZoneScreenState extends State<ZoneScreen>
   Widget _contextAction(ZoneSim s) {
     final bridge = s.bridgeNear();
     final tree = s.treeNear();
-    if (bridge == null && tree == null) return const SizedBox.shrink();
+    final wrong = _wrongWeaponFoe(s);
+    if (bridge == null && tree == null && wrong == null) {
+      return const SizedBox.shrink();
+    }
     final String label;
     final VoidCallback? onTap;
-    if (bridge != null) {
+    if (wrong != null) {
+      final slot = wrong.$2;
+      final next = itemOf(world.weaponSlots[slot]!);
+      label = 'Switch to ${next.name}';
+      onTap = () => _selectQuick(QuickEntry(QuickKind.weapon, next.id, slot));
+    } else if (bridge != null) {
       final have = math.min(world.countOf('wood'), ZoneSim.woodPerBridge);
       label = 'Mend bridge  $have/${ZoneSim.woodPerBridge} wood';
       onTap = () {
@@ -1096,54 +1203,128 @@ class _ZoneScreenState extends State<ZoneScreen>
     );
   }
 
+  void _takeChest(ZoneSim s) {
+    final item = openChest;
+    if (item == null || !s.takeChest()) return;
+    final at = hexWorld(item.hex);
+    setState(() {
+      openChest = null;
+      texts.add(
+        _FloatText(
+          at + const Offset(0, -12),
+          'Got ${itemOf(item.itemId).name}',
+          Pal.goldLight,
+        ),
+      );
+      fx.burst(
+        at,
+        const [Color(0xFFFFE08A), Color(0xFFFA9632), Colors.white],
+        0,
+        count: 14,
+        speed: 55,
+      );
+    });
+    HapticFeedback.selectionClick();
+  }
+
   void _finishChop(ZoneSim s, int hits) {
     final tree = chopping;
     setState(() => chopping = null);
     if (tree != null && s.chop(tree, hits: hits)) afterTurn(s);
   }
 
-  /// Health and mana on one line, just above the quick bar.
-  Widget _vitals() {
-    return ValueListenableBuilder<int>(
-      valueListenable: turn,
-      builder: (context, t, _) => Row(
+  /// The nearest living enemy, awake or not, that the weapon in hand cannot
+  /// hit while another weapon could, if any.
+  (Enemy, int)? _wrongWeaponFoe(ZoneSim s) {
+    Enemy? best;
+    int? bestSlot;
+    for (final e in s.enemies) {
+      if (!e.alive || s.reaches(e)) continue;
+      final slot = s.slotReaching(e);
+      if (slot == null) continue;
+      if (best == null ||
+          s.hero.distanceTo(e.hex) < s.hero.distanceTo(best.hex)) {
+        best = e;
+        bestSlot = slot;
+      }
+    }
+    return best == null ? null : (best, bestSlot!);
+  }
+
+  int get _bagSig {
+    var n = 0;
+    for (final st in world.bag) {
+      if (st != null) n += st.count + 100;
+    }
+    for (final w in world.weaponSlots) {
+      if (w != null) n += 1000;
+    }
+    return n;
+  }
+
+  void _openPack() => setState(() {
+    packOpen = true;
+    packAtCamp = false;
+    _seenBag = _bagSig;
+  });
+
+  void _openJournal() => setState(() {
+    journalOpen = true;
+    _seenObjective = currentObjective(world)?.text ?? '';
+  });
+
+  Widget _navButton(String label, String icon, bool dot, VoidCallback onTap) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Stack(
+        clipBehavior: Clip.none,
         children: [
-          const PxIcon('heart'),
-          const SizedBox(width: 4),
-          Expanded(
-            child: PxBar(
-              value: world.hp / WorldState.maxHp,
-              color: Pal.red,
-              rows: 7,
+          PixelBox(
+            color: Pal.panelLo,
+            shadow: false,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                PxIcon(icon),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: Pal.text,
+                    fontSize: 15,
+                    height: 1,
+                  ),
+                ),
+              ],
             ),
           ),
-          if (world.shield > 0) _status('shield', world.shield),
-          if (world.burn > 0) _status('burn', world.burn),
-          const SizedBox(width: 12),
-          for (var i = 0; i < WorldState.maxMana; i++)
-            Padding(
-              padding: const EdgeInsets.only(left: 3),
-              child: _ManaPip(filled: i < world.mana),
+          if (dot)
+            Positioned(
+              right: -2,
+              top: -2,
+              child: Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: Pal.gold,
+                  border: Border.all(color: Pal.ink, width: 2),
+                ),
+              ),
             ),
         ],
       ),
     );
   }
 
-  /// A status on the hero: its icon and one pip per point or turn left.
-  Widget _status(String icon, int n) {
+  /// While aiming Fireball, says what to tap.
+  Widget _aimHint() {
     return Padding(
-      padding: const EdgeInsets.only(left: 8),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          PxIcon(icon),
-          const SizedBox(width: 3),
-          PxText(
-            '$n',
-            style: const TextStyle(color: Pal.text, fontSize: 15, height: 1),
-          ),
-        ],
+      padding: const EdgeInsets.only(bottom: 4),
+      child: PxText(
+        'Fireball: tap a hex up to ${spellDefs['fireball']!.range} away',
+        style: const TextStyle(color: Pal.text, fontSize: 13, height: 1),
       ),
     );
   }
@@ -1155,8 +1336,26 @@ class _ZoneScreenState extends State<ZoneScreen>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _vitals(),
-          const SizedBox(height: 6),
+          Row(
+            children: [
+              _navButton(
+                'Pack',
+                'pack',
+                _seenBag != null && _seenBag != _bagSig,
+                _openPack,
+              ),
+              const SizedBox(width: 8),
+              _navButton(
+                'Journal',
+                'book',
+                _seenObjective != null &&
+                    _seenObjective != (currentObjective(world)?.text ?? ''),
+                _openJournal,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (targeting) _aimHint(),
           QuickBar(
             pointAt: currentObjective(world)?.hint,
             world: world,
@@ -1165,6 +1364,7 @@ class _ZoneScreenState extends State<ZoneScreen>
             canCast: _spellReady,
             onSelect: _selectQuick,
             onUse: _useQuick,
+            onPreview: _previewReach,
           ),
         ],
       ),
@@ -1201,25 +1401,6 @@ class _ZoneScreenState extends State<ZoneScreen>
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _ManaPip extends StatelessWidget {
-  const _ManaPip({required this.filled});
-
-  final bool filled;
-
-  @override
-  Widget build(BuildContext context) {
-    final u = PixelUi.unit(context);
-    return Container(
-      width: 7 * u,
-      height: 7 * u,
-      decoration: BoxDecoration(
-        color: filled ? const Color(0xFF78E6F0) : const Color(0xFF2C4A56),
-        border: Border.all(color: Pal.ink, width: u),
       ),
     );
   }
@@ -1397,6 +1578,67 @@ class _ZonePainter extends CustomPainter {
       }
     }
 
+    // Holding a weapon slot: the hexes it can hit, and the ones too close.
+    final held = s.previewWeapon;
+    if (held != null && !s.targeting) {
+      final w = itemOf(held);
+      final fill = art.mask('fillA');
+      for (final h in visible) {
+        final d = sim.hero.distanceTo(h);
+        if (d == 0 || !(zone.tiles[h]?.walkable ?? false)) continue;
+        if (sim.hexInReach(w, h)) {
+          final c = v.toScreen(hexWorld(h));
+          canvas.drawImageRect(
+            fill,
+            Rect.fromLTWH(0, 0, fill.width.toDouble(), fill.height.toDouble()),
+            Rect.fromLTWH(
+              c.dx - HexArt.w / 2 * sc,
+              c.dy - HexArt.h / 2 * sc,
+              fill.width * sc,
+              fill.height * sc,
+            ),
+            Paint()
+              ..filterQuality = FilterQuality.none
+              ..isAntiAlias = false
+              ..colorFilter = ColorFilter.mode(
+                Pal.gold.withAlpha(0x88),
+                BlendMode.srcIn,
+              ),
+          );
+          ringAt(h, Pal.gold);
+        } else if (d < w.minRange) {
+          ringAt(h, Pal.red);
+        }
+      }
+    }
+
+    // Rock about to fall: the marked hexes blink red until it lands.
+    if (sim.rockWarn.isNotEmpty) {
+      final fill = art.mask((time * 4).floor().isEven ? 'fillA' : 'fillB');
+      for (final h in sim.rockWarn) {
+        if (!visible.contains(h)) continue;
+        final c = v.toScreen(hexWorld(h));
+        canvas.drawImageRect(
+          fill,
+          Rect.fromLTWH(0, 0, fill.width.toDouble(), fill.height.toDouble()),
+          Rect.fromLTWH(
+            c.dx - HexArt.w / 2 * sc,
+            c.dy - HexArt.h / 2 * sc,
+            fill.width * sc,
+            fill.height * sc,
+          ),
+          Paint()
+            ..filterQuality = FilterQuality.none
+            ..isAntiAlias = false
+            ..colorFilter = ColorFilter.mode(
+              Pal.red.withAlpha(0x88),
+              BlendMode.srcIn,
+            ),
+        );
+        ringAt(h, Pal.red);
+      }
+    }
+
     // A boss's spell in the making: the hexes it will hit blink red, faster
     // on the turn it fires.
     for (final e in sim.enemies) {
@@ -1437,8 +1679,20 @@ class _ZonePainter extends CustomPainter {
       final f = (time * 8).floor() % 3;
       td.blit(canvas, art.sprite('flame', 'f$f'), c, -6, -12, sc);
     }
+    for (final item in sim.source.items) {
+      if (!item.chest || !visible.contains(item.hex)) continue;
+      final taken = sim.world.collected.contains('${sim.source.id}#${item.id}');
+      td.blit(
+        canvas,
+        art.sprite('chest', taken ? 'open' : 'idle0'),
+        v.toScreen(hexWorld(item.hex)),
+        -7,
+        -9,
+        sc,
+      );
+    }
     for (final item in sim.groundItems) {
-      if (!visible.contains(item.hex)) continue;
+      if (item.chest || !visible.contains(item.hex)) continue;
       final c = v.toScreen(hexWorld(item.hex));
       final bob = (time * 3).floor().isEven ? 0.0 : 1.0;
       td.blit(canvas, art.icon(itemOf(item.itemId).icon), c, -6, -9 - bob, sc);
@@ -1570,11 +1824,65 @@ class _ZonePainter extends CustomPainter {
         if (sim.world.shield > 0) {
           _shieldBubble(canvas, td, art, ground, img.height - bob, time, sc);
         }
+        // Health and mana as pips over the hero, shown once either is not
+        // full or something hostile is about.
+        final w = sim.world;
+        if (!sim.heroDown &&
+            (sim.danger ||
+                w.hp < WorldState.maxHp ||
+                w.mana < WorldState.maxMana)) {
+          final top = 6 - img.height - bob - 9;
+          final hpW = WorldState.maxHp * 3 + 1;
+          final x0 = -(hpW / 2).floorToDouble();
+          td.rect(canvas, ground, x0, top - 1, hpW + 1, 8, sc, Pal.ink);
+          for (var i = 0; i < WorldState.maxHp; i++) {
+            td.rect(
+              canvas,
+              ground,
+              x0 + 1 + i * 3,
+              top,
+              2,
+              3,
+              sc,
+              i < w.hp ? Pal.red : const Color(0xFF5A2A32),
+            );
+          }
+          if (w.burn > 0) {
+            final b = art.sprite('burn');
+            td.blit(canvas, b, ground, x0 + hpW + 2, top - 2, sc);
+          }
+          for (var i = 0; i < WorldState.maxMana; i++) {
+            td.rect(
+              canvas,
+              ground,
+              x0 + 1 + i * 3,
+              top + 4,
+              2,
+              2,
+              sc,
+              i < w.mana ? const Color(0xFF78E6F0) : const Color(0xFF2C4A56),
+            );
+          }
+        }
       },
     ));
     order.sort((a, b) => a.y.compareTo(b.y));
     for (final o in order) {
       o.draw();
+    }
+
+    // Rocks dropping onto their hexes, in whole-pixel steps.
+    for (final r in s.rocks) {
+      if (r.landed) continue;
+      final drop = ((1 - r.age / _rockFall) * 6).ceil() * 6.0;
+      td.blit(
+        canvas,
+        art.sprite('rock'),
+        v.toScreen(hexWorld(r.hex)),
+        -4,
+        -8 - drop,
+        sc,
+      );
     }
 
     // Corner brackets: a reticle around a world position.

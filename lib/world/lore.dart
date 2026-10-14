@@ -28,6 +28,8 @@ const Map<String, Lore> loreDefs = {
         'up the ladders to look for another way out.',
     'The golems were ours once. We set them to guard the cut. Nobody told '
         'them to stop.',
+    'The lift from the rim to the floor lost its power cell in the fall. '
+        'Until someone finds another, it is ladders or nothing.',
   ]),
   'scroll_warden': Lore('The warden\'s last order', [
     'I hold the gate. The road stays shut until I am relieved.',

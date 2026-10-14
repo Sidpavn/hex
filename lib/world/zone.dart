@@ -54,11 +54,15 @@ class NpcSpawn {
 /// Something lying on the ground to pick up. [id] is unique within the zone;
 /// [itemId] says what it is (see `items.dart`).
 class ItemSpawn {
-  const ItemSpawn(this.id, this.hex, this.itemId);
+  const ItemSpawn(this.id, this.hex, this.itemId, {this.chest = false});
 
   final String id;
   final Hex hex;
   final String itemId;
+
+  /// Sits in a chest: stepping on it opens the chest and shows the item
+  /// before it is taken.
+  final bool chest;
 }
 
 class ZoneTile {
@@ -128,6 +132,8 @@ class Zone {
     this.camps = const [],
     this.npcs = const [],
     this.items = const [],
+    this.rockEvery = 0,
+    this.rockCount = 0,
   }) {
     var minX = double.infinity, minY = double.infinity;
     var maxX = -double.infinity, maxY = -double.infinity;
@@ -166,6 +172,11 @@ class Zone {
   final List<Hex> camps;
   final List<NpcSpawn> npcs;
   final List<ItemSpawn> items;
+
+  /// Falling rocks: every [rockEvery] turns, [rockCount] hexes are marked and
+  /// a turn later rock lands on them. Zero means no rockfall.
+  final int rockEvery;
+  final int rockCount;
 
   /// World-space bounds in art pixels.
   late final Rect bounds;
@@ -226,6 +237,7 @@ class Zone {
     final camps = <Hex>[];
     final npcs = <NpcSpawn>[];
     final items = <ItemSpawn>[];
+    var rockEvery = 0, rockCount = 0;
     Hex? spawn;
     var inMap = false;
     var row = 0;
@@ -307,6 +319,20 @@ class Zone {
           items.add(
             ItemSpawn(p[1], _hexAt(int.parse(p[2]), int.parse(p[3])), p[4]),
           );
+        case 'chest':
+          // chest <uid> <col> <row> <itemId>
+          items.add(
+            ItemSpawn(
+              p[1],
+              _hexAt(int.parse(p[2]), int.parse(p[3])),
+              p[4],
+              chest: true,
+            ),
+          );
+        case 'rockfall':
+          // rockfall <every> <count>
+          rockEvery = int.parse(p[1]);
+          rockCount = int.parse(p[2]);
         case 'map':
           inMap = true;
       }
@@ -326,6 +352,8 @@ class Zone {
       camps: camps,
       npcs: npcs,
       items: items,
+      rockEvery: rockEvery,
+      rockCount: rockCount,
     );
   }
 
@@ -347,6 +375,8 @@ class Zone {
     camps: camps,
     npcs: npcs,
     items: items,
+    rockEvery: rockEvery,
+    rockCount: rockCount,
   );
 }
 

@@ -163,6 +163,16 @@ enum SimEventKind {
   /// A charge went off at [SimEvent.hex], clearing [SimEvent.amount] hexes of
   /// rubble.
   blasted,
+
+  /// The hero stepped on the chest at [SimEvent.hex]; [SimEvent.note] is what
+  /// is inside. Nothing is taken until [ZoneSim.takeChest].
+  chestOpened,
+
+  /// Rock is about to fall on [SimEvent.hex] at the end of the next turn.
+  rockWarn,
+
+  /// Rock fell on [SimEvent.hex].
+  rockLand,
 }
 
 class SimEvent {
@@ -276,6 +286,11 @@ class ZoneSim {
 
   /// Burning hexes and the turns they have left.
   final Map<Hex, int> fire = {};
+
+  /// Hexes marked for a rockfall, landing at the end of the coming turn.
+  Set<Hex> rockWarn = {};
+  static const rockDamage = 2;
+  static const rockReach = 6;
   int _calm = 0;
 
   int get heroHp => world.hp;
@@ -534,7 +549,20 @@ class ZoneSim {
     }
     hero = to;
     final item = itemAt(to);
-    if (item != null) {
+    if (item != null && item.chest) {
+      events.add(
+        SimEvent(
+          SimEventKind.chestOpened,
+          to,
+          0,
+          false,
+          null,
+          false,
+          null,
+          item.itemId,
+        ),
+      );
+    } else if (item != null) {
       if (itemOf(item.itemId).isLore) {
         // Scrolls are read where they lie and filed in the journal, so they
         // never need a bag slot.
@@ -567,15 +595,51 @@ class ZoneSim {
     return true;
   }
 
+  /// Takes what is in the chest the hero stands on. False if the bag is full.
+  bool takeChest() {
+    final item = itemAt(hero);
+    if (item == null || !item.chest || !world.canAdd(item.itemId)) return false;
+    world.addItem(item.itemId);
+    world.autoEquip(item.itemId);
+    world.collected.add('${source.id}#${item.id}');
+    return true;
+  }
+
   /// Spends a turn doing nothing.
   void wait() => tick();
 
   /// Whether the equipped weapon can hit [e] from where the hero stands.
-  bool reaches(Enemy e) {
+  bool reaches(Enemy e) => _reachesWith(world.weapon, e);
+
+  bool _reachesWith(ItemDef w, Enemy e) => e.alive && hexInReach(w, e.hex);
+
+  /// Whether weapon [w] could hit something standing on [h].
+  bool hexInReach(ItemDef w, Hex h) {
+    final d = hero.distanceTo(h);
+    if (d < w.minRange || d > w.maxRange) return false;
+    return d <= 1 || lineOfSight(hero, h);
+  }
+
+  /// A weapon slot other than the one in hand that could hit [e] right now.
+  int? slotReaching(Enemy e) {
+    for (var i = 0; i < world.weaponSlots.length; i++) {
+      final id = world.weaponSlots[i];
+      if (i != world.activeWeapon &&
+          id != null &&
+          _reachesWith(itemOf(id), e)) {
+        return i;
+      }
+    }
+    return null;
+  }
+
+  /// Why the weapon in hand cannot hit [e], in a few plain words.
+  String whyNotReach(Enemy e) {
     final w = world.weapon;
     final d = hero.distanceTo(e.hex);
-    if (!e.alive || d < w.minRange || d > w.maxRange) return false;
-    return d <= 1 || lineOfSight(hero, e.hex);
+    if (d < w.minRange) return 'Too close for the ${w.name}';
+    if (d > w.maxRange) return 'Out of range';
+    return 'No clear shot';
   }
 
   /// Strikes [e] with the equipped weapon if it is in reach. Unaware enemies
@@ -829,6 +893,7 @@ class ZoneSim {
     }
     _fireStep();
     _statusStep();
+    _rockStep();
     enemies.removeWhere((e) => !e.alive);
     _regen();
   }
@@ -884,6 +949,35 @@ class ZoneSim {
     e.telegraph = {};
     e.aim = null;
     e.cool = kit.cooldown;
+  }
+
+  /// Falling rock: what was marked last turn lands now, then a new batch is
+  /// marked every few turns. Rock hurts the hero and enemies alike, so a
+  /// golem can be lured under it.
+  void _rockStep() {
+    if (zone.rockEvery <= 0 || heroDown) return;
+    for (final h in rockWarn) {
+      events.add(SimEvent(SimEventKind.rockLand, h));
+      final e = enemyAt(h);
+      if (e != null) _damageEnemy(e, rockDamage);
+      if (h == hero && !heroDown) _hurtHero(rockDamage);
+    }
+    rockWarn = {};
+    if (heroDown || turn % zone.rockEvery != 0) return;
+    final spots = [
+      for (final h in zone.tiles.keys)
+        if (hero.distanceTo(h) <= rockReach &&
+            zone.tiles[h]!.terrain == zone.floor &&
+            zone.tiles[h]!.portal == null &&
+            !zone.tiles[h]!.charge &&
+            !isCamp(h) &&
+            source.items.every((i) => i.hex != h))
+          h,
+    ]..shuffle(rng);
+    rockWarn = spots.take(zone.rockCount).toSet();
+    for (final h in rockWarn) {
+      events.add(SimEvent(SimEventKind.rockWarn, h));
+    }
   }
 
   /// Fire hurts what stands in it, spreads through forests and burns them
