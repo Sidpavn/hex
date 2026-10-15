@@ -41,6 +41,9 @@ enum UnitType {
 
   /// A training post. Only exists in Explore zones; never fights back.
   post,
+
+  /// A source of the dark magic. Never moves; fires a pulse at the hero.
+  node,
 }
 
 class UnitStats {
@@ -169,6 +172,14 @@ const Map<UnitType, UnitStats> unitStats = {
     move: 0,
     damage: 0,
     inert: true,
+  ),
+  // maxRange 0: it never swings. Its only attack is the pulse in `bossKits`.
+  UnitType.node: UnitStats(
+    name: 'Dark node',
+    maxHp: 6,
+    move: 0,
+    damage: 0,
+    maxRange: 0,
   ),
 };
 

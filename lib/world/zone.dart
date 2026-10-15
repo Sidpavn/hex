@@ -2,6 +2,8 @@ import 'package:flutter/services.dart';
 
 import '../game/hex.dart';
 import '../game/models.dart';
+import 'gen_zone.dart';
+import 'lore.dart';
 
 /// World position of a hex centre in art pixels (24 wide, rows 21 apart).
 Offset hexWorld(Hex h) =>
@@ -72,6 +74,8 @@ class ZoneTile {
     this.broken = false,
     this.rubble = false,
     this.charge = false,
+    this.door = false,
+    this.plate,
     this.portal,
   });
 
@@ -91,11 +95,19 @@ class ZoneTile {
   /// the hero's Fireball reaches it.
   final bool charge;
 
+  /// A shut puzzle door. It blocks the hex until its plates are pressed in
+  /// the right order (see [Zone.plateOrder]).
+  final bool door;
+
+  /// The colour of a pressure plate on this hex, or null.
+  final String? plate;
+
   /// Id of the portal on this tile, if any.
   final String? portal;
 
   bool get walkable =>
       !charge &&
+      !door &&
       (ford ||
           (terrain != Terrain.water &&
               terrain != Terrain.lava &&
@@ -116,6 +128,14 @@ class Portal {
   final String sprite;
 }
 
+/// A portal that opens once [nodes] dark nodes are broken.
+class NodeGate {
+  const NodeGate(this.nodes, this.message);
+
+  final int nodes;
+  final String message;
+}
+
 /// One explorable area. Loaded from `assets/zones/<id>.txt`; see
 /// `design/gen_zones.py` for the format.
 class Zone {
@@ -134,6 +154,9 @@ class Zone {
     this.items = const [],
     this.rockEvery = 0,
     this.rockCount = 0,
+    this.nodeGates = const {},
+    this.tier = 0,
+    this.plateOrder = const [],
   }) {
     var minX = double.infinity, minY = double.infinity;
     var maxX = -double.infinity, maxY = -double.infinity;
@@ -177,6 +200,30 @@ class Zone {
   /// a turn later rock lands on them. Zero means no rockfall.
   final int rockEvery;
   final int rockCount;
+
+  /// Portals shut until enough dark nodes are broken. A generated zone's id
+  /// changes, so its gates live in the zone itself (`gate` line).
+  final Map<String, NodeGate> nodeGates;
+
+  /// How tough the enemies here are (see `tiers.dart`). 0 is the base game.
+  final int tier;
+
+  /// The colours to step on, in order, to open the door. Empty means this
+  /// zone has no puzzle door.
+  final List<String> plateOrder;
+
+  /// The door's hexes, and the plates by hex, as laid out in the file.
+  late final List<Hex> doors = [
+    for (final e in tiles.entries)
+      if (e.value.door) e.key,
+  ];
+  late final Map<Hex, String> plates = {
+    for (final e in tiles.entries)
+      if (e.value.plate != null) e.key: e.value.plate!,
+  };
+
+  /// Stable id of the door, kept in saves once it has been opened.
+  String get doorId => '$id#door';
 
   /// World-space bounds in art pixels.
   late final Rect bounds;
@@ -237,7 +284,10 @@ class Zone {
     final camps = <Hex>[];
     final npcs = <NpcSpawn>[];
     final items = <ItemSpawn>[];
-    var rockEvery = 0, rockCount = 0;
+    var rockEvery = 0, rockCount = 0, tier = 0;
+    var plateOrder = <String>[];
+    final plateAt = <(String, int, int)>[];
+    final nodeGates = <String, NodeGate>{};
     Hex? spawn;
     var inMap = false;
     var row = 0;
@@ -262,6 +312,7 @@ class Zone {
             'T' => ZoneTile(floor, charge: true),
             'L' => const ZoneTile(Terrain.lava),
             'c' => const ZoneTile(Terrain.crystal),
+            'D' => ZoneTile(floor, door: true),
             _ => ZoneTile(floor, portal: portal),
           };
         }
@@ -329,6 +380,20 @@ class Zone {
               chest: true,
             ),
           );
+        case 'gate':
+          // gate <portal> nodes <count> <Message_With_Underscores>
+          nodeGates[p[1]] = NodeGate(
+            int.parse(p[3]),
+            p.skip(4).join(' ').replaceAll('_', ' '),
+          );
+        case 'sequence':
+          // sequence <colour> <colour> ...
+          plateOrder = p.skip(1).toList();
+        case 'plate':
+          // plate <colour> <col> <row>
+          plateAt.add((p[1], int.parse(p[2]), int.parse(p[3])));
+        case 'tier':
+          tier = int.parse(p[1]);
         case 'rockfall':
           // rockfall <every> <count>
           rockEvery = int.parse(p[1]);
@@ -336,6 +401,11 @@ class Zone {
         case 'map':
           inMap = true;
       }
+    }
+    for (final (colour, col, row) in plateAt) {
+      final h = _hexAt(col, row);
+      final base = tiles[h];
+      if (base != null) tiles[h] = ZoneTile(base.terrain, plate: colour);
     }
     if (spawn == null && portalHex.isNotEmpty) spawn = portalHex.values.first;
     if (spawn == null) throw FormatException('Zone $id has no spawn or portal');
@@ -354,6 +424,9 @@ class Zone {
       items: items,
       rockEvery: rockEvery,
       rockCount: rockCount,
+      nodeGates: nodeGates,
+      tier: tier,
+      plateOrder: plateOrder,
     );
   }
 
@@ -377,6 +450,9 @@ class Zone {
     items: items,
     rockEvery: rockEvery,
     rockCount: rockCount,
+    nodeGates: nodeGates,
+    tier: tier,
+    plateOrder: plateOrder,
   );
 }
 
@@ -399,9 +475,20 @@ class ZoneRepo {
     'sixways',
   ];
 
+  static int _regionSeed = 1;
+
+  /// Decides the layout of the generated rooms ([outerRooms]). Setting a new
+  /// seed drops the old maps, so the next load builds the new ones.
+  static int get regionSeed => _regionSeed;
+  static set regionSeed(int seed) {
+    if (seed == _regionSeed) return;
+    _regionSeed = seed;
+    outerRooms.forEach(_cache.remove);
+  }
+
   /// Loads every zone, so quest markers can look across zones.
   static Future<Map<String, Zone>> loadAll([AssetBundle? bundle]) async {
-    for (final id in ids) {
+    for (final id in [...ids, ...outerRooms]) {
       await load(id, bundle);
     }
     return Map.of(_cache);
@@ -410,6 +497,13 @@ class ZoneRepo {
   static Future<Zone> load(String id, [AssetBundle? bundle]) async {
     final cached = _cache[id];
     if (cached != null) return cached;
+    if (outerRooms.contains(id)) {
+      final z = Zone.parse(outerRoom(id, _regionSeed));
+      if (z.plateOrder.length == 3) {
+        generatedLore['scroll_gate'] = gateLore(z.plateOrder);
+      }
+      return _cache[id] = z;
+    }
     final text = await (bundle ?? rootBundle).loadString(
       'assets/zones/$id.txt',
     );

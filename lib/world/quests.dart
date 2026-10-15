@@ -310,6 +310,26 @@ const List<Quest> quests = [
       ),
     ],
   ),
+  Quest(
+    id: 'node',
+    title: 'The road node',
+    giver: 'Hermit',
+    summary:
+        'A dark node holds the road past the quarry. Break it and the way '
+        'to the city opens.',
+    requires: Knows('shield'),
+    finishedWhen: NodesBroken(1),
+    objectives: [
+      Rule(
+        QuestAt('node', 1),
+        QuestObjective(
+          'outer_c',
+          'Break the dark node at the crossing.',
+          unit: UnitType.node,
+        ),
+      ),
+    ],
+  ),
 ];
 
 /// Tobin's answer to someone in a hurry: one more chance, then the lot.
@@ -347,6 +367,45 @@ const _skipped = Dialogue('Tobin', [
 ]);
 
 const Map<String, NpcScript> npcScripts = {
+  'hermit': NpcScript(
+    marks: [Rule(QuestAt('node', 0), 'alert')],
+    talk: [
+      Rule(
+        NodesBroken(1),
+        Dialogue('Hermit', [
+          'The ground feels steadier. Not still, but steadier.',
+          'Whatever that thing was feeding, it has less of it now.',
+        ]),
+      ),
+      Rule(
+        QuestAt('node', 1),
+        Dialogue('Hermit', [
+          'The node is at the crossing, two rooms on. It fires at whoever it '
+              'sees, and shows the hexes first.',
+          'A Shield soaks it. So does two steps to one side.',
+        ]),
+      ),
+      Rule(
+        Always(),
+        Dialogue(
+          'Hermit',
+          [
+            'You came down the quarry. Nobody does that any more.',
+            'There is a dark node at the crossing, two rooms on. It holds the '
+                'road shut, and the land here has not kept its shape since it '
+                'went up.',
+            'Break it and the road to the city opens.',
+            'The gate on the road beyond opens in an order. Whoever shut it '
+                'wrote the order down and left it somewhere off the road.',
+          ],
+          [
+            DialogueChoice('I will break it', [SetQuest('node', 1)]),
+            DialogueChoice('Not now'),
+          ],
+        ),
+      ),
+    ],
+  ),
   'trainer': NpcScript(
     marks: [
       Rule(QuestFrom('training', 5), null),
@@ -662,8 +721,14 @@ const Map<String, Gate> gates = {
   ),
 };
 
-/// The gate stopping [portal] in [zone], or null if it is open.
-Gate? closedGate(String zone, String portal, WorldState w) {
+/// The gate stopping [portal] in [zone], or null if it is open. A generated
+/// zone has no fixed id, so it carries its own gates in [map].
+Gate? closedGate(String zone, String portal, WorldState w, [Zone? map]) {
+  final own = map?.nodeGates[portal];
+  if (own != null) {
+    final g = Gate(NodesBroken(own.nodes), own.message);
+    if (!g.requires.test(w)) return g;
+  }
   final g = gates['$zone#$portal'];
   return g != null && !g.requires.test(w) ? g : null;
 }

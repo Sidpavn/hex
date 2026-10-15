@@ -473,6 +473,83 @@ void main() {
       const ZoneScreen(startZone: 'quarry3'),
       settle: 2,
     );
+    await shot(
+      'zone_outer_a',
+      const ZoneScreen(startZone: 'outer_a'),
+      settle: 2,
+    );
+    await shot(
+      'zone_outer_b',
+      const ZoneScreen(startZone: 'outer_b'),
+      settle: 2,
+    );
+    // Broken Road's gate and plates, its maze, and the scroll at the end.
+    for (final (name, pick) in <(String, Hex Function(Zone))>[
+      ('road_plates', (z) => z.plates.keys.first),
+      ('road_door', (z) => z.doors.first),
+      (
+        'road_scroll',
+        (z) => z.items.firstWhere((i) => i.itemId == 'scroll_gate').hex,
+      ),
+    ]) {
+      final key = GlobalKey();
+      await tester.pumpWidget(
+        RepaintBoundary(
+          key: key,
+          child: const HexApp(home: ZoneScreen(startZone: 'outer_b')),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 200));
+      final dynamic st = tester.state(find.byType(ZoneScreen));
+      final z = st.zone as Zone;
+      final at = pick(z);
+      final near = at.neighbors.firstWhere(
+        (h) => z.tiles[h]?.walkable ?? false,
+      );
+      st.sim.hero = near;
+      st.heroWorld = hexWorld(near);
+      st.cam = hexWorld(at);
+      await tester.pump(const Duration(milliseconds: 300));
+      final boundary =
+          key.currentContext!.findRenderObject() as RenderRepaintBoundary;
+      await tester.runAsync(() async {
+        final img = await boundary.toImage(pixelRatio: 3);
+        final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
+        File('$dir/$name.png').writeAsBytesSync(bytes!.buffer.asUint8List());
+      });
+    }
+    // The first dark node: the unit, and its pulse a turn before it lands.
+    {
+      final key = GlobalKey();
+      await tester.pumpWidget(
+        RepaintBoundary(
+          key: key,
+          child: const HexApp(home: ZoneScreen(startZone: 'outer_c')),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 200));
+      final dynamic st = tester.state(find.byType(ZoneScreen));
+      final node = (st.sim.enemies as List).firstWhere(
+        (e) => e.type == UnitType.node,
+      );
+      final at = Hex(node.hex.q - 3, node.hex.r);
+      st.sim.hero = at;
+      st.heroWorld = hexWorld(at);
+      st.cam = hexWorld(node.hex);
+      node.awareness = Awareness.alert;
+      st.sim.wait();
+      st.afterTurn(st.sim);
+      await tester.pump(const Duration(milliseconds: 300));
+      final boundary =
+          key.currentContext!.findRenderObject() as RenderRepaintBoundary;
+      await tester.runAsync(() async {
+        final img = await boundary.toImage(pixelRatio: 3);
+        final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
+        File(
+          '$dir/node_pulse.png',
+        ).writeAsBytesSync(bytes!.buffer.asUint8List());
+      });
+    }
     await shot('menu', const MenuScreen());
     await shot('campaign', const CampaignScreen());
     await shot('setup', const SetupScreen(mode: GameMode.skirmish));

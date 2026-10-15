@@ -203,6 +203,13 @@ const Map<String, ItemDef> itemDefs = {
     'scroll',
     'Read it in the journal.',
   ),
+  'scroll_gate': ItemDef(
+    'scroll_gate',
+    'Scroll',
+    ItemKind.lore,
+    'scroll',
+    'Read it in the journal.',
+  ),
   'scroll_crew': ItemDef(
     'scroll_crew',
     'Scroll',

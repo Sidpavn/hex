@@ -8,6 +8,10 @@ class Lore {
 }
 
 const Map<String, Lore> loreDefs = {
+  // Placeholder: the real text is built from the door's order, see [gateLore].
+  'scroll_gate': Lore('The keeper\'s rule', [
+    'The gate opens for one order of stones and no other.',
+  ]),
   'scroll_orders': Lore('Orders for the south post', [
     'The Watch holds this post and trains every recruit that comes through. '
         'Tobin keeps it.',
@@ -42,3 +46,26 @@ const Map<String, Lore> loreDefs = {
     'Going to look at the pass. The ground has been groaning for days.',
   ]),
 };
+
+/// Scrolls whose text depends on the zone they were found in, filled in when
+/// that zone is built. Looked up before [loreDefs].
+final Map<String, Lore> generatedLore = {};
+
+/// The text for [id], generated or fixed.
+Lore? loreFor(String id) => generatedLore[id] ?? loreDefs[id];
+
+const _colourPhrase = {
+  'red': 'the colour of embers',
+  'blue': 'the colour of deep water',
+  'yellow': 'the colour of old gold',
+  'green': 'the colour of moss',
+};
+
+/// The keeper's note for a door that opens in [order] (three colours).
+Lore gateLore(List<String> order) => Lore('The keeper\'s rule', [
+  'The gate opens for one order of three stones and no other. Press the '
+      'wrong three and the stones spring back and sting.',
+  'First, ${_colourPhrase[order[0]]}. Then ${_colourPhrase[order[1]]}. '
+      'Last, ${_colourPhrase[order[2]]}.',
+  'The fourth stone belongs to nothing. Leave it.',
+]);

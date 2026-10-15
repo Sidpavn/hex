@@ -49,10 +49,15 @@ class WorldState {
   static const int bagSize = 16;
 
   /// Bumped when the save layout changes. Saves without it are version 0.
-  static const saveVersion = 4;
+  static const saveVersion = 6;
 
   int hp = maxHp;
   int mana = maxMana;
+
+  /// Decides the layout of the generated land past the quarry. 0 until the
+  /// first time the hero enters it; it is then kept, so reloading a save
+  /// gives the same map.
+  int regionSeed = 0;
 
   /// Damage the shield will still absorb, and the turns before it fades.
   int shield = 0;
@@ -89,6 +94,9 @@ class WorldState {
 
   /// Charges that have gone off (`zone#q,r`, see `Zone.chargeId`). Permanent.
   final Set<String> blasted = {};
+
+  /// Puzzle doors that have been opened (`zone#door`).
+  final Set<String> opened = {};
 
   /// Pickups already taken, as `zone#id`.
   final Set<String> collected = {};
@@ -139,10 +147,12 @@ class WorldState {
       'repaired': repaired.toList(),
       'chopped': chopped.toList(),
       'blasted': blasted.toList(),
+      'opened': opened.toList(),
       'collected': collected.toList(),
       'scrolls': scrolls,
       'quests': quests,
       'counts': counts,
+      'regionSeed': regionSeed,
       if (camp != null) 'camp': where(camp!),
       if (resume != null) 'resume': where(resume!),
     };
@@ -188,11 +198,15 @@ class WorldState {
     w.chopped.addAll(((j['chopped'] as List?) ?? const []).cast<String>());
     // Added in version 4.
     w.blasted.addAll(((j['blasted'] as List?) ?? const []).cast<String>());
+    // Added in version 6.
+    w.opened.addAll(((j['opened'] as List?) ?? const []).cast<String>());
     w.collected.addAll((j['collected'] as List).cast<String>());
     // Added in version 3.
     w.scrolls.addAll(((j['scrolls'] as List?) ?? const []).cast<String>());
     w.quests.addAll(ints(j['quests']));
     w.counts.addAll(ints(j['counts']));
+    // Added in version 5.
+    w.regionSeed = j['regionSeed'] as int? ?? 0;
     if (j['camp'] != null) w.camp = where(j['camp']);
     if (j['resume'] != null) w.resume = where(j['resume']);
     return w;

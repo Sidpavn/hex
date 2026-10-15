@@ -3,7 +3,7 @@ name Quarry Rim
 dark 0
 floor stone
 portal 1 quarry2 2 ladder
-portal 2 sixways 1 cave
+portal 2 outer_a 1 cave
 portal 3 quarry1 3 lift
 camp 11 24
 item potion1 22 19 potion

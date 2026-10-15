@@ -8,6 +8,7 @@ import 'pathfinding.dart';
 import 'items.dart';
 import 'quests.dart';
 import 'world_state.dart';
+import 'tiers.dart';
 import 'zone.dart';
 
 /// What an enemy is doing right now. Shown above its head.
@@ -29,20 +30,35 @@ enum Awareness {
 }
 
 class Enemy {
-  Enemy(this.id, this.key, EnemySpawn s)
+  Enemy(this.id, this.key, EnemySpawn s, [this.tier = 0])
     : type = s.type,
       home = s.hex,
       route = s.route,
       behavior = s.behavior,
       hex = s.hex,
-      maxHp = bossKits[s.type]?.hp ?? unitStats[s.type]!.maxHp,
-      hp = bossKits[s.type]?.hp ?? unitStats[s.type]!.maxHp,
+      maxHp = _baseHp(s.type, tier),
+      hp = _baseHp(s.type, tier),
       awareness = s.behavior == Behavior.sleep
           ? Awareness.asleep
           : Awareness.idle,
       vis = hexWorld(s.hex);
 
+  /// Bosses keep their kit's hit points; everything else follows the tier.
+  static int _baseHp(UnitType type, int tier) {
+    final kit = bossKits[type];
+    if (kit != null) return kit.hp;
+    final base = unitStats[type]!.maxHp;
+    return (base * tierOf(tier).hpPercent / 100).round();
+  }
+
   final int id;
+
+  /// How tough this zone makes it (see `tiers.dart`).
+  final int tier;
+
+  /// What one hit costs the hero: its own damage, plus the zone's tier.
+  int get damage =>
+      stats.damage + (bossKits.containsKey(type) ? 0 : tierOf(tier).damage);
 
   /// Stable id (`zone#index`) used to remember kills.
   final String key;
@@ -164,6 +180,17 @@ enum SimEventKind {
   /// rubble.
   blasted,
 
+  /// A pressure plate went down at [SimEvent.hex]. It says nothing about
+  /// whether it was the right one.
+  plateDown,
+
+  /// The last plate of a wrong order: they all spring back, and the hero is
+  /// stung.
+  plateReset,
+
+  /// The last plate went down and the door opened at [SimEvent.hex].
+  doorOpened,
+
   /// The hero stepped on the chest at [SimEvent.hex]; [SimEvent.note] is what
   /// is inside. Nothing is taken until [ZoneSim.takeChest].
   chestOpened,
@@ -230,6 +257,7 @@ class ZoneSim {
     UnitType.warlord: 6,
     UnitType.pyromancer: 6,
     UnitType.titan: 7,
+    UnitType.node: 6,
   };
 
   /// Hexes per turn.
@@ -237,6 +265,7 @@ class ZoneSim {
     UnitType.golem: 0.5,
     UnitType.titan: 0.5,
     UnitType.cavalry: 2.0,
+    UnitType.node: 0.0,
   };
 
   /// Sleepers only notice you this close.
@@ -287,6 +316,9 @@ class ZoneSim {
   /// Burning hexes and the turns they have left.
   final Map<Hex, int> fire = {};
 
+  /// The plates held down so far, in the order they were pressed.
+  final List<Hex> pressed = [];
+
   /// Hexes marked for a rockfall, landing at the end of the coming turn.
   Set<Hex> rockWarn = {};
   static const rockDamage = 2;
@@ -305,7 +337,7 @@ class ZoneSim {
     for (final (i, s) in source.enemies.indexed) {
       final key = '${source.id}#$i';
       if (world.slain.contains(key)) continue;
-      enemies.add(Enemy(i, key, s));
+      enemies.add(Enemy(i, key, s, source.tier));
     }
   }
 
@@ -326,7 +358,44 @@ class ZoneSim {
     _applyWorld();
     _calm = 0;
     events.clear();
+    pressed.clear();
     _spawn();
+  }
+
+  /// Takes the door out of [zone], leaving open floor.
+  void _openDoor() {
+    for (final h in source.doors) {
+      zone.tiles[h] = ZoneTile(source.floor);
+    }
+  }
+
+  /// A plate underfoot. Every plate goes down the same way and says the same
+  /// thing, so a press tells you nothing. Only once as many plates are down as
+  /// the order has colours is it judged: the right order opens the door, any
+  /// other springs every plate back up and stings. A plate already down, or
+  /// any plate once the door is open, does nothing.
+  void _stepPlate(Hex at) {
+    final colour = source.plates[at];
+    if (colour == null || source.plateOrder.isEmpty) return;
+    if (world.opened.contains(source.doorId) || pressed.contains(at)) return;
+    pressed.add(at);
+    if (pressed.length < source.plateOrder.length) {
+      events.add(SimEvent(SimEventKind.plateDown, at));
+      return;
+    }
+    final right = [
+      for (var i = 0; i < pressed.length; i++)
+        source.plates[pressed[i]] == source.plateOrder[i],
+    ].every((ok) => ok);
+    if (!right) {
+      pressed.clear();
+      events.add(SimEvent(SimEventKind.plateReset, at));
+      _hurtHero(1);
+      return;
+    }
+    world.opened.add(source.doorId);
+    _openDoor();
+    events.add(SimEvent(SimEventKind.doorOpened, source.doors.first));
   }
 
   /// Lays the permanent changes (mended bridges, felled trees) over [zone].
@@ -341,6 +410,7 @@ class ZoneSim {
     for (final c in source.charges) {
       if (world.blasted.contains(source.chargeId(c))) _clearBlast(c);
     }
+    if (world.opened.contains(source.doorId)) _openDoor();
     for (final key in world.chopped) {
       if (!key.startsWith('${source.id}#')) continue;
       final qr = key.substring(source.id.length + 1).split(',');
@@ -543,11 +613,12 @@ class ZoneSim {
       return false;
     }
     final portal = tile.portal;
-    if (portal != null && closedGate(source.id, portal, world) != null) {
+    if (portal != null && closedGate(source.id, portal, world, zone) != null) {
       events.add(SimEvent(SimEventKind.gateClosed, to));
       return false;
     }
     hero = to;
+    _stepPlate(to);
     final item = itemAt(to);
     if (item != null && item.chest) {
       events.add(
@@ -716,8 +787,9 @@ class ZoneSim {
       world.slain.add(e.key);
       world.bump(Counts.kill(e.type));
       final kit = bossKits[e.type];
-      if (kit != null && !world.knownSpells.contains(kit.spell)) {
-        world.learn(kit.spell);
+      final taught = kit?.spell;
+      if (taught != null && !world.knownSpells.contains(taught)) {
+        world.learn(taught);
         events.add(
           SimEvent(
             SimEventKind.learned,
@@ -727,7 +799,7 @@ class ZoneSim {
             null,
             false,
             e.type,
-            kit.spell,
+            taught,
           ),
         );
       }
@@ -1158,7 +1230,7 @@ class ZoneSim {
         e.type,
       ),
     );
-    _hurtHero(e.stats.damage);
+    _hurtHero(e.damage);
   }
 
   void _stepAway(Enemy e) {

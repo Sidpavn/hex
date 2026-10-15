@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hex/game/hex.dart';
 import 'package:hex/game/models.dart';
+import 'package:hex/world/gen_zone.dart';
 import 'package:hex/world/items.dart';
 import 'package:hex/world/pathfinding.dart';
 import 'package:hex/world/quests.dart';
@@ -14,6 +15,8 @@ void main() {
   final zones = {
     for (final id in ZoneRepo.ids)
       id: Zone.parse(File('assets/zones/$id.txt').readAsStringSync()),
+    // The quarry gate opens onto generated land, not a file.
+    for (final id in outerRooms) id: Zone.parse(outerRoom(id, 1)),
   };
   final quarry = ['quarry1', 'quarry2', 'quarry3'];
 

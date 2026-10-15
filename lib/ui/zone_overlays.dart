@@ -295,7 +295,7 @@ class QuestLogOverlay extends StatelessWidget {
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
-                                  loreDefs[id]?.title ?? 'Scroll',
+                                  loreFor(id)?.title ?? 'Scroll',
                                   style: const TextStyle(
                                     color: Pal.text,
                                     fontSize: 15,
@@ -393,7 +393,7 @@ class ScrollOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final lore = loreDefs[id];
+    final lore = loreFor(id);
     return ModalFrame(
       onDismiss: onClose,
       child: Padding(

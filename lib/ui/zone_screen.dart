@@ -261,6 +261,10 @@ class _ZoneScreenState extends State<ZoneScreen>
     Hex? at,
     bool rest = false,
   }) async {
+    if (world.regionSeed == 0) {
+      world.regionSeed = 1 + math.Random().nextInt(0x7FFFFFFF);
+    }
+    ZoneRepo.regionSeed = world.regionSeed;
     zones = await ZoneRepo.loadAll();
     final z = zones[id] ?? await ZoneRepo.load(id);
     if (!mounted) return;
@@ -608,6 +612,19 @@ class _ZoneScreenState extends State<ZoneScreen>
           );
           fx.burst(at, sparkGold, 0, count: 12, speed: 55);
           HapticFeedback.selectionClick();
+        case SimEventKind.plateDown:
+          _clearRoute();
+          texts.add(_FloatText(at, 'Click', Pal.goldLight));
+          HapticFeedback.selectionClick();
+        case SimEventKind.plateReset:
+          _clearRoute();
+          texts.add(_FloatText(at, 'The stones spring back', Pal.red));
+          HapticFeedback.mediumImpact();
+        case SimEventKind.doorOpened:
+          _clearRoute();
+          fx.at(cursor, () => fx.shake = math.max(fx.shake, 1));
+          texts.add(_FloatText(at, 'The gate opens', Pal.goldLight));
+          HapticFeedback.heavyImpact();
         case SimEventKind.blasted:
           _clearRoute();
           fx.at(cursor, () => fx.shake = math.max(fx.shake, 1));
@@ -664,7 +681,7 @@ class _ZoneScreenState extends State<ZoneScreen>
         case SimEventKind.telegraph:
           // Stop auto-travel: the player has to choose where to stand.
           _clearRoute();
-          final name = spellDefs[ev.note]?.name ?? 'Spell';
+          final name = spellDefs[ev.note]?.name ?? 'Pulse';
           texts.add(
             _FloatText(
               hexWorld(ev.from!) + const Offset(0, -16),
@@ -701,6 +718,7 @@ class _ZoneScreenState extends State<ZoneScreen>
             s.source.id,
             s.zone.tiles[ev.hex]?.portal ?? '',
             world,
+            s.zone,
           );
           if (gate != null) {
             texts.add(_FloatText(at, gate.message, Pal.goldLight));
@@ -787,7 +805,11 @@ class _ZoneScreenState extends State<ZoneScreen>
       target,
       blocked: (h) =>
           h != target &&
-          (s.enemyAt(h) != null || s.npcAt(h) != null || s.fire.containsKey(h)),
+          (s.enemyAt(h) != null ||
+              s.npcAt(h) != null ||
+              s.fire.containsKey(h) ||
+              // Pressure plates are pressed on purpose, never walked over.
+              z.tiles[h]?.plate != null),
     );
     if (route == null) return;
     setState(() {
@@ -1526,6 +1548,21 @@ class _ZonePainter extends CustomPainter {
       }
       if (tile.rubble) td.blit(canvas, art.sprite('rubble'), c, -11, -10, sc);
       if (tile.charge) td.blit(canvas, art.sprite('charge'), c, -8, -10, sc);
+      final plate = tile.plate;
+      if (plate != null) {
+        final down =
+            sim.pressed.contains(h) ||
+            sim.world.opened.contains(sim.source.doorId);
+        td.blit(
+          canvas,
+          art.sprite('plate_$plate', down ? 'down' : 'idle0'),
+          c,
+          -8,
+          -9,
+          sc,
+        );
+      }
+      if (tile.door) td.blit(canvas, art.sprite('door'), c, -8, -12, sc);
       final portal = zone.portalAt(h);
       if (portal != null) {
         td.blit(canvas, art.sprite(portal.sprite), c, -8, -9, sc);

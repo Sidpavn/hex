@@ -1,7 +1,7 @@
 zone sixways
 name Sixways
 dark 0
-portal 1 quarry3 2 cave_exit
+portal 1 outer_c 2 cave_exit
 camp 8 5
 map
 ^^^^^^^^^^^^^^^^

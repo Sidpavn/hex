@@ -4,7 +4,7 @@ import '../game/models.dart';
 /// blast area for [warn] turns, then fires. Beating the boss teaches [spell].
 class BossKit {
   const BossKit({
-    required this.spell,
+    this.spell,
     required this.hp,
     this.center = 2,
     this.ring = 1,
@@ -16,8 +16,9 @@ class BossKit {
     this.shieldBelow = 0.5,
   });
 
-  /// Id in `spellDefs`, and what the hero learns on the kill.
-  final String spell;
+  /// Id in `spellDefs`, and what the hero learns on the kill. Null for a
+  /// node: it pulses, but breaking it teaches nothing.
+  final String? spell;
 
   /// Replaces the unit's own hit points.
   final int hp;
@@ -56,4 +57,7 @@ const Map<UnitType, BossKit> bossKits = {
     fire: false,
     shield: 3,
   ),
+  // The first node is easy: no shield, a slow pulse that leaves no fire. A
+  // Shield or two steps aside beats it.
+  UnitType.node: BossKit(hp: 6, warn: 2, cooldown: 4, fire: false),
 };

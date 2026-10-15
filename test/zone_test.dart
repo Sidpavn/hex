@@ -8,6 +8,7 @@ import 'package:hex/game/models.dart';
 import 'package:hex/ui/inventory_ui.dart';
 import 'package:hex/ui/pixel/pixel_assets.dart';
 import 'package:hex/ui/zone_screen.dart';
+import 'package:hex/world/gen_zone.dart';
 import 'package:hex/world/pathfinding.dart';
 import 'package:hex/world/sim.dart';
 import 'package:hex/world/world_state.dart';
@@ -19,6 +20,10 @@ Map<String, Zone> _load() {
     if (!f.path.endsWith('.txt')) continue;
     final z = Zone.parse(f.readAsStringSync());
     zones[z.id] = z;
+  }
+  // The quarry gate opens onto generated land, not a file.
+  for (final id in outerRooms) {
+    zones[id] = Zone.parse(outerRoom(id, 1));
   }
   return zones;
 }
@@ -34,7 +39,7 @@ Zone mended(Zone z) {
     }
   }
   for (final e in z.tiles.entries) {
-    if (e.value.rubble || e.value.charge) {
+    if (e.value.rubble || e.value.charge || e.value.door) {
       c.tiles[e.key] = const ZoneTile(Terrain.grass);
     }
   }

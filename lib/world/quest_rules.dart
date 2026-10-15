@@ -1,3 +1,4 @@
+import '../game/models.dart';
 import 'items.dart';
 import 'world_state.dart';
 
@@ -59,6 +60,16 @@ class Count extends Condition {
 
   @override
   bool test(WorldState w) => w.count(key) >= atLeast;
+}
+
+/// At least [atLeast] dark nodes have been broken.
+class NodesBroken extends Condition {
+  const NodesBroken(this.atLeast);
+
+  final int atLeast;
+
+  @override
+  bool test(WorldState w) => w.count(Counts.kill(UnitType.node)) >= atLeast;
 }
 
 /// [item] is the weapon in hand.
