@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'data/storage.dart';
+import 'diner/diner_art.dart';
 import 'ui/menu_screen.dart';
 import 'ui/pixel/pixel_assets.dart';
 import 'ui/widgets.dart' show Pal, PixelTextScaler;
@@ -14,6 +15,7 @@ Future<void> main() async {
     debugPrint('Storage unavailable, progress will not be saved: $e');
   }
   await PixelAssets.load();
+  await DinerArt.load();
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   runApp(const HexApp());
 }

@@ -1480,3 +1480,13 @@ kmmMMMMk
 kmMMMMMk
 .kMMMMk.
 ..kkkk..
+
+@sprite coin idle0
+..kkkk..
+.kyyyyk.
+kyywyYYk
+kywyyyYk
+kyyyyYYk
+kyyyYYYk
+.kYYYYk.
+..kkkk..

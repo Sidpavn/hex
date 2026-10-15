@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/storage.dart';
+import '../diner/build_screen.dart';
 import '../game/campaign.dart';
 import '../game/config.dart';
 import '../game/models.dart';
@@ -133,6 +134,12 @@ class _MenuScreenState extends State<MenuScreen> {
           'Erase the save and start over',
           _restartExplore,
         ),
+      _Item(
+        'coin',
+        'Diner',
+        'Lay out the restaurant',
+        () => _open(const BuildScreen()),
+      ),
       _Item(
         'chart',
         'Stats',

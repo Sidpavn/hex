@@ -4,6 +4,7 @@ import 'package:hive_ce_flutter/hive_flutter.dart';
 
 import '../game/campaign.dart';
 import '../game/config.dart';
+import '../diner/diner.dart';
 import '../game/models.dart';
 import '../world/world_state.dart';
 
@@ -100,6 +101,21 @@ class Storage {
       _put('explore', jsonEncode(w.toJson()));
 
   static void clearExplore() => _put('explore', null);
+
+  // ───────────────────────── diner save ─────────────────────────
+
+  /// The saved diner, or null if there is none (or it can't be read).
+  static Diner? get diner {
+    final raw = _get('diner');
+    if (raw is! String) return null;
+    try {
+      return Diner.fromJson(jsonDecode(raw) as Map<String, Object?>);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static void saveDiner(Diner d) => _put('diner', jsonEncode(d.toJson()));
 
   // ───────────────────────── unlocks ─────────────────────────
 

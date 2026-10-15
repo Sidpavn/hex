@@ -32,4 +32,5 @@ The UI must not look AI-generated. Before adding or changing any UI, check it ag
 - Use `PixelBox` / `Panel` / `GoldButton` / `Choice` / `PxBar` / `HexBadge` from `lib/ui/widgets.dart`. They draw on a whole-device-pixel grid (`PixelUi.unit`).
 - Font is VT323. `PixelTextScaler` (set in `main.dart`) snaps every font size to a crisp multiple, so just write normal sizes; don't add `letterSpacing`.
 - No glow, gradients, blur, rotation, fractional scaling or fades. Motion steps in whole pixels. Page transitions are cuts.
-- Previews: `PIXEL_PREVIEW=<png> flutter test test/pixel_preview_test.dart` (board) and `UI_PREVIEW=<dir> flutter test test/ui_preview_test.dart` (screens).
+- Diner art is isometric and generated: edit `tools/gen_diner_art.py` (toolkit in `tools/iso.py`), run it, restart the app. Output goes to `assets/diner/`; don't hand-edit the PNGs.
+- Previews: `PIXEL_PREVIEW=<png> flutter test test/pixel_preview_test.dart` (board) and `UI_PREVIEW=<dir> flutter test test/ui_preview_test.dart` (screens), `DINER_PREVIEW=<png>` / `DINER_SCREEN=<png>` with `test/diner_preview_test.dart` (diner board / build screen).
