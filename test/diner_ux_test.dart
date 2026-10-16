@@ -8,6 +8,7 @@ import 'package:hex/data/storage.dart';
 import 'package:hex/diner/build_screen.dart';
 import 'package:hex/diner/diner.dart';
 import 'package:hex/diner/diner_art.dart';
+import 'package:hex/diner/goals.dart';
 import 'package:hex/main.dart';
 import 'package:hex/ui/pixel/pixel_assets.dart';
 
@@ -119,7 +120,11 @@ void main() {
     testWidgets('nothing is shown when there is nothing to say', (
       tester,
     ) async {
-      await open(tester, Diner.starter());
+      // Every goal done, so there is no hint left to give.
+      await open(
+        tester,
+        Diner.starter()..goalsDone.addAll([for (final g in goals) g.id]),
+      );
       expect(find.byKey(const ValueKey('hint')), findsNothing);
     });
 

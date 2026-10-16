@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../ui/widgets.dart';
 import 'build_screen.dart' show DinerSprite;
+import 'events.dart';
 import 'recipes.dart';
 import 'service.dart';
 import 'traits.dart';
@@ -56,6 +57,13 @@ class DayReportScreen extends StatelessWidget {
                     Pal.text,
                     const ValueKey('cars-line'),
                   ),
+                if (r.tooDear > 0)
+                  _row(
+                    'Walked out at the prices',
+                    '${r.tooDear}',
+                    Pal.red,
+                    const ValueKey('toodear-line'),
+                  ),
                 if (r.soldOut > 0)
                   _row(
                     'Turned away, sold out',
@@ -67,6 +75,7 @@ class DayReportScreen extends StatelessWidget {
                 if (r.leftover > 0)
                   _row('Ingredients thrown away', '${r.leftover}'),
                 _row('Expected tomorrow', 'about ${r.tomorrow}'),
+                if (r.cleaned > 0) _row('Tables cleared', '${r.cleaned}'),
               ],
             ),
           ),
@@ -76,6 +85,20 @@ class DayReportScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                if (r.event != DayEvent.none)
+                  _row(
+                    'Today',
+                    r.event.label,
+                    Pal.text,
+                    const ValueKey('event-line'),
+                  ),
+                if (r.reviewDelta != 0)
+                  _row(
+                    r.event == DayEvent.blogger ? 'The blogger' : 'The critic',
+                    '${r.reviewDelta > 0 ? '+' : ''}${r.reviewDelta}',
+                    r.reviewDelta > 0 ? Pal.green : Pal.red,
+                    const ValueKey('critic-line'),
+                  ),
                 _row(
                   'Rating',
                   '${(r.reputationBefore / 20).toStringAsFixed(1)} to '

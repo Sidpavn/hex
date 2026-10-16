@@ -7,6 +7,7 @@ import 'package:hex/diner/build_screen.dart';
 import 'package:hex/diner/diner.dart';
 import 'package:hex/diner/diner_art.dart';
 import 'package:hex/diner/diner_painter.dart';
+import 'package:hex/diner/goals.dart';
 import 'package:hex/diner/recipes.dart';
 import 'package:hex/main.dart';
 import 'package:hex/ui/pixel/pixel_assets.dart';
@@ -568,6 +569,8 @@ void main() {
     Diner furnished() {
       final d = Diner(coins: 5000, owned: {0, 1});
       d.progress.level = 5;
+      // Goals pay out as things happen; leave them out of the sums here.
+      d.goalsDone.addAll([for (final g in goals) g.id]);
       d.place(Kind.table, const Cell(5, 5));
       d.place(Kind.chair, const Cell(4, 5), Dir.se);
       d.place(Kind.chair, const Cell(6, 5), Dir.nw);

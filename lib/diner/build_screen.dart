@@ -8,6 +8,10 @@ import '../ui/pixel_dialog.dart';
 import '../ui/widgets.dart';
 import 'clock.dart';
 import 'diner.dart';
+import 'advice.dart';
+import 'events.dart';
+import 'goals.dart';
+import 'goals_screen.dart';
 import 'diner_art.dart';
 import 'diner_painter.dart';
 import 'iso.dart';
@@ -16,6 +20,7 @@ import 'recipes.dart';
 import 'service.dart';
 import 'report_screen.dart';
 import 'staff_screen.dart';
+import 'stats_screen.dart';
 import 'toast.dart';
 import 'traits.dart';
 import 'upgrade_screen.dart';
@@ -37,6 +42,8 @@ String describeFixture(FixtureDef d, Progress p) {
       return '${d.info} ${r.name} takes ${secs(p.cookTicks(r.dish))} s.';
     case Role.counter:
       return '${d.info} Each guest takes ${secs(p.checkoutTicks)} s.';
+    case Role.decor when d.aura != null:
+      return '${d.info} ${d.aura!.describe}';
     default:
       return d.info;
   }
@@ -125,6 +132,12 @@ class _BuildScreenState extends State<BuildScreen>
   bool _expanding = false;
   int? _plotSel;
 
+  /// The guest tapped during service, to read about or rush.
+  Guest? _guestSel;
+
+  /// Goals met on the day that just ended, for the summary.
+  List<Goal> _dayGoals = [];
+
   /// The section that just lit up, and how far its flash has faded: 3 down to
   /// 0, a step every tenth of a second.
   int? _flashPlot;
@@ -196,21 +209,51 @@ class _BuildScreenState extends State<BuildScreen>
   }
 
   /// The layout changed: redraw the still layer and re-plan the kitchen.
+  /// Pays out any goal that is now met, and says so.
+  void _checkGoals([DayReport? day]) {
+    // Once the day is over its report counts, whoever asks.
+    day ??= sim.result;
+    final met = diner.checkGoals(day);
+    if (met.isEmpty) return;
+    _coins = diner.coins;
+    if (day != null) _dayGoals = [..._dayGoals, ...met];
+    _note = met.length == 1
+        ? 'Goal done: ${met.first.title}. +${met.first.reward}'
+        : 'Goals done: ${met.map((g) => g.title).join(', ')}. '
+              '+${met.fold(0, (a, g) => a + g.reward)}';
+    _save(_savedAt);
+  }
+
   void _changed() {
     _revision++;
+    _checkGoals();
     sim.layoutChanged();
     _save(_savedAt);
   }
 
   // ------------------------------------------------------------- the day
 
-  void _startDay() {
+  Future<void> _startDay() async {
     if (!sim.report.ready) return;
+    // A day that is not like the others is announced first, in the middle of
+    // the screen, so nobody is caught out by it.
+    final today = diner.today;
+    if (today != DayEvent.none) {
+      await noticePixel(
+        context,
+        title: today.label,
+        body: today.blurb,
+        button: 'Start the day',
+        buttonKey: const ValueKey('event-ok'),
+      );
+      if (!mounted) return;
+    }
     setState(() {
       _clearEdit();
       _levelBefore = diner.progress.level;
       diner.clearUndo();
       sim = DinerSim(diner);
+      _guestSel = null;
       _toasts.clear();
       _phase = Phase.service;
       _speed = 1;
@@ -222,8 +265,9 @@ class _BuildScreenState extends State<BuildScreen>
 
   void _endDay() {
     final report = sim.result ?? sim.finishDay();
-    _save(_savedAt);
     setState(() {
+      _checkGoals(report);
+      _save(_savedAt);
       _report = report;
       _phase = Phase.summary;
       _revision++;
@@ -234,6 +278,7 @@ class _BuildScreenState extends State<BuildScreen>
     setState(() {
       sim = DinerSim(diner);
       _toasts.clear();
+      _dayGoals = [];
       _phase = Phase.build;
       _report = null;
       _revision++;
@@ -250,7 +295,21 @@ class _BuildScreenState extends State<BuildScreen>
       sim = DinerSim(diner);
       _coins = diner.coins;
       _revision++;
+      _checkGoals();
     });
+  }
+
+  Future<void> _openGoals() async {
+    var startOver = false;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            GoalsScreen(diner: diner, onReset: () => startOver = true),
+      ),
+    );
+    if (!mounted) return;
+    setState(() {});
+    if (startOver) await _reset();
   }
 
   Future<void> _openMenu() async {
@@ -262,6 +321,7 @@ class _BuildScreenState extends State<BuildScreen>
       sim = DinerSim(diner);
       _coins = diner.coins;
       _revision++;
+      _checkGoals();
     });
   }
 
@@ -275,6 +335,7 @@ class _BuildScreenState extends State<BuildScreen>
       sim = DinerSim(diner);
       _coins = diner.coins;
       _revision++;
+      _checkGoals();
     });
   }
 
@@ -317,6 +378,13 @@ class _BuildScreenState extends State<BuildScreen>
     });
   }
 
+  /// Which way the fixture being placed faces at [at]. Anything hung goes the
+  /// way its wall says; the rest face as they were turned.
+  Dir _faceAt(Kind kind, Cell at) {
+    if (!fixtureDefs[kind]!.hung || diner.hangs(at, _facing)) return _facing;
+    return diner.defaultFacing(kind, at);
+  }
+
   /// What would happen if the fixture being placed or moved were put down
   /// where the ghost is now. Null when there is no ghost.
   PlaceResult? get _placeResult {
@@ -326,7 +394,7 @@ class _BuildScreenState extends State<BuildScreen>
     return diner.check(
       kind,
       at,
-      facing: kind == Kind.window ? Dir.se : _facing,
+      facing: kind == Kind.window ? Dir.se : _faceAt(kind, at),
       ignore: _moving,
       free: _moving != null,
     );
@@ -348,7 +416,8 @@ class _BuildScreenState extends State<BuildScreen>
     for (final c in diner.insideCells()) {
       final d = (c.x - centre.x).abs() + (c.y - centre.y).abs();
       if (d >= bestD) continue;
-      if (diner.check(kind, c, facing: _facing) == PlaceResult.ok) {
+      if (diner.check(kind, c, facing: _faceAt(kind, c), free: true) ==
+          PlaceResult.ok) {
         best = c;
         bestD = d;
       }
@@ -393,8 +462,17 @@ class _BuildScreenState extends State<BuildScreen>
         _note = r == PlaceResult.ok ? '' : "It won't turn here";
         if (r == PlaceResult.ok) _changed();
       } else {
-        _facing = _facing.cw;
-        _facingAuto = false;
+        final kind = _placing;
+        if (kind != null && fixtureDefs[kind]!.hung) {
+          _facing = _facing == Dir.sw ? Dir.se : Dir.sw;
+          final at = _hover;
+          _note = at != null && !diner.hangs(at, _facing)
+              ? 'Only a corner has two walls to hang on'
+              : '';
+        } else {
+          _facing = _facing.cw;
+          _facingAuto = false;
+        }
       }
     });
   }
@@ -435,8 +513,8 @@ class _BuildScreenState extends State<BuildScreen>
       if (kind == null || at == null) return;
       final moving = _moving;
       final result = moving != null
-          ? diner.relocate(moving, at, _facing)
-          : diner.place(kind, at, _facing);
+          ? diner.relocate(moving, at, _faceAt(kind, at))
+          : diner.place(kind, at, _faceAt(kind, at));
       if (result == PlaceResult.ok) {
         _note = moving != null
             ? ''
@@ -494,7 +572,7 @@ class _BuildScreenState extends State<BuildScreen>
 
   /// A tap while choosing: add the fixture there, or take it out.
   void _toggleGroup(Cell at) {
-    final p = diner.isInside(at) ? diner.pickAt(at) : null;
+    final p = diner.pickAt(at);
     if (p == null) return;
     setState(() {
       if (p.kind == Kind.window) {
@@ -597,6 +675,29 @@ class _BuildScreenState extends State<BuildScreen>
     });
   }
 
+  /// A tap on the board during service: pick the guest standing there.
+  void _tapGuest(Cell near, Cell exact) {
+    // A person is drawn above the tile they stand on, so look a tile toward
+    // the viewer first.
+    final front = Cell(exact.x + 1, exact.y + 1);
+    final g = sim.guestAt(front) ?? sim.guestAt(exact) ?? sim.guestAt(near);
+    setState(() {
+      _guestSel = g;
+      // No guest there: a tap on a table with a mess on it clears it.
+      if (g == null) {
+        sim.cleanAt(front);
+        sim.cleanAt(exact);
+        sim.cleanAt(near);
+      }
+    });
+  }
+
+  void _rushGuest() {
+    final g = _guestSel;
+    if (g == null) return;
+    setState(() => sim.rush(g));
+  }
+
   void _undo() {
     setState(() {
       final what = diner.undo();
@@ -609,7 +710,7 @@ class _BuildScreenState extends State<BuildScreen>
   }
 
   void _tapSelect(Cell at) => setState(() {
-    final hit = diner.isInside(at) ? diner.pickAt(at) : null;
+    final hit = diner.pickAt(at);
     _selected = hit;
     _note = '';
   });
@@ -790,14 +891,14 @@ class _BuildScreenState extends State<BuildScreen>
           ),
           if (_phase == Phase.build) ...[
             GestureDetector(
-              key: const ValueKey('reset'),
+              key: const ValueKey('goals'),
               behavior: HitTestBehavior.opaque,
-              onTap: _reset,
-              child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              onTap: _openGoals,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
                 child: PxText(
-                  'Reset',
-                  style: TextStyle(color: Pal.dimmer, fontSize: 14),
+                  'Goals',
+                  style: const TextStyle(color: Pal.gold, fontSize: 14),
                 ),
               ),
             ),
@@ -848,6 +949,12 @@ class _BuildScreenState extends State<BuildScreen>
       return '${describeFixture(def, progress)} '
           '${_moving == null ? 'Tap Place to put it down.' : 'Tap Put down.'}';
     }
+    // Nothing else to say: what is special about today.
+    final today = diner.today;
+    if (today != DayEvent.none && !_expanding) {
+      return 'Today: ${today.label}. ${today.blurb}';
+    }
+    if (!_expanding) return diner.hint ?? '';
     return '';
   }
 
@@ -1202,6 +1309,18 @@ class _BuildScreenState extends State<BuildScreen>
       ),
       const SizedBox(width: 8),
       Expanded(
+        child: GoldButton(
+          key: const ValueKey('stats'),
+          label: 'Stats',
+          filled: false,
+          color: Pal.text,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => StatsScreen(diner: diner)),
+          ),
+        ),
+      ),
+      const SizedBox(width: 8),
+      Expanded(
         flex: 2,
         child: GoldButton(
           key: const ValueKey('start-day'),
@@ -1211,6 +1330,91 @@ class _BuildScreenState extends State<BuildScreen>
       ),
     ],
   );
+
+  /// Who a tapped guest is, how they are doing, and the button to rush them.
+  Widget _guestCard(Guest g) => ListenableBuilder(
+    listenable: clock,
+    builder: (context, _) => _guestCardBody(g),
+  );
+
+  Widget _guestCardBody(Guest g) {
+    if (g.gone) return const SizedBox.shrink();
+    final String status;
+    if (g.state == GuestState.waiting) {
+      status = g.rushed ? 'Being rushed' : 'Waiting for food';
+    } else if (g.state == GuestState.eating) {
+      status = 'Eating';
+    } else if (g.inQueue || g.state == GuestState.arriving) {
+      status = 'In the queue';
+    } else {
+      status = 'On their way';
+    }
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 260),
+      child: PixelBox(
+        key: const ValueKey('guest-card'),
+        color: Pal.panel,
+        padding: const EdgeInsets.all(8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            PxText(
+              g.name,
+              style: const TextStyle(color: Pal.text, fontSize: 17),
+            ),
+            PxText(
+              g.critic
+                  ? 'Food critic. Wants a premium dish.'
+                  : g.blogger
+                  ? 'Food blogger. Wants a fair price and a short wait.'
+                  : '${g.gender.singular[0].toUpperCase()}${g.gender.singular.substring(1)}, '
+                        '${g.temper.label.toLowerCase()}, '
+                        '${g.wallet.label.toLowerCase()}',
+              key: const ValueKey('guest-kind'),
+              style: const TextStyle(color: Pal.dim, fontSize: 14),
+            ),
+            PxText(
+              status,
+              style: const TextStyle(color: Pal.dim, fontSize: 14),
+            ),
+            const SizedBox(height: 4),
+            PxBar(
+              value: g.mood,
+              color: g.mood > 0.66
+                  ? Pal.green
+                  : g.mood > 0.33
+                  ? Pal.gold
+                  : Pal.red,
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: GoldButton(
+                    key: const ValueKey('guest-close'),
+                    label: 'Close',
+                    filled: false,
+                    color: Pal.dim,
+                    onTap: () => setState(() => _guestSel = null),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 2,
+                  child: GoldButton(
+                    key: const ValueKey('guest-rush'),
+                    label: 'Rush  ${sim.rushLeft} left',
+                    onTap: sim.canRush(g) ? _rushGuest : null,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _servicePanel() {
     return ListenableBuilder(
@@ -1314,7 +1518,8 @@ class _BuildScreenState extends State<BuildScreen>
       for (final f in fixtureDefs.values)
         if (f.unlock > _levelBefore && f.unlock <= progress.level) f.name,
     ];
-    final best = r.highlights(1).firstOrNull;
+    final fix = r.unpaid > 0 ? null : fixFirst(r);
+    final best = fix == null ? r.highlights(1).firstOrNull : null;
     final ratingColour = r.reputation > r.reputationBefore
         ? Pal.green
         : r.reputation < r.reputationBefore
@@ -1436,6 +1641,16 @@ class _BuildScreenState extends State<BuildScreen>
             key: const ValueKey('unpaid-line'),
             style: const TextStyle(color: Pal.red, fontSize: 14),
           )
+        else if (_dayGoals.isNotEmpty)
+          PxText(
+            _dayGoals.length == 1
+                ? 'Goal done: ${_dayGoals.first.title}. '
+                      '+${_dayGoals.first.reward}'
+                : '${_dayGoals.length} goals done. '
+                      '+${_dayGoals.fold(0, (a, g) => a + g.reward)}',
+            key: const ValueKey('goal-line'),
+            style: const TextStyle(color: Pal.gold, fontSize: 14),
+          )
         else if (r.levelsGained > 0)
           PxText(
             'Level ${progress.level}!'
@@ -1470,6 +1685,14 @@ class _BuildScreenState extends State<BuildScreen>
               ),
             ],
           ),
+        if (fix != null) ...[
+          const SizedBox(height: 8),
+          PxText(
+            'Fix first: $fix',
+            key: const ValueKey('fix-first'),
+            style: const TextStyle(color: Pal.text, fontSize: 14),
+          ),
+        ],
         const SizedBox(height: 12),
         Row(
           children: [
@@ -1539,11 +1762,24 @@ class _BuildScreenState extends State<BuildScreen>
         final y = diner.windowRow(c.y, ignore: _moving);
         if (y != null) c = Cell(diner.right, y);
       }
+      if (_placing != null &&
+          fixtureDefs[_placing!]!.hung &&
+          !diner.isInside(c)) {
+        // Aimed at the wall itself: hang it on the floor edge just in front.
+        for (final n in [Cell(c.x, c.y + 1), Cell(c.x + 1, c.y)]) {
+          if (diner.isInside(n)) {
+            c = n;
+            break;
+          }
+        }
+      }
       if (c == _hover) return;
       setState(() {
         _hover = c;
         if (_op == _GroupOp.none && _facingAuto && _moving == null) {
           _facing = diner.defaultFacing(_placing!, c);
+        } else if (_placing != null && fixtureDefs[_placing!]!.hung) {
+          _facing = _faceAt(_placing!, c);
         }
       });
     }
@@ -1554,6 +1790,10 @@ class _BuildScreenState extends State<BuildScreen>
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTapDown: (d) {
+              if (_phase == Phase.service) {
+                _tapGuest(pickCell(d.localPosition), cellAt(d.localPosition));
+                return;
+              }
               if (!_building) return;
               if (_expanding) {
                 _pickPlot(cellAt(d.localPosition));
@@ -1609,11 +1849,14 @@ class _BuildScreenState extends State<BuildScreen>
                 flash: _flashStep,
                 placing: _building ? _placing : null,
                 hover: _hover,
+                guestSel: _phase == Phase.service ? _guestSel : null,
                 placeOk: _op != _GroupOp.none
                     ? _groupResult == PlaceResult.ok
                     : _placeResult == PlaceResult.ok,
                 selected: _building ? _selected : null,
-                facing: _facing,
+                facing: _placing == null
+                    ? _facing
+                    : _faceAt(_placing!, _hover ?? const Cell(0, 0)),
                 moving: _moving,
                 revision: _revision,
                 showProblems: _building,
@@ -1625,6 +1868,8 @@ class _BuildScreenState extends State<BuildScreen>
         ),
         if (_phase == Phase.service)
           Positioned(left: 8, top: 8, child: ToastStack(toasts: _toasts.shown)),
+        if (_phase == Phase.service && _guestSel != null && !_guestSel!.gone)
+          Positioned(left: 8, bottom: 8, child: _guestCard(_guestSel!)),
         if (_phase == Phase.build && _infoLine().isNotEmpty)
           Positioned(
             left: 8,

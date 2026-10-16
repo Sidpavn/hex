@@ -287,9 +287,21 @@ void main() {
     });
 
     test('a few more seats do earn more, up to what the kitchen can do', () {
-      final two = play(starterAt(70));
-      final four = play(roomWith(tables: 2));
-      expect(four.served, greaterThan(two.served));
+      var two = 0;
+      var four = 0;
+      for (final seed in [1, 2, 3, 4]) {
+        // A kitchen that can feed more than one table's worth.
+        Diner kitchen(int tables) {
+          final d = roomWith(tables: tables, grills: 2);
+          addStaff(d, cooking: 4, speed: 5, service: 4);
+          d.progress.upgrades[Upgrade.staff] = 1;
+          return d;
+        }
+
+        two += play(kitchen(1), seed: seed).served;
+        four += play(kitchen(3), seed: seed).served;
+      }
+      expect(four, greaterThan(two));
     });
 
     test('a second grill and a waiter cope with the crowd', () {

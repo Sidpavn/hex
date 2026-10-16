@@ -4,6 +4,7 @@ import 'package:hex/data/storage.dart';
 import 'package:hex/diner/build_screen.dart';
 import 'package:hex/diner/diner.dart';
 import 'package:hex/diner/diner_art.dart';
+import 'package:hex/diner/goals.dart';
 import 'package:hex/diner/recipes.dart';
 import 'package:hex/diner/service.dart';
 import 'package:hex/diner/staff.dart';
@@ -774,6 +775,7 @@ void main() {
 
     testWidgets('the end of the day tells what happened', (tester) async {
       final d = dinerWith(person(traits: [Trait.clumsy]), rep: 90);
+      d.goalsDone.addAll([for (final g in goals) g.id]); // no goal line
       await open(tester, d);
       await tester.tap(find.byKey(const ValueKey('start-day')));
       await tester.pump();
@@ -784,7 +786,12 @@ void main() {
         if (find.byKey(const ValueKey('next-day')).evaluate().isNotEmpty) break;
       }
       expect(find.byKey(const ValueKey('next-day')), findsOneWidget);
-      expect(find.byKey(const ValueKey('story-line')), findsOneWidget);
+      // One line says what to do next, else one says what happened.
+      expect(
+        find.byKey(const ValueKey('story-line')).evaluate().length +
+            find.byKey(const ValueKey('fix-first')).evaluate().length,
+        1,
+      );
     });
   });
 }

@@ -24,6 +24,7 @@ String spriteName(Kind kind, Dir facing) => switch (kind) {
   Kind.chair ||
   Kind.bench => '${kind.name}_${facing.name}',
   Kind.window => 'window_se',
+  Kind.tv => 'tv_${facing == Dir.se ? 'se' : 'sw'}',
   _ => kind.name,
 };
 
@@ -45,6 +46,7 @@ class DinerPainter extends CustomPainter {
     this.moving,
     this.grid = false,
     this.placeOk,
+    this.guestSel,
     this.group = const [],
     this.ghostGroup = const [],
     this.expanding = false,
@@ -95,6 +97,9 @@ class DinerPainter extends CustomPainter {
   /// Whether the ghost can be put down where it is, if the screen has worked
   /// that out (it knows the facing and what is being moved).
   final bool? placeOk;
+
+  /// The guest the player has tapped during service: outlined where they are.
+  final Guest? guestSel;
 
   /// The fixtures chosen to be moved, turned, copied or sold together.
   final List<Placed> group;
@@ -239,7 +244,9 @@ class DinerPainter extends CustomPainter {
     final things = <_Drawn>[
       for (final p in diner.items.where((p) => !p.def.floor))
         _Drawn(
-          (p.at.x + p.def.w - 1 + p.at.y + p.def.h - 1).toDouble(),
+          // Hung things are on the wall behind whatever stands in the cell.
+          (p.at.x + p.def.w - 1 + p.at.y + p.def.h - 1) -
+              (p.def.hung ? 0.5 : 0),
           true,
           () => _fixture(canvas, p),
         ),
@@ -258,6 +265,13 @@ class DinerPainter extends CustomPainter {
     }
 
     _warnings(canvas);
+    final gs = guestSel;
+    if (gs != null && !gs.gone) {
+      final path = Path();
+      _outline(path, gs.cell, 1, 1);
+      _outlineShifted(path, gs.cell, 1, 1);
+      _stroke(canvas, path, Pal.gold);
+    }
     if (expanding) _plotOutlines(canvas);
     if (flash > 0 && flashPlot != null) _flashOn(canvas, flashPlot!);
     _cursor(canvas);
@@ -598,8 +612,40 @@ class DinerPainter extends CustomPainter {
     _stroke(canvas, path, ok ? _ok : _bad);
   }
 
+  /// Tints the tiles a piece of decor reaches, so it is clear where a TV or a
+  /// plant would help before it is put down.
+  void _auraTint(Canvas canvas, Placed p) {
+    final cells = diner.auraCells(p);
+    if (cells.isEmpty) return;
+    final path = Path();
+    for (final c in cells) {
+      final a = view.vertex(c.x, c.y);
+      final b = view.vertex(c.x + 1, c.y);
+      final d = view.vertex(c.x + 1, c.y + 1);
+      final e = view.vertex(c.x, c.y + 1);
+      path
+        ..moveTo(a.dx * s, a.dy * s)
+        ..lineTo(b.dx * s, b.dy * s)
+        ..lineTo(d.dx * s, d.dy * s)
+        ..lineTo(e.dx * s, e.dy * s)
+        ..close();
+    }
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = Pal.blue.withAlpha(0x40)
+        ..isAntiAlias = false,
+    );
+  }
+
   void _cursor(Canvas canvas) {
     final sel = selected ?? moving;
+    if (sel != null && sel.def.aura != null) _auraTint(canvas, sel);
+    final aimed = placing;
+    final aimAt = hover;
+    if (aimed != null && aimAt != null && fixtureDefs[aimed]!.aura != null) {
+      _auraTint(canvas, Placed(0, aimed, aimAt, facing));
+    }
     if (sel != null) {
       final path = Path();
       _outline(path, sel.at, sel.w, sel.h);
@@ -696,6 +742,7 @@ class DinerPainter extends CustomPainter {
       old.grid != grid ||
       old.expanding != expanding ||
       old.placeOk != placeOk ||
+      old.guestSel != guestSel ||
       old.group != group ||
       old.ghostGroup != ghostGroup ||
       old.plotSel != plotSel ||

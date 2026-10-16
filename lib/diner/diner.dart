@@ -6,6 +6,9 @@ library;
 
 import 'dart:math' as math;
 
+import 'crowd.dart';
+import 'events.dart';
+import 'suppliers.dart';
 import 'recipes.dart';
 import 'staff.dart';
 
@@ -95,6 +98,7 @@ enum Kind {
   bench,
   plant,
   jukebox,
+  tv,
   rug,
 }
 
@@ -120,6 +124,39 @@ enum Role {
   decor,
 }
 
+/// What a piece of decor does to the guests seated near it.
+enum AuraEffect {
+  /// Waiting feels shorter: a guest's patience runs down more slowly.
+  patience,
+
+  /// A better mood: they tip more.
+  tips,
+}
+
+/// A fixture's effect on the seats around it: [strength] is a multiple, below
+/// one for patience (it drains slower) and above one for tips, felt by guests
+/// seated within [radius] tiles of any part of it.
+class Aura {
+  const Aura(this.effect, this.radius, this.strength);
+
+  final AuraEffect effect;
+  final int radius;
+  final double strength;
+
+  /// How the effect reads to the player: "wait 40% longer within 2 tiles".
+  String get describe {
+    final tiles = radius == 1 ? '1 tile' : '$radius tiles';
+    return switch (effect) {
+      AuraEffect.patience =>
+        'Guests seated within $tiles wait '
+            '${((1 / strength - 1) * 100).round()}% longer.',
+      AuraEffect.tips =>
+        'Guests seated within $tiles tip '
+            '${((strength - 1) * 100).round()}% more.',
+    };
+  }
+}
+
 /// What a fixture is. Sprites are named after the [Kind], plus the facing for
 /// those that turn.
 class FixtureDef {
@@ -131,8 +168,10 @@ class FixtureDef {
     this.w = 1,
     this.h = 1,
     this.floor = false,
+    this.hung = false,
     this.unlock = 1,
     this.info = '',
+    this.aura,
   });
 
   final Kind kind;
@@ -147,15 +186,22 @@ class FixtureDef {
   /// Floor decoration: sits under everything and never blocks walking.
   final bool floor;
 
+  /// Hangs on a wall instead of standing on the floor: it takes up no room,
+  /// and faces into the room from the back wall or the left wall.
+  final bool hung;
+
   /// Restaurant level that unlocks it.
   final int unlock;
 
   /// What it does, in a sentence for the player.
   final String info;
 
+  /// What it does for the seats near it, if anything.
+  final Aura? aura;
+
   /// Whether it has a front that matters.
   bool get turns =>
-      role != Role.decor && role != Role.table && role != Role.window;
+      hung || (role != Role.decor && role != Role.table && role != Role.window);
 
   int get refund => cost ~/ 2;
 }
@@ -262,7 +308,8 @@ const Map<Kind, FixtureDef> fixtureDefs = {
     'Plant',
     15,
     Role.decor,
-    info: 'Just for looks.',
+    aura: Aura(AuraEffect.patience, 1, 0.92),
+    info: 'Something green to look at while you wait.',
   ),
   Kind.jukebox: FixtureDef(
     Kind.jukebox,
@@ -270,7 +317,18 @@ const Map<Kind, FixtureDef> fixtureDefs = {
     120,
     Role.decor,
     unlock: 2,
-    info: 'Just for looks.',
+    aura: Aura(AuraEffect.tips, 3, 1.25),
+    info: 'Music puts people in a generous mood.',
+  ),
+  Kind.tv: FixtureDef(
+    Kind.tv,
+    'Wall TV',
+    150,
+    Role.decor,
+    hung: true,
+    unlock: 3,
+    aura: Aura(AuraEffect.patience, 2, 0.6),
+    info: 'Hangs on the back or left wall. Guests near it wait longer.',
   ),
   Kind.rug: FixtureDef(
     Kind.rug,
@@ -422,7 +480,8 @@ enum PlaceResult {
   locked,
   wall,
   noRoad,
-  onlyOne;
+  onlyOne,
+  hang;
 
   /// What to tell the player when a placement is refused.
   String get message => switch (this) {
@@ -437,6 +496,7 @@ enum PlaceResult {
     wall => 'Goes in the right-hand wall',
     noRoad => 'Needs the room to the right first',
     onlyOne => 'One window is enough',
+    hang => 'Hangs on the back or left wall',
   };
 }
 
@@ -502,6 +562,9 @@ class Diner {
 
   int coins;
 
+  /// The goals that have been met, by id. See `goals.dart`.
+  final Set<String> goalsDone = {};
+
   /// The sections of the plot that are the restaurant's, by index in [plots].
   final Set<int> owned;
   final Progress progress;
@@ -518,6 +581,72 @@ class Diner {
 
   /// The ingredients chosen for each dish. Standard if not chosen.
   final Map<Dish, Tier> tiers = {};
+
+  /// How much dearer (or cheaper) than the usual price the player sells each
+  /// dish, in percent. A dish not here is sold at the usual price.
+  final Map<Dish, int> markup = {};
+  static const markupMin = -30;
+  static const markupMax = 60;
+  static const markupStep = 10;
+
+  int markupOf(Dish d) => markup[d] ?? 0;
+
+  /// Moves the price of [d] by [steps] steps, within limits.
+  void nudgePrice(Dish d, int steps) {
+    markup[d] = (markupOf(d) + steps * markupStep).clamp(markupMin, markupMax);
+    if (markup[d] == 0) markup.remove(d);
+  }
+
+  /// What [d] sells for against the recipe's own price: the ingredients' worth
+  /// and the player's markup together. A guest buys it if it is within their
+  /// means.
+  double priceRatio(Dish d) =>
+      tierOf(d).priceMul *
+      (1 + markupOf(d) / 100) *
+      (isSpecial(d) ? specialMul : 1);
+
+  /// The dish chalked up on the board outside, if any. It is on offer for
+  /// less, guests ask for it more, and the board draws a few more in.
+  Dish? special;
+
+  /// How much of the price comes off the special, and how many more guests
+  /// the board brings in.
+  static const specialMul = 0.8;
+  static const specialDraw = 1.1;
+
+  /// Whether [d] is the special today: it has to be on the menu.
+  bool isSpecial(Dish d) => special == d && offered.contains(d);
+
+  /// Whether a board stands outside the door.
+  bool get specialActive => special != null && offered.contains(special);
+
+  /// What the board does to the number of guests on foot.
+  double get specialLift => specialActive ? specialDraw : 1;
+
+  /// Who has come, over all the days, and on the last one.
+  final Crowd crowd = Crowd();
+  Crowd? lastCrowd;
+
+  /// How each of the last days went, oldest first.
+  final List<DayLog> history = [];
+
+  /// Where the ingredients come from.
+  Supplier supplier = Supplier.standard;
+
+  /// Puts [d] on the board, or takes it off if it is there already. Only
+  /// something on the menu can be the special. Returns whether it is now.
+  bool toggleSpecial(Dish d) {
+    if (special == d) {
+      special = null;
+      return false;
+    }
+    if (!offered.contains(d)) return false;
+    special = d;
+    return true;
+  }
+
+  /// What one portion of [d] sells for, before the cook's skill.
+  double sellPrice(Dish d) => progress.price(d) * priceRatio(d);
 
   /// Portions the player has chosen to prepare for the day. A dish not here
   /// gets the forecast.
@@ -638,9 +767,60 @@ class Diner {
   int get topRow => framed.map((p) => p.y0).reduce((a, b) => a < b ? a : b);
   int get rightCol => framed.map((p) => p.x1).reduce((a, b) => a > b ? a : b);
 
+  /// Whether [c] is within [radius] tiles of any part of [p].
+  bool _near(Placed p, Cell c, int radius) {
+    for (final f in p.cells) {
+      if ((f.x - c.x).abs() <= radius && (f.y - c.y).abs() <= radius) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// How much more slowly a guest seated at [c] tires of waiting, from the
+  /// decor near them: 1 is the usual, less is slower. It never goes below
+  /// [auraFloor], so a room full of screens is not a room nobody ever leaves.
+  double drainAt(Cell c) {
+    var m = 1.0;
+    for (final p in items) {
+      final a = p.def.aura;
+      if (a != null &&
+          a.effect == AuraEffect.patience &&
+          _near(p, c, a.radius)) {
+        m *= a.strength;
+      }
+    }
+    return m < auraFloor ? auraFloor : m;
+  }
+
+  /// How much more a guest seated at [c] tips, from the decor near them.
+  double tipAt(Cell c) {
+    var m = 1.0;
+    for (final p in items) {
+      final a = p.def.aura;
+      if (a != null && a.effect == AuraEffect.tips && _near(p, c, a.radius)) {
+        m *= a.strength;
+      }
+    }
+    return m > tipCeiling ? tipCeiling : m;
+  }
+
+  static const auraFloor = 0.4;
+  static const tipCeiling = 1.6;
+
+  /// The restaurant's tiles that [p] would reach, for showing where it helps.
+  List<Cell> auraCells(Placed p) {
+    final a = p.def.aura;
+    if (a == null) return const [];
+    return [
+      for (final c in insideCells())
+        if (_near(p, c, a.radius)) c,
+    ];
+  }
+
   Placed? objectAt(Cell c) {
     for (final p in items) {
-      if (!p.def.floor && p.cells.contains(c)) return p;
+      if (!p.def.floor && !p.def.hung && p.cells.contains(c)) return p;
     }
     return null;
   }
@@ -652,8 +832,35 @@ class Diner {
     return null;
   }
 
-  /// Whatever the player would pick on tapping [c]: a fixture over a rug.
-  Placed? pickAt(Cell c) => objectAt(c) ?? floorAt(c);
+  /// The wall cell a fixture hung at [at] facing [facing] is fixed to: the
+  /// one just behind it.
+  static Cell wallBehind(Cell at, Dir facing) =>
+      facing == Dir.se ? Cell(at.x - 1, at.y) : Cell(at.x, at.y - 1);
+
+  /// Whether a hung fixture can face [facing] at [at]: there has to be a wall
+  /// behind it, which is wherever the room ends.
+  bool hangs(Cell at, Dir facing) =>
+      (facing == Dir.sw || facing == Dir.se) &&
+      isInside(at) &&
+      !isInside(wallBehind(at, facing));
+
+  /// The fixture hung over [c], if any.
+  Placed? hungAt(Cell c) {
+    for (final p in items) {
+      if (p.def.hung && p.cells.contains(c)) return p;
+    }
+    return null;
+  }
+
+  /// Whatever the player would pick on tapping [c]: a fixture, else
+  /// something hung there, else a rug. Tapping a wall picks what hangs on it.
+  Placed? pickAt(Cell c) {
+    for (final p in items) {
+      if (p.def.hung && wallBehind(p.at, p.facing) == c) return p;
+    }
+    if (!isInside(c)) return null;
+    return objectAt(c) ?? hungAt(c) ?? floorAt(c);
+  }
 
   bool walkable(Cell c) => isInside(c) && objectAt(c) == null;
 
@@ -854,7 +1061,16 @@ class Diner {
   }
 
   /// What a portion of [d] costs in ingredients, at the chosen quality.
-  double unitCost(Dish d) => recipes[d]!.price * tierOf(d).costFrac;
+  /// Dearer on a day of shortage.
+  double unitCost(Dish d) =>
+      recipes[d]!.price * tierOf(d).costFrac * today.costMul * supplier.costMul;
+
+  /// What is special about today, if anything.
+  DayEvent get today => DayEvent.forDay(progress.day, progress.level);
+
+  /// How many guests to expect today, with the day's event counted in.
+  int get expectedToday =>
+      (progress.expectedGuests * today.guestMul * specialLift).round();
 
   /// How many portions of each dish to prepare for [guests] guests, with a
   /// little spare. A guest orders one main, and maybe a side, drink or
@@ -875,8 +1091,7 @@ class Diner {
   }
 
   /// Portions that will be prepared: the player's choice, else the forecast.
-  int portions(Dish d) =>
-      plan[d] ?? (forecastPlan(progress.expectedGuests)[d] ?? 0);
+  int portions(Dish d) => plan[d] ?? (forecastPlan(expectedToday)[d] ?? 0);
 
   /// What the ingredients for the day's plan cost.
   int prepCost() {
@@ -945,6 +1160,9 @@ class Diner {
   /// neighbouring table, machines toward free floor.
   Dir defaultFacing(Kind kind, Cell at) {
     final def = fixtureDefs[kind]!;
+    if (def.hung) {
+      return hangs(at, Dir.sw) || !hangs(at, Dir.se) ? Dir.sw : Dir.se;
+    }
     if (!def.turns) return Dir.sw;
     final probe = Placed(0, kind, at);
     for (final d in [Dir.sw, Dir.se, Dir.nw, Dir.ne]) {
@@ -977,6 +1195,15 @@ class Diner {
     final probe = Placed(0, kind, at, kind == Kind.window ? Dir.se : facing);
     for (final c in probe.cells) {
       if (!isInside(c)) return PlaceResult.outside;
+    }
+    if (def.hung) {
+      if (!hangs(at, facing)) return PlaceResult.hang;
+      final other = items.where(
+        (p) => p.def.hung && p != ignore && p.at == at && p.facing == facing,
+      );
+      if (other.isNotEmpty) return PlaceResult.taken;
+      if (!free && coins < def.cost) return PlaceResult.broke;
+      return PlaceResult.ok;
     }
     for (final c in probe.cells) {
       final other = def.floor ? floorAt(c) : objectAt(c);
@@ -1025,7 +1252,10 @@ class Diner {
   /// Turns [p] a quarter turn clockwise, if it still fits.
   PlaceResult rotate(Placed p) {
     if (p.kind == Kind.window) return PlaceResult.ok;
-    final next = p.facing.cw;
+    // Something hung turns to the other wall, if it is in the corner.
+    final next = p.def.hung
+        ? (p.facing == Dir.sw ? Dir.se : Dir.sw)
+        : p.facing.cw;
     final r = check(p.kind, p.at, facing: next, ignore: p, free: true);
     if (r == PlaceResult.ok) {
       remember('Turned ${p.def.name.toLowerCase()}');
@@ -1174,12 +1404,19 @@ class Diner {
   Map<String, Object?> toJson() => {
     'coins': coins,
     'owned': owned.toList()..sort(),
+    'goals': goalsDone.toList()..sort(),
+    'supplier': supplier.name,
+    'crowd': crowd.toJson(),
+    'lastCrowd': ?lastCrowd?.toJson(),
+    'history': [for (final h in history) h.toJson()],
+    if (special != null) 'special': special!.name,
     'progress': progress.toJson(),
     'staff': roster.toJson(),
     'menu': [for (final d in offered) d.name],
     'declined': [for (final d in declined) d.name],
     'tiers': {for (final e in tiers.entries) e.key.name: e.value.name},
     'plan': {for (final e in plan.entries) e.key.name: e.value},
+    'markup': {for (final e in markup.entries) e.key.name: e.value},
     'items': [
       for (final p in items)
         {'k': p.kind.name, 'x': p.at.x, 'y': p.at.y, 'f': p.facing.name},
@@ -1192,6 +1429,24 @@ class Diner {
       progress: Progress.fromJson(j['progress'] as Map<String, Object?>?),
       roster: Roster.fromJson(j['staff']),
     );
+    d.supplier =
+        Supplier.values.where((x) => x.name == j['supplier']).firstOrNull ??
+        Supplier.standard;
+    if (d.supplier.unlock > d.progress.level) d.supplier = Supplier.standard;
+    d.special = Dish.values.where((x) => x.name == j['special']).firstOrNull;
+    d.crowd.add(Crowd.fromJson(j['crowd']));
+    if (j['lastCrowd'] != null) d.lastCrowd = Crowd.fromJson(j['lastCrowd']);
+    final log = j['history'];
+    if (log is List) {
+      d.history.addAll([for (final h in log) ?DayLog.fromJson(h)]);
+    }
+    final done = j['goals'];
+    if (done is List) {
+      d.goalsDone.addAll([
+        for (final g in done)
+          if (g is String) g,
+      ]);
+    }
     final saved = j['owned'];
     if (saved is List) {
       d.owned
@@ -1230,6 +1485,16 @@ class Diner {
         if (dish != null && tier != null) d.tiers[dish] = tier;
       }
     }
+    final mk = j['markup'];
+    if (mk is Map) {
+      for (final e in mk.entries) {
+        final dish = dishNamed(e.key);
+        if (dish != null && e.value is int) {
+          final v = (e.value as int).clamp(markupMin, markupMax);
+          if (v != 0) d.markup[dish] = v;
+        }
+      }
+    }
     final plan = j['plan'];
     if (plan is Map) {
       for (final e in plan.entries) {
@@ -1252,6 +1517,7 @@ class Diner {
       final probe = Placed(0, kind, at, facing);
       final fits =
           probe.cells.every(d.isInside) &&
+          (!fixtureDefs[kind]!.hung || d.hangs(at, facing)) &&
           (kind != Kind.window ||
               probe.cells.every((c) => c.x == d.right && c.y >= top));
       if (fits) {

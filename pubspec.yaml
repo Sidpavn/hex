@@ -62,7 +62,6 @@ flutter:
   assets:
     - assets/pixel/sprites.txt
     - assets/diner/
-    - assets/zones/
 
   fonts:
     - family: VT323

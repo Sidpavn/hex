@@ -366,6 +366,33 @@ def jukebox():
     add('jukebox', img, 0.55)
 
 
+def wall_tv(f):
+    """A flat television hung on a wall, its screen facing into the room.
+    [f] is the way it faces: 'sw' on the back wall, 'se' on the left wall."""
+    img = cell_img(34)
+    case = ramp('#2c3040')
+    z0, z1 = 12, 27
+
+    def glow(a, z):
+        if a < 4 or a > 12 or z < z0 + 2 or z > z1 - 2:
+            return case.left
+        k = (int(a) + int(z)) % 6
+        return [hexc('#8fd8f4'), hexc('#a8e4fa'), hexc('#7ccaee'),
+                hexc('#ffe58a'), hexc('#b8ecfc'), hexc('#8fd8f4')][k]
+
+    if f == 'sw':
+        box(img, 1, 0, 15, 2, z0, z1, case, edge=False)
+        face_left(img, 1, 15, 2, z0, z1, glow)
+        img.put(*P(4, 2, z1 - 3), (255, 255, 255))
+        img.put(*P(5, 2, z1 - 4), (255, 255, 255))
+    else:
+        box(img, 0, 1, 2, 15, z0, z1, case, edge=False)
+        face_right(img, 2, 1, 15, z0, z1, glow)
+        img.put(*P(2, 4, z1 - 3), (255, 255, 255))
+        img.put(*P(2, 5, z1 - 4), (255, 255, 255))
+    add(f'tv_{f}', img, 0.55)
+
+
 def rug():
     img = cell_img(0)
     pts = [P(1, 1), P(15, 1), P(15, 15), P(1, 15)]
@@ -766,6 +793,18 @@ def icons():
     rect(w, -1, 2, 2, 1, (255, 255, 255))
     w.outline(0.6)
     add('warn', w)
+    # what is left on a table: a used plate, crumbs, a cup on its side
+    m = Img(16, 12, 8, 6)
+    ellipse(m, -1, 1, 5.5, 2.6, (238, 238, 232))
+    ellipse(m, -1, 1, 3.6, 1.6, (214, 214, 206))
+    for dx, dy in ((-3, 1), (-1, 0), (0, 2), (1, 0)):
+        rect(m, dx, dy, 1, 1, hexc('#9a6a3c'))
+    rect(m, 3, 0, 1, 1, hexc('#e2493f'))
+    rect(m, 4, 2, 3, 3, (250, 250, 246))
+    rect(m, 4, 2, 3, 1, hexc('#8b6b52'))
+    m.outline(0.5)
+    add('mess', m)
+
     def burger(img, cx, cy, w):
         ellipse(img, cx, cy - 3, w, 2.4, hexc('#e8a04a'))
         rect(img, cx - w, cy - 2, 2 * w, 1, GREEN.top)
@@ -996,6 +1035,35 @@ def street_lamp():
     add('lamp', img, 0.5)
 
 
+def special_board():
+    """The chalkboard that stands outside the door when there is a special: a
+    wooden frame, a few chalk lines and a red price tag."""
+    img = cell_img(30)
+    frame = ramp('#8e5a37')
+    # two splayed feet, then the board between them
+    box(img, 3, 5, 5, 10, 0, 4, frame, edge=False)
+    box(img, 11, 5, 13, 10, 0, 4, frame, edge=False)
+    board = ramp('#2f4a40')
+
+    def face(u, z):
+        if u < 4 or u > 12 or z < 7 or z > 23:
+            return frame.left
+        # chalk: a heading, two lines of writing, and a red tag at the corner
+        if 19 <= z <= 20 and 5 <= u <= 11:
+            return hexc('#f4f1e6')
+        if z in (15, 16) and 5 <= u <= 10:
+            return hexc('#cfd8d2')
+        if z in (11, 12) and 5 <= u <= 8:
+            return hexc('#cfd8d2')
+        if 9 <= z <= 13 and 9 <= u <= 11:
+            return hexc('#d94a3a')
+        return board.left
+
+    box(img, 3, 7, 13, 9, 5, 25, frame, edge=False)
+    face_left(img, 3, 13, 9, 5, 25, face)
+    add('special_board', img, 0.55)
+
+
 def street_tree():
     img = cell_img(54)
     planter = ramp('#8d6a4a')
@@ -1089,6 +1157,7 @@ def city():
     block_building('block_rf', 4, 7, 40, '#e8c9a0', '#9a6a52', awning='#f2c338')
     block_building('block_rb', 4, 7, 52, '#e8d3a3', '#7a7f8c')
     street_lamp()
+    special_board()
     street_tree()
     emotes()
     moods()
@@ -1308,6 +1377,8 @@ def build():
     chair('chair_ne', 'nv')
     plant()
     jukebox()
+    wall_tv('sw')
+    wall_tv('se')
     rug()
     people_sprites()
     icons()

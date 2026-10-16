@@ -1,7 +1,10 @@
 import 'dart:math' as math;
 
 import 'actor.dart';
+import 'crowd.dart';
 import 'diner.dart';
+import 'events.dart';
+import 'guests.dart';
 import 'nav.dart';
 import 'recipes.dart';
 import 'staff.dart';
@@ -17,6 +20,11 @@ abstract final class Pace {
 
   /// After closing, guests still in the room get this long to finish.
   static const lastCall = 150;
+
+  /// How many guests the player can rush in a day, and how much quicker a
+  /// rushed guest's food is cooked.
+  static const rushPerDay = 2;
+  static const rushSpeed = 0.7;
 
   /// Ticks a guest spends eating.
   static const eat = 14;
@@ -44,39 +52,6 @@ class StoryLine {
   /// Good news, bad news, or just colour.
   final Tone tone;
 }
-
-const _guestNames = [
-  'Marge',
-  'Joe',
-  'Priya',
-  'Walt',
-  'Ines',
-  'Gus',
-  'Mina',
-  'Hank',
-  'Luz',
-  'Otis',
-  'Bea',
-  'Raj',
-  'Dot',
-  'Kit',
-  'Nell',
-  'Abe',
-  'Zoe',
-  'Stan',
-  'Fern',
-  'Lou',
-  'Pat',
-  'Rue',
-  'Ned',
-  'Val',
-  'Cyrus',
-  'Opal',
-  'Sid',
-  'Tove',
-  'Mo',
-  'Wanda',
-];
 
 class Person {
   Person(this.cell) : prev = cell;
@@ -173,6 +148,10 @@ class Guest extends Person {
   final int id;
   final String name;
   final String sprite;
+
+  /// How much they will pay, and how long they will wait.
+  Wallet wallet = Wallet.regular;
+  Temper temper = Temper.steady;
   int patienceMax;
   int patience;
   GuestState state = GuestState.arriving;
@@ -185,6 +164,30 @@ class Guest extends Person {
 
   /// Walking past: they saw the queue and carried on.
   bool passerby = false;
+
+  /// The player has told the kitchen to see to this guest first.
+  bool rushed = false;
+
+  /// They had to sit at a table nobody had cleared.
+  bool grumpy = false;
+
+  /// The food critic, who is here to judge the place.
+  bool critic = false;
+
+  /// The food blogger, who is here to see whether it is worth the money.
+  bool blogger = false;
+
+  /// Who they are, for the books.
+  Gender gender = Gender.man;
+
+  /// Whether they have been counted among those fed or those missed.
+  bool tallied = false;
+
+  /// The tick they turned up.
+  int arrived = 0;
+
+  /// Someone whose visit moves the rating.
+  bool get reviewer => critic || blogger;
 
   /// Arrived by car and is served at the takeaway window.
   bool car = false;
@@ -246,7 +249,7 @@ class CounterState {
   int timer = 0;
 }
 
-enum WorkState { idle, toPickup, toLoad, toDeliver }
+enum WorkState { idle, toPickup, toLoad, toDeliver, toClean }
 
 class Worker extends Person {
   Worker(this.staff, super.cell);
@@ -261,6 +264,9 @@ class Worker extends Person {
 
   /// The guest they are carrying food to.
   Guest? target;
+
+  /// The seat they are on their way to clear.
+  Seat? cleaning;
 
   /// Ticks left on whatever they are doing with their hands.
   int busy = 0;
@@ -353,6 +359,14 @@ class DayReport {
     this.ingredients = 0,
     this.leftover = 0,
     this.soldOut = 0,
+    this.tooDear = 0,
+    this.cleaned = 0,
+    this.event = DayEvent.none,
+    this.reviewDelta = 0,
+    this.gaveUp = 0,
+    this.queueFull = 0,
+    this.spoiled = 0,
+    this.crowd,
     this.cars = 0,
     this.items = 0,
   });
@@ -400,6 +414,23 @@ class DayReport {
   final int ingredients;
   final int leftover;
   final int soldOut;
+  final int tooDear;
+
+  /// Tables cleared, by hand or by staff.
+  final int cleaned;
+
+  /// What was special about the day, and what a critic did to the rating.
+  final DayEvent event;
+  final int reviewDelta;
+
+  /// Guests who gave up waiting, guests who walked past a full queue, and
+  /// portions that arrived spoiled.
+  final int gaveUp;
+  final int queueFull;
+  final int spoiled;
+
+  /// Who came, by kind, and what they bought.
+  final Crowd? crowd;
 
   /// How many of those served came by car, to the window.
   final int cars;
@@ -464,6 +495,41 @@ class DinerSim {
   /// When cars turn up, if there is a window to serve them from. They use
   /// their own random stream, so a day without a window is unchanged.
   late final List<int> carSchedule = _carPlan();
+
+  /// Guests' wallets and tempers come from their own stream, so they never
+  /// change who turns up or when.
+  late final math.Random _traitRng = math.Random(progress.day * 211 + 5);
+
+  /// Gives [g] their wallet and temper.
+  /// Genders come from a stream of their own, so who turns up is the same
+  /// whatever else changes about the day.
+  late final math.Random _genderRng = math.Random(progress.day * 257 + 11);
+
+  /// What happened with each kind of guest, today.
+  final Crowd crowd = Crowd();
+
+  /// Which eighth of opening hours [g] arrived in.
+  int _hourOf(Guest g) => (g.arrived * Crowd.slots / Pace.dayTicks)
+      .floor()
+      .clamp(0, Crowd.slots - 1);
+
+  /// Counts [g] among those who left without being fed, once.
+  void _missed(Guest g) {
+    if (g.tallied) return;
+    g.tallied = true;
+    crowd.missed(g.gender, g.wallet, hour: _hourOf(g));
+  }
+
+  void _rollGuest(Guest g) {
+    g.wallet = Wallet.roll(progress.rating, _traitRng.nextDouble());
+    g.temper = Temper.roll(_traitRng.nextDouble());
+    if (event.thriftyShift > 0 && _traitRng.nextDouble() < event.thriftyShift) {
+      g.wallet = Wallet.thrifty;
+    }
+    g.patienceMax = (g.patienceMax * g.temper.patienceMul).round();
+    g.patience = g.patienceMax;
+  }
+
   late final math.Random _carRng = math.Random(progress.day * 131 + 17);
   int _nextCar = 0;
   int carsServed = 0;
@@ -474,6 +540,11 @@ class DinerSim {
 
   /// How many of those lost their patience, rather than never getting in.
   int gaveUp = 0;
+
+  /// Guests who walked past because the queue was out of the door, and
+  /// portions lost to a poor delivery.
+  int queueFull = 0;
+  int spoiled = 0;
   int earned = 0;
   int tips = 0;
   int wasted = 0;
@@ -487,6 +558,102 @@ class DinerSim {
   /// that had sold out.
   int ingredientCost = 0;
   int soldOut = 0;
+
+  /// What is special about today, which shapes who turns up and what things
+  /// cost.
+  late final DayEvent event = diner.today;
+
+  /// What the critic's visit did to the rating, and whether they have come.
+  int reviewDelta = 0;
+  bool _reviewSent = false;
+  late final int _reviewTick =
+      (Pace.dayTicks *
+              (0.40 + 0.20 * math.Random(progress.day * 17).nextDouble()))
+          .round();
+
+  /// Seats where a guest has eaten and left, and nobody has cleared yet. Guests
+  /// take a clean seat when there is one; someone who has to sit at a dirty one
+  /// is put out: they wait less patiently and tip less.
+  final Set<Cell> dirty = {};
+
+  /// For each seat, what the decor near it does to waiting and to tips.
+  final Map<Cell, double> _drainAt = {};
+  final Map<Cell, double> _tipAt = {};
+
+  /// How much patience and tip a guest keeps when their table is dirty.
+  static const messPatience = 0.65;
+  static const messTip = 0.5;
+
+  /// Seats cleared today, by the player's hand or by staff.
+  int cleaned = 0;
+
+  /// Clears the mess at [c], if [c] is a dirty seat or the table it is at.
+  /// Returns how many seats were cleared.
+  int cleanAt(Cell c) {
+    var n = 0;
+    for (final s in seats) {
+      if ((s.cell == c || s.table == c) && dirty.remove(s.cell)) n++;
+    }
+    cleaned += n;
+    return n;
+  }
+
+  /// Whether [w] is kept for clearing tables rather than cooking or serving.
+  bool _isCleaner(Worker w) =>
+      w.staff.duty == Kind.table && diner.ofRole(Role.table).isNotEmpty;
+
+  /// How many more guests can be rushed today.
+  int rushLeft = Pace.rushPerDay;
+
+  /// The guest standing at [c], if anyone is: the one nearest the viewer when
+  /// several overlap.
+  Guest? guestAt(Cell c) {
+    Guest? best;
+    for (final g in guests) {
+      if (g.gone || g.cell != c) continue;
+      if (best == null || g.cell.x + g.cell.y >= best.cell.x + best.cell.y) {
+        best = g;
+      }
+    }
+    return best;
+  }
+
+  /// Whether [g] can be rushed now: still waiting for food, not already
+  /// rushed, and there is a rush left.
+  bool canRush(Guest g) =>
+      rushLeft > 0 &&
+      !g.rushed &&
+      !g.gone &&
+      g.state == GuestState.waiting &&
+      g.items.any((i) => i.open);
+
+  /// Tells the kitchen to see to [g] first: their dishes are started before
+  /// anyone else's, collected and carried out first, and cook quicker. Costs
+  /// one of the day's rushes.
+  bool rush(Guest g) {
+    if (!canRush(g)) return false;
+    rushLeft--;
+    g.rushed = true;
+    for (final m in machines) {
+      final item = m.item;
+      if (item != null && item.guest == g && !m.ready) {
+        m.left = math.max(1, (m.left * Pace.rushSpeed).round());
+      }
+    }
+    _tell(
+      _say([
+        'Rushing {a}\'s order.',
+        '{a} is first in line for the kitchen now.',
+      ], a: g.name),
+      Tone.mixed,
+      key: 'rush',
+      limit: 4,
+    );
+    return true;
+  }
+
+  /// Guests who left because the food cost more than they would pay.
+  int tooDear = 0;
 
   /// Dishes served, and the ingredient quality of them, for the rating.
   int itemsServed = 0;
@@ -556,15 +723,6 @@ class DinerSim {
 
   late List<Dish> menu;
 
-  static const _looks = [
-    'cust_a',
-    'cust_b',
-    'cust_c',
-    'cust_d',
-    'cust_e',
-    'cust_f',
-  ];
-
   /// Whether the doors are open to new guests.
   bool get open => ticks < Pace.dayTicks;
 
@@ -578,9 +736,13 @@ class DinerSim {
   /// a new place is quiet and a famous one is packed whatever its size.
   /// They bunch up at lunch and dinner rather than trickling in.
   List<int> _plan() {
-    final n = (progress.expectedGuests * (0.85 + 0.3 * rng.nextDouble()))
-        .round()
-        .clamp(1, 80);
+    final n =
+        (progress.expectedGuests *
+                event.guestMul *
+                diner.specialLift *
+                (0.85 + 0.3 * rng.nextDouble()))
+            .round()
+            .clamp(1, 80);
     double normal() {
       final u = 1 - rng.nextDouble();
       final v = rng.nextDouble();
@@ -599,6 +761,18 @@ class DinerSim {
         t = (peak + normal() * 0.07) * Pace.dayTicks;
       }
       times.add(t.round().clamp(2, last));
+    }
+    // A lunch rush: a bunch of extra guests all at once around midday, from a
+    // stream of their own so the usual arrivals are the same either way.
+    if (event.peakShare > 0) {
+      final r = math.Random(progress.day * 41 + 3);
+      final extra = (n * event.peakShare).round().clamp(2, 30);
+      for (var i = 0; i < extra; i++) {
+        final u = 1 - r.nextDouble();
+        final v = r.nextDouble();
+        final z = math.sqrt(-2 * math.log(u)) * math.cos(2 * math.pi * v);
+        times.add(((0.45 + z * 0.04) * Pace.dayTicks).round().clamp(2, last));
+      }
     }
     return times..sort();
   }
@@ -619,6 +793,12 @@ class DinerSim {
   void layoutChanged() {
     report = diner.report();
     seats = diner.seats();
+    _drainAt
+      ..clear()
+      ..addAll({for (final s in seats) s.cell: diner.drainAt(s.cell)});
+    _tipAt
+      ..clear()
+      ..addAll({for (final s in seats) s.cell: diner.tipAt(s.cell)});
     final team = diner.roster.employees;
     _calm = team.isEmpty
         ? 0
@@ -718,6 +898,10 @@ class DinerSim {
       _nextCar++;
       _arriveCar();
     }
+    if (event.reviewed && !_reviewSent && ticks >= _reviewTick) {
+      _reviewSent = true;
+      _arrive(who: event);
+    }
   }
 
   /// A drive-through brings a good share of extra custom, spread over the day
@@ -725,7 +909,10 @@ class DinerSim {
   List<int> _carPlan() {
     if (!diner.driveThrough) return const [];
     final n =
-        (progress.expectedGuests * 0.5 * (0.85 + 0.3 * _carRng.nextDouble()))
+        (progress.expectedGuests *
+                0.5 *
+                event.carMul *
+                (0.85 + 0.3 * _carRng.nextDouble()))
             .round()
             .clamp(1, 40);
     final last = Pace.dayTicks - 25;
@@ -799,8 +986,9 @@ class DinerSim {
   }
 
   void _arriveCar() {
+    final gender = Gender.roll(_genderRng.nextDouble());
     final names = [
-      for (final n in _guestNames)
+      for (final n in gender.names)
         if (!guests.any((g) => g.name == n)) n,
     ];
     final passing = _cars.length >= diner.carQueueLength;
@@ -812,10 +1000,14 @@ class DinerSim {
       start,
       name: names.isEmpty ? 'A driver' : names[_carRng.nextInt(names.length)],
     )..car = true;
+    g.gender = gender;
+    g.arrived = ticks;
+    _rollGuest(g);
     g.dir = Dir.se;
     guests.add(g);
     if (passing) {
       walkouts++;
+      _missed(g);
       g
         ..passerby = true
         ..state = GuestState.leaving
@@ -911,30 +1103,66 @@ class DinerSim {
     }
   }
 
-  void _arrive() {
+  void _arrive({DayEvent? who}) {
+    final critic = who == DayEvent.critic;
+    final blogger = who == DayEvent.blogger;
     // They come in from either end of the pavement, from off the screen.
     final fromLeft = rng.nextBool();
     final start = fromLeft ? diner.arrivalLeft : diner.arrivalRight;
+    final gender = Gender.roll(_genderRng.nextDouble());
     final unused = [
-      for (final l in _looks)
+      for (final l in gender.looks)
         if (!guests.any((g) => g.sprite == l)) l,
     ];
-    final pool = unused.isEmpty ? _looks : unused;
+    final pool = unused.isEmpty ? gender.looks : unused;
     final names = [
-      for (final n in _guestNames)
+      for (final n in gender.names)
         if (!guests.any((g) => g.name == n)) n,
     ];
     final g = Guest(
       _nextId++,
-      pool[rng.nextInt(pool.length)],
+      critic
+          ? 'cust_d'
+          : blogger
+          ? 'cust_c'
+          : pool[rng.nextInt(pool.length)],
       progress.patience,
       start,
-      name: names.isEmpty ? 'A guest' : names[rng.nextInt(names.length)],
+      name: critic
+          ? 'The critic'
+          : blogger
+          ? 'The blogger'
+          : names.isEmpty
+          ? 'A guest'
+          : names[rng.nextInt(names.length)],
     );
+    g.gender = gender;
+    g.arrived = ticks;
+    _rollGuest(g);
+    if (critic || blogger) {
+      g
+        ..critic = critic
+        ..blogger = blogger
+        ..wallet = critic ? Wallet.wealthy : Wallet.thrifty
+        ..temper = Temper.steady
+        ..patienceMax = progress.patience
+        ..patience = progress.patience;
+    }
     guests.add(g);
     if (_queue.length >= diner.queueLength) {
       // The queue is out of sight of the door already: they walk on by.
       walkouts++;
+      if (g.reviewer) {
+        reviewDelta -= g.critic ? 4 : 3;
+        _tell(
+          'The ${g.critic ? 'critic' : 'blogger'} saw the queue and went '
+          'somewhere else.',
+          Tone.bad,
+          key: 'critic',
+        );
+      }
+      queueFull++;
+      _missed(g);
       g
         ..passerby = true
         ..state = GuestState.leaving
@@ -997,11 +1225,14 @@ class DinerSim {
         head.path.isNotEmpty) {
       return;
     }
-    final free = [
+    var free = [
       for (final s in seats)
         if (!_reserved(s)) s,
     ];
     if (free.isEmpty) return;
+    // A clean seat if there is one.
+    final clean = free.where((s) => !dirty.contains(s.cell)).toList();
+    if (clean.isNotEmpty) free = clean;
     // The nearest free seat to the door.
     (Seat, List<Cell>)? best;
     for (final s in free) {
@@ -1043,6 +1274,21 @@ class DinerSim {
             // forgiven, the wait for food is not.
             ..patience = g.patienceMax
             ..dir = g.seat!.facing;
+          if (dirty.contains(g.seat!.cell)) {
+            g
+              ..grumpy = true
+              ..patienceMax = (g.patienceMax * messPatience).round();
+            g.patience = g.patienceMax;
+            _tell(
+              _say([
+                '{a} sat down at a table nobody had cleared.',
+                '{a} pushed someone else\'s plates aside and sat.',
+              ], a: g.name),
+              Tone.bad,
+              key: 'dirty',
+              limit: 2,
+            );
+          }
           _order(g);
         }
       case GuestState.waiting:
@@ -1068,10 +1314,18 @@ class DinerSim {
     }
   }
 
+  /// How fast patience drains for [g]: slower with a TV or a plant near their
+  /// seat. Anyone not yet seated feels the usual.
+  double _drainMul(Guest g) {
+    final seat = g.seat;
+    if (seat == null || g.car) return 1;
+    return _drainAt[seat.cell] ?? 1;
+  }
+
   /// Patience runs down; at nothing they storm out. Returns false if so.
   bool _drain(Guest g) {
     // A charming team takes the sting out of waiting.
-    g.drainAcc += 1 - _calm;
+    g.drainAcc += (1 - _calm) * _drainMul(g);
     while (g.drainAcc >= 1) {
       g.drainAcc -= 1;
       g.patience--;
@@ -1080,6 +1334,15 @@ class DinerSim {
     g.angry = true;
     walkouts++;
     gaveUp++;
+    if (g.reviewer) {
+      reviewDelta -= g.critic ? 6 : 5;
+      _tell(
+        'The ${g.critic ? 'critic' : 'blogger'} gave up waiting and walked '
+        'out. That will be written up.',
+        Tone.bad,
+        key: 'critic',
+      );
+    }
     final cooking = g.items
         .where((i) => i.state == ItemState.cooking)
         .firstOrNull;
@@ -1107,6 +1370,9 @@ class DinerSim {
   }
 
   void _toPay(Guest g) {
+    // They have eaten and got up: what they leave is for someone to clear.
+    final seat = g.seat;
+    if (seat != null && !g.car) dirty.add(seat.cell);
     // The counter with the shortest line, counting the walk.
     (CounterState, Cell, List<Cell>)? best;
     var bestCost = 1 << 30;
@@ -1154,6 +1420,26 @@ class DinerSim {
     earned += total;
     tips += g.tip;
     served++;
+    g.tallied = true;
+    final bought = <Dish, (int, int)>{};
+    for (final i in g.items.where((i) => i.state == ItemState.delivered)) {
+      final was = bought[i.dish] ?? (0, 0);
+      bought[i.dish] = (
+        was.$1 + 1,
+        was.$2 + (progress.price(i.dish) * i.quality).round(),
+      );
+    }
+    crowd.fed(
+      g.gender,
+      g.wallet,
+      total,
+      bought,
+      costs: {
+        for (final e in bought.entries)
+          e.key: (diner.unitCost(e.key) * e.value.$1).round(),
+      },
+      hour: _hourOf(g),
+    );
     if (g.car) carsServed++;
     itemsServed += count;
     _waitTotal += g.waited;
@@ -1175,6 +1461,7 @@ class DinerSim {
   }
 
   void _leave(Guest g) {
+    _missed(g);
     g
       ..state = GuestState.leaving
       ..counter = null;
@@ -1214,11 +1501,27 @@ class DinerSim {
       want[big.key] = big.value - 1;
       trimmed = true;
     }
+    ingredientCost = cost().round();
+    // A poor supplier sends some of it bad: paid for, and thrown straight out.
+    final lost = diner.supplier.spoiledShare(progress.day);
+    if (lost > 0) {
+      for (final e in want.entries.toList()) {
+        final bad = (e.value * lost).floor();
+        spoiled += bad;
+        want[e.key] = e.value - bad;
+      }
+    }
     stock
       ..clear()
       ..addAll(want);
-    ingredientCost = cost().round();
     diner.coins -= ingredientCost;
+    if (spoiled > 0) {
+      _tell(
+        '$spoiled portions arrived spoiled from the ${diner.supplier.label.toLowerCase()}.',
+        Tone.bad,
+        key: 'spoiled',
+      );
+    }
     if (trimmed) {
       _tell(
         _say([
@@ -1237,17 +1540,71 @@ class DinerSim {
     for (final c in Course.values) {
       final options = [
         for (final d in menu)
-          if (recipes[d]!.course == c && (stock[d] ?? 0) > 0) d,
+          if (recipes[d]!.course == c &&
+              (stock[d] ?? 0) > 0 &&
+              g.wallet.accepts(diner.priceRatio(d)) &&
+              // The critic will only have a main made with the best.
+              (!g.critic ||
+                  c != Course.main ||
+                  diner.tierOf(d) == Tier.premium))
+            d,
       ];
       if (options.isEmpty) continue;
       if (c != Course.main && rng.nextDouble() >= c.appetite) continue;
-      picks.add(options[rng.nextInt(options.length)]);
+      // Whatever is on the board outside is asked for more often.
+      final weighted = [
+        for (final d in options) ...[
+          d,
+          if (diner.isSpecial(d)) ...[d, d],
+        ],
+      ];
+      picks.add(weighted[rng.nextInt(weighted.length)]);
     }
-    if (!picks.any((d) => recipes[d]!.course == Course.main)) {
-      // Nothing to eat: the mains have sold out.
-      soldOut++;
+    if (g.critic && !picks.any((d) => recipes[d]!.course == Course.main)) {
+      // Nothing on the menu worth their time.
+      reviewDelta -= 4;
       walkouts++;
       g.angry = true;
+      _tell(
+        'The critic read the menu, found nothing made with the best, and left.',
+        Tone.bad,
+        key: 'critic',
+      );
+      _leave(g);
+      return;
+    }
+    if (!picks.any((d) => recipes[d]!.course == Course.main)) {
+      walkouts++;
+      g.angry = true;
+      final inStock = menu.any(
+        (d) => recipes[d]!.course == Course.main && (stock[d] ?? 0) > 0,
+      );
+      if (inStock) {
+        // There is food, but it costs more than they will pay.
+        tooDear++;
+        if (g.blogger) {
+          reviewDelta -= 4;
+          _tell(
+            'The blogger found the prices too high and wrote about it.',
+            Tone.bad,
+            key: 'critic',
+          );
+        }
+        _tell(
+          _say([
+            '{a} looked at the prices and walked out.',
+            '{a} read the menu, winced, and left.',
+            '{a} wanted something cheaper than this.',
+          ], a: g.name),
+          Tone.bad,
+          key: 'toodear',
+          limit: 2,
+        );
+        _leave(g);
+        return;
+      }
+      // Nothing to eat: the mains have sold out.
+      soldOut++;
       final wanted = menu
           .where((d) => recipes[d]!.course == Course.main)
           .firstOrNull;
@@ -1362,6 +1719,18 @@ class DinerSim {
         } else if (item.state == ItemState.claimed) {
           item.state = ItemState.pending;
         }
+      case WorkState.toClean:
+        w.walk();
+        if (w.path.isNotEmpty) return;
+        final seat = w.cleaning;
+        w
+          ..state = WorkState.idle
+          ..cleaning = null
+          ..busy = w.takeHandling() + 1;
+        if (seat != null && dirty.remove(seat.cell)) {
+          cleaned++;
+          w.face(seat.cell);
+        }
       case WorkState.toDeliver:
         w.walk();
         if (w.path.isNotEmpty) return;
@@ -1399,7 +1768,10 @@ class DinerSim {
   void _load(Worker w, Machine m, OrderItem item) {
     final staff = w.staff;
     final dish = item.dish;
-    final time = _cookTime(dish, staff);
+    var time = _cookTime(dish, staff);
+    if (item.guest.rushed) {
+      time = math.max(2, (time * Pace.rushSpeed).round());
+    }
     m
       ..item = item
       ..left = time
@@ -1408,7 +1780,10 @@ class DinerSim {
     item
       ..state = ItemState.cooking
       ..quality =
-          staff.priceFactor * staff.masteryPrice(dish) * item.tier.priceMul;
+          staff.priceFactor *
+          staff.masteryPrice(dish) *
+          item.tier.priceMul *
+          (1 + diner.markupOf(dish) / 100);
     final before = staff.masteryLevel(dish);
     staff.mastery[dish] = staff.made(dish) + 1;
     final after = staff.masteryLevel(dish);
@@ -1454,9 +1829,57 @@ class DinerSim {
     }
     g.tipExact = base == 0
         ? 0
-        : price * (base + w.staff.tipBonus).clamp(0.0, 1.0);
+        : price *
+              (base + w.staff.tipBonus).clamp(0.0, 1.0) *
+              g.wallet.tipMul *
+              diner.supplier.tipMul *
+              (g.grumpy ? messTip : 1) *
+              (g.seat == null ? 1 : (_tipAt[g.seat!.cell] ?? 1));
     g.tip = g.tipExact.round();
     _served(w, g);
+    if (g.critic) {
+      if (g.mood >= 0.4) {
+        reviewDelta += 8;
+        _tell(
+          'The critic raved about the food. People will hear about this.',
+          Tone.good,
+          key: 'critic',
+        );
+      } else {
+        reviewDelta += 2;
+        _tell(
+          'The critic liked the food, but said the wait was too long.',
+          Tone.mixed,
+          key: 'critic',
+        );
+      }
+    } else if (g.blogger) {
+      final fair = delivered.every(
+        (i) => diner.priceRatio(i.dish) <= diner.tierOf(i.dish).priceMul,
+      );
+      if (!fair) {
+        reviewDelta -= 2;
+        _tell(
+          'The blogger enjoyed the food, but wrote that it was overpriced.',
+          Tone.bad,
+          key: 'critic',
+        );
+      } else if (g.mood >= 0.4) {
+        reviewDelta += 6;
+        _tell(
+          'The blogger posted that the prices are fair and the food is good.',
+          Tone.good,
+          key: 'critic',
+        );
+      } else {
+        reviewDelta += 1;
+        _tell(
+          'The blogger said the prices were fair, but the wait was long.',
+          Tone.mixed,
+          key: 'critic',
+        );
+      }
+    }
     if (g.car) {
       // Paid at the window and off.
       _pay(g);
@@ -1628,6 +2051,10 @@ class DinerSim {
       _operate(w);
       return;
     }
+    if (_isCleaner(w)) {
+      _clear(w);
+      return;
+    }
     if (_holdAtWindow(w)) return;
     if (_pickUp(w)) return;
     if (_tendWindow(w)) return;
@@ -1653,7 +2080,9 @@ class DinerSim {
         counts[i.guest] = (counts[i.guest] ?? 0) + 1;
       }
       final g = counts.keys.reduce(
-        (a, b) => counts[a]! != counts[b]!
+        (a, b) => a.rushed != b.rushed
+            ? (a.rushed ? a : b)
+            : counts[a]! != counts[b]!
             ? (counts[a]! > counts[b]! ? a : b)
             : (a.patience <= b.patience ? a : b),
       );
@@ -1727,6 +2156,28 @@ class DinerSim {
     return free.isEmpty ? spots : free;
   }
 
+  /// A worker kept for the tables walks to the nearest mess and clears it.
+  void _clear(Worker w) {
+    w.prev = w.cell;
+    // Not one somebody else is already on their way to.
+    final taken = {
+      for (final o in workers)
+        if (o != w && o.cleaning != null) o.cleaning!.cell,
+    };
+    (Seat, List<Cell>)? best;
+    for (final seat in seats) {
+      if (!dirty.contains(seat.cell) || taken.contains(seat.cell)) continue;
+      final r = nearest(diner, w.cell, diner.approaches(seat.cell));
+      if (r == null) continue;
+      if (best == null || r.$2.length < best.$2.length) best = (seat, r.$2);
+    }
+    if (best == null) return;
+    w
+      ..cleaning = best.$1
+      ..path = best.$2
+      ..state = WorkState.toClean;
+  }
+
   /// Whoever has just reached the window stays until the car has given its
   /// order.
   bool _holdAtWindow(Worker w) {
@@ -1763,6 +2214,7 @@ class DinerSim {
   /// tray has room for it.
   bool _holdForRest(Worker w) {
     if (w.carrying.length >= _capacity) return false;
+    if (w.carrying.any((i) => i.guest.rushed)) return false;
     for (final g in w.carrying.map((i) => i.guest).toSet()) {
       if (g.patience < 12) continue;
       for (final i in g.items) {
@@ -1792,7 +2244,9 @@ class DinerSim {
           (!_isOperator(w) || m.item!.guest.car),
     );
     final duty = _duty(w);
-    var pick = duty == null
+    // Anything for a rushed guest comes off first.
+    var pick = _nearestMachine(w, ready.where((m) => m.item!.guest.rushed));
+    pick ??= duty == null
         ? null
         : _nearestMachine(w, ready.where((m) => m.kind == duty));
     pick ??= _nearestMachine(w, ready);
@@ -1822,6 +2276,9 @@ class DinerSim {
                     g.patience > progress.cookTicks(i.dish) + _walkAllowance)
                   i,
         ]..sort((a, b) {
+          // Anyone rushed goes to the front of the line.
+          final r = (b.guest.rushed ? 1 : 0).compareTo(a.guest.rushed ? 1 : 0);
+          if (r != 0) return r;
           final c = a.guest.patience.compareTo(b.guest.patience);
           return c != 0
               ? c
@@ -1918,6 +2375,11 @@ class DinerSim {
       left += e.value * diner.unitCost(e.key);
     }
     final leftoverCost = left.round();
+    for (final e in stock.entries) {
+      crowd.thrownAway(e.key, e.value);
+    }
+    diner.crowd.add(crowd);
+    diner.lastCrowd = crowd;
     final ratingBefore = progress.reputation;
     if (total > 0) {
       // A day is judged on how many were fed, and how quickly. The rating
@@ -1933,6 +2395,10 @@ class DinerSim {
       // A handful of guests tells you little.
       if (total < 4) step = (step / 2).round();
       progress.reputation = (progress.reputation + step).clamp(0, 100);
+    }
+    // A critic's verdict moves the rating on its own, on top of the day.
+    if (reviewDelta != 0) {
+      progress.reputation = (progress.reputation + reviewDelta).clamp(0, 100);
     }
     // Wages come out of the takings. Anyone who can't be paid loses heart, and
     // goes if it happens again. Some take it harder than others.
@@ -2059,6 +2525,18 @@ class DinerSim {
     }
     final gained = progress.gain(xp);
     progress.day++;
+    diner.history
+      ..add(
+        DayLog(
+          day: day,
+          kept: earned - ingredientCost - paid,
+          served: served,
+          walkouts: walkouts,
+          rating: progress.reputation,
+          event: event == DayEvent.none ? '' : event.name,
+        ),
+      )
+      ..removeRange(0, math.max(0, diner.history.length - DayLog.keep));
     return result = DayReport(
       day: day,
       served: served,
@@ -2081,6 +2559,14 @@ class DinerSim {
       ingredients: ingredientCost,
       leftover: leftoverCost,
       soldOut: soldOut,
+      tooDear: tooDear,
+      cleaned: cleaned,
+      event: event,
+      reviewDelta: reviewDelta,
+      gaveUp: gaveUp,
+      queueFull: queueFull,
+      spoiled: spoiled,
+      crowd: crowd,
       cars: carsServed,
       items: itemsServed,
     );
@@ -2184,7 +2670,11 @@ class DinerSim {
           g.sprite,
           car: g.car,
           seated: seated && !g.car,
-          badge: g.angry ? 'warn' : null,
+          badge: g.angry
+              ? 'warn'
+              : g.rushed
+              ? 'emote_star'
+              : null,
           items: waiting && !g.angry
               ? [for (final i in g.unfinished) i.dish.name]
               : const [],
@@ -2210,6 +2700,20 @@ class DinerSim {
           k++;
         }
       }
+    }
+    for (final seat in seats) {
+      if (!dirty.contains(seat.cell)) continue;
+      // The mess lies on the table, a little towards the chair it came from.
+      final t = seat.table;
+      out.add(
+        Actor(
+          'mess',
+          t.x + 0.5 + (seat.cell.x - t.x) * 0.22,
+          t.y + 0.5 + (seat.cell.y - t.y) * 0.22,
+          lift: 12,
+          row: t.x + t.y + 0.5,
+        ),
+      );
     }
     for (final m in machines) {
       final c = m.at.at;

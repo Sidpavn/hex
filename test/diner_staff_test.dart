@@ -974,6 +974,7 @@ void main() {
       var coins = d.coins;
       while (!sim.finished) {
         sim.tick();
+        if (sim.finished) break; // the last tick is when it is paid
         // All through the day the till only goes up.
         expect(
           d.coins,

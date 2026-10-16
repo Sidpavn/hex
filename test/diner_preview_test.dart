@@ -124,6 +124,11 @@ Diner _big() {
   final d = Diner.starter();
   final rep = int.tryParse(Platform.environment['REP'] ?? '');
   if (rep != null) d.progress.reputation = rep;
+  final lv = int.tryParse(Platform.environment['LEVEL'] ?? '');
+  if (lv != null) {
+    d.progress.level = lv;
+    d.coins = 2000;
+  }
   if (Platform.environment['BIG'] != null) {
     d.coins = 100000;
     d.progress.level = 9;

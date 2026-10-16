@@ -4,7 +4,9 @@ import '../data/storage.dart';
 import '../ui/widgets.dart';
 import 'build_screen.dart' show DinerSprite;
 import 'diner.dart';
+import 'events.dart';
 import 'recipes.dart';
+import 'suppliers.dart';
 
 /// The morning's shopping: how many portions of each dish to prepare. What is
 /// not sold is thrown away.
@@ -28,6 +30,58 @@ class _PrepScreenState extends State<PrepScreen> {
     Storage.saveDiner(diner);
   }
 
+  void _supplier(Supplier s) {
+    setState(() => diner.supplier = s);
+    Storage.saveDiner(diner);
+  }
+
+  /// Who the ingredients are bought from: three choices, and what the one
+  /// chosen means.
+  Widget _suppliers() {
+    final s = diner.supplier;
+    final lost = s.spoiledShare(diner.progress.day);
+    return Panel(
+      key: const ValueKey('suppliers'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final o in Supplier.values)
+                Choice(
+                  key: ValueKey('supplier-${o.name}'),
+                  label: o.label,
+                  selected: s == o,
+                  locked: o.unlock > diner.progress.level,
+                  onTap: () => _supplier(o),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          PxText(
+            s.blurb,
+            key: const ValueKey('supplier-blurb'),
+            style: const TextStyle(color: Pal.dim, fontSize: 14),
+          ),
+          if (lost > 0.2)
+            PxText(
+              'A bad delivery is due today: about ${(lost * 100).round()}% '
+              'of it will be spoiled.',
+              key: const ValueKey('supplier-warning'),
+              style: const TextStyle(color: Pal.red, fontSize: 14),
+            ),
+          if (Supplier.values.any((o) => o.unlock > diner.progress.level))
+            PxText(
+              'The farm opens at level ${Supplier.farm.unlock}.',
+              style: const TextStyle(color: Pal.dim, fontSize: 14),
+            ),
+        ],
+      ),
+    );
+  }
+
   void _useForecast() {
     setState(() => diner.plan.clear());
     Storage.saveDiner(diner);
@@ -40,7 +94,9 @@ class _PrepScreenState extends State<PrepScreen> {
     final short = cost - diner.coins;
     return ScreenFrame(
       title: "Today's portions",
-      subtitle: 'About ${diner.progress.expectedGuests} guests expected',
+      subtitle: diner.today == DayEvent.none
+          ? 'About ${diner.expectedToday} guests expected'
+          : 'About ${diner.expectedToday} guests, ${diner.today.label.toLowerCase()}',
       trailing: PxText(
         ':coin: ${diner.coins}',
         style: const TextStyle(color: Pal.text, fontSize: 20),
@@ -51,6 +107,10 @@ class _PrepScreenState extends State<PrepScreen> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
               children: [
+                const Eyebrow('Supplier'),
+                _suppliers(),
+                const SizedBox(height: 12),
+                const Eyebrow('Portions'),
                 Panel(
                   key: const ValueKey('prep'),
                   child: Column(

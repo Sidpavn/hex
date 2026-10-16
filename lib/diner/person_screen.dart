@@ -293,6 +293,7 @@ class _PersonScreenState extends State<PersonScreen> {
     final stations = <Kind>{
       for (final p in diner.ofRole(Role.station)) p.kind,
       if (diner.window != null) Kind.window,
+      if (diner.ofRole(Role.table).isNotEmpty) Kind.table,
     }.toList();
     final duty = s.duty != null && stations.contains(s.duty) ? s.duty : null;
     void set(Kind? k) {
@@ -305,6 +306,8 @@ class _PersonScreenState extends State<PersonScreen> {
 
     final help = duty == null
         ? '${s.name} helps wherever they are needed.'
+        : duty == Kind.table
+        ? '${s.name} clears the tables as guests leave. They do not cook.'
         : duty == Kind.window
         ? '${s.name} stays at the takeaway window and serves the cars. They '
               'do not cook.'
@@ -327,7 +330,9 @@ class _PersonScreenState extends State<PersonScreen> {
               for (final k in stations)
                 Choice(
                   key: ValueKey('duty-${s.id}-${k.name}'),
-                  label: fixtureDefs[k]!.name,
+                  label: k == Kind.table
+                      ? 'Clears tables'
+                      : fixtureDefs[k]!.name,
                   selected: duty == k,
                   onTap: () => set(k),
                 ),

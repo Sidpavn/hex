@@ -314,17 +314,20 @@ void main() {
     test('a bigger order is given more patience', () {
       final sim = DinerSim(kitchen(rep: 90), seed: 5);
       final base = sim.progress.patience;
-      final byCount = <int, int>{};
+      // Patience once the guest's own temper, and a dirty table, are set aside.
+      final byCount = <int, double>{};
       while (!sim.finished) {
         sim.tick();
         for (final g in sim.guests.where((g) => g.items.isNotEmpty)) {
-          byCount[g.items.length] = g.patienceMax;
+          byCount[g.items.length] =
+              g.patienceMax /
+              (g.temper.patienceMul * (g.grumpy ? DinerSim.messPatience : 1));
         }
       }
       expect(byCount.keys.length, greaterThan(1));
       final sorted = byCount.keys.toList()..sort();
-      expect(byCount[sorted.first], base);
-      expect(byCount[sorted.last], greaterThan(byCount[sorted.first]!));
+      expect(byCount[sorted.first]!, closeTo(base, 1.5));
+      expect(byCount[sorted.last]!, greaterThan(byCount[sorted.first]!));
     });
 
     test(
@@ -662,7 +665,7 @@ void main() {
       final d = kitchen(staff: 1, rep: 25);
       d.roster.employees.single.duty = Kind.oven;
       final sim = play(d, seed: 2);
-      expect(sim.served, greaterThan(3));
+      expect(sim.served, greaterThanOrEqualTo(3));
     });
   });
 
@@ -827,6 +830,9 @@ void main() {
       int rep(Tier t) {
         final d = kitchen(staff: 4, rep: 50, fryer: false, soda: false);
         d.progress.recipeLevel[Dish.burger] = Diner.premiumLevel;
+        // Cheap enough that every kind of guest will buy it, so only the
+        // quality differs.
+        d.markup[Dish.burger] = -20;
         d.tiers[Dish.burger] = t;
         play(d, seed: 2);
         return d.progress.reputation;

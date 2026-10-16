@@ -137,8 +137,7 @@ class _MenuScreenState extends State<MenuScreen> {
   /// the number at the end is that profit.
   Widget _priceBar(Dish d, double price, double cost, double profit) {
     final dearest = [
-      for (final r in recipes.values)
-        diner.progress.price(r.dish) * diner.tierOf(r.dish).priceMul,
+      for (final r in recipes.values) diner.sellPrice(r.dish),
     ].reduce((a, b) => a > b ? a : b);
     return Padding(
       padding: const EdgeInsets.only(top: 4),
@@ -182,8 +181,7 @@ class _MenuScreenState extends State<MenuScreen> {
 
   Widget _row(Recipe r, bool on) {
     final why = diner.whyNot(r.dish);
-    final tier = diner.tierOf(r.dish);
-    final sells = diner.progress.price(r.dish) * tier.priceMul;
+    final sells = diner.sellPrice(r.dish);
     final cost = diner.unitCost(r.dish);
     final profit = sells - cost;
     final lvl = diner.progress.recipeLvl(r.dish);
@@ -204,7 +202,8 @@ class _MenuScreenState extends State<MenuScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 PxText(
-                  '${r.name}   level $lvl',
+                  '${r.name}   level $lvl'
+                  '${diner.isSpecial(r.dish) ? '   special' : ''}',
                   style: const TextStyle(color: Pal.text, fontSize: 17),
                 ),
                 if (why != null)

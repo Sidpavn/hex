@@ -7,6 +7,7 @@ import 'package:hex/diner/build_screen.dart';
 import 'package:hex/diner/diner.dart';
 import 'package:hex/diner/diner_art.dart';
 import 'package:hex/diner/diner_painter.dart';
+import 'package:hex/diner/goals.dart';
 import 'package:hex/diner/iso.dart';
 import 'package:hex/diner/recipes.dart';
 import 'package:hex/main.dart';
@@ -243,6 +244,8 @@ void main() {
     final d = await open(tester);
     d.coins = 5000;
     d.progress.level = 9;
+    // Goals pay as things happen: leave them out of the sums here.
+    d.goalsDone.addAll([for (final g in goals) g.id]);
     await tester.pump();
     await expand(tester);
     // Pick the room behind, by tapping the ground where it will be.
@@ -347,6 +350,19 @@ void main() {
     expect(find.byKey(const ValueKey('rotate')), findsNothing);
   });
 
+  /// Start over is on the goals page, out of the way.
+  Future<void> openReset(WidgetTester tester) async {
+    await tester.tap(find.byKey(const ValueKey('goals')));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('reset')),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.byKey(const ValueKey('reset')));
+    await tester.pump(const Duration(milliseconds: 600));
+  }
+
   testWidgets('reset wipes the saved restaurant, after asking', (tester) async {
     final d = await open(tester);
     d.coins = 7;
@@ -357,8 +373,7 @@ void main() {
     expect(Storage.diner, isNotNull);
 
     // Asked, then declined: nothing changes.
-    await tester.tap(find.byKey(const ValueKey('reset')));
-    await tester.pump(const Duration(milliseconds: 400));
+    await openReset(tester);
     expect(find.text('Start over?'), findsOneWidget);
     await tester.tap(find.text('Keep it'));
     await tester.pump(const Duration(milliseconds: 400));
@@ -368,8 +383,7 @@ void main() {
       same(d),
     );
 
-    await tester.tap(find.byKey(const ValueKey('reset')));
-    await tester.pump(const Duration(milliseconds: 400));
+    await openReset(tester);
     await tester.tap(find.byKey(const ValueKey('confirm-reset')));
     await tester.pump(const Duration(milliseconds: 400));
     expect(Storage.diner, isNull);
@@ -384,13 +398,13 @@ void main() {
     expect(find.text('Start day 1'), findsOneWidget);
   });
 
-  testWidgets('there is no reset button while the diner is open', (
+  testWidgets('there is no goals button while the diner is open', (
     tester,
   ) async {
     await open(tester);
-    expect(find.byKey(const ValueKey('reset')), findsOneWidget);
+    expect(find.byKey(const ValueKey('goals')), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('start-day')));
     await tester.pump();
-    expect(find.byKey(const ValueKey('reset')), findsNothing);
+    expect(find.byKey(const ValueKey('goals')), findsNothing);
   });
 }
