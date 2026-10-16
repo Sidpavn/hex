@@ -1,3 +1,4 @@
+import 'contracts.dart';
 import 'diner.dart';
 import 'events.dart';
 import 'recipes.dart';
@@ -149,6 +150,24 @@ final List<Goal> goals = [
     hint:
         'Open a dish in the Menu and make it the special. A board goes '
         'outside the door.',
+  ),
+  Goal(
+    'catering',
+    'Send out a catering order',
+    120,
+    (f) => f.day?.cateringState == ContractState.done,
+    hint:
+        'Once your rating is 3.5 stars or more, some days bring a catering '
+        'order. Open it from the card above the shelf and choose who cooks it.',
+  ),
+  Goal(
+    'vending',
+    'Put a vending machine out front',
+    80,
+    (f) => f.diner.vendingMachines >= 1,
+    hint:
+        'The Vending machine in Upgrades stands on the pavement and earns '
+        'from people walking by.',
   ),
   Goal(
     'plot',

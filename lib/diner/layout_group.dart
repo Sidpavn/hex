@@ -114,7 +114,9 @@ extension GroupEditing on Diner {
     final floors = <Cell>{};
     for (final mv in moved) {
       if (mv.from.def.hung) {
-        if (!hangs(mv.at, mv.facing)) return PlaceResult.hang;
+        if (!hangsKind(mv.from.kind, mv.at, mv.facing)) {
+          return PlaceResult.hang;
+        }
         continue;
       }
       final floor = mv.from.def.floor;

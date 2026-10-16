@@ -7,7 +7,11 @@ import '../data/storage.dart';
 import '../ui/pixel_dialog.dart';
 import '../ui/widgets.dart';
 import 'clock.dart';
+import 'contracts.dart';
+import 'city.dart';
 import 'diner.dart';
+import 'order_screen.dart';
+import 'vending_dialog.dart';
 import 'advice.dart';
 import 'events.dart';
 import 'goals.dart';
@@ -235,19 +239,6 @@ class _BuildScreenState extends State<BuildScreen>
 
   Future<void> _startDay() async {
     if (!sim.report.ready) return;
-    // A day that is not like the others is announced first, in the middle of
-    // the screen, so nobody is caught out by it.
-    final today = diner.today;
-    if (today != DayEvent.none) {
-      await noticePixel(
-        context,
-        title: today.label,
-        body: today.blurb,
-        button: 'Start the day',
-        buttonKey: const ValueKey('event-ok'),
-      );
-      if (!mounted) return;
-    }
     setState(() {
       _clearEdit();
       _levelBefore = diner.progress.level;
@@ -381,7 +372,9 @@ class _BuildScreenState extends State<BuildScreen>
   /// Which way the fixture being placed faces at [at]. Anything hung goes the
   /// way its wall says; the rest face as they were turned.
   Dir _faceAt(Kind kind, Cell at) {
-    if (!fixtureDefs[kind]!.hung || diner.hangs(at, _facing)) return _facing;
+    if (!fixtureDefs[kind]!.hung || diner.hangsKind(kind, at, _facing)) {
+      return _facing;
+    }
     return diner.defaultFacing(kind, at);
   }
 
@@ -466,7 +459,7 @@ class _BuildScreenState extends State<BuildScreen>
         if (kind != null && fixtureDefs[kind]!.hung) {
           _facing = _facing == Dir.sw ? Dir.se : Dir.sw;
           final at = _hover;
-          _note = at != null && !diner.hangs(at, _facing)
+          _note = at != null && !diner.hangsKind(kind, at, _facing)
               ? 'Only a corner has two walls to hang on'
               : '';
         } else {
@@ -649,10 +642,10 @@ class _BuildScreenState extends State<BuildScreen>
           _note = r.message;
           return;
         }
-        _note = _group.length == 1 ? 'Moved' : 'Moved ${_group.length}';
-        _op = _GroupOp.none;
-        _hover = null;
-        _gturns = 0;
+        final n = _group.length;
+        // Done: nothing stays chosen.
+        _clearEdit();
+        _note = n == 1 ? 'Moved' : 'Moved $n';
       } else {
         final made = diner.copyGroup(_group, _gm);
         _note = made.isEmpty ? 'Nothing placed' : 'Copied ${made.length}';
@@ -825,15 +818,25 @@ class _BuildScreenState extends State<BuildScreen>
                       : LayoutBuilder(builder: (_, box) => _board(art, box)),
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                child: PixelBox(
-                  padding: const EdgeInsets.all(12),
-                  child: switch (_phase) {
-                    Phase.build => _expanding ? _expandPanel() : _buildPanel(),
-                    Phase.service => _servicePanel(),
-                    Phase.summary => _summaryPanel(),
-                  },
+              // Never more than half the screen, so the board always has room:
+              // on a small phone the panel scrolls.
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.5,
+                ),
+                child: SingleChildScrollView(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                    child: PixelBox(
+                      padding: const EdgeInsets.all(12),
+                      child: switch (_phase) {
+                        Phase.build =>
+                          _expanding ? _expandPanel() : _buildPanel(),
+                        Phase.service => _servicePanel(),
+                        Phase.summary => _summaryPanel(),
+                      },
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -863,21 +866,21 @@ class _BuildScreenState extends State<BuildScreen>
     }
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 6, 16, 6),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => Navigator.of(context).maybePop(),
-            child: const Padding(
-              padding: EdgeInsets.all(12),
-              child: PxIcon('back'),
-            ),
-          ),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                PxText(
+          Row(
+            children: [
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => Navigator.of(context).maybePop(),
+                child: const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: PxIcon('back'),
+                ),
+              ),
+              Expanded(
+                child: PxText(
                   'Day ${_phase == Phase.summary ? progress.day - 1 : progress.day}',
                   style: const TextStyle(
                     color: Pal.gold,
@@ -885,27 +888,32 @@ class _BuildScreenState extends State<BuildScreen>
                     height: 1,
                   ),
                 ),
-                PxText(line, style: TextStyle(color: colour, fontSize: 14)),
-              ],
-            ),
-          ),
-          if (_phase == Phase.build) ...[
-            GestureDetector(
-              key: const ValueKey('goals'),
-              behavior: HitTestBehavior.opaque,
-              onTap: _openGoals,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-                child: PxText(
-                  'Goals',
-                  style: const TextStyle(color: Pal.gold, fontSize: 14),
-                ),
               ),
-            ),
-          ],
-          PxText(
-            ':coin: ${diner.coins}',
-            style: const TextStyle(color: Pal.text, fontSize: 20),
+              if (_phase == Phase.build) ...[
+                GestureDetector(
+                  key: const ValueKey('goals'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _openGoals,
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                    child: PxText(
+                      'Goals',
+                      style: TextStyle(color: Pal.gold, fontSize: 14),
+                    ),
+                  ),
+                ),
+              ],
+              PxText(
+                ':coin: ${diner.coins}',
+                style: const TextStyle(color: Pal.text, fontSize: 20),
+              ),
+            ],
+          ),
+          // Under the title, the whole width: a long line wraps here instead
+          // of squeezing the title into a sliver on a narrow phone.
+          Padding(
+            padding: const EdgeInsets.only(left: 12),
+            child: PxText(line, style: TextStyle(color: colour, fontSize: 14)),
           ),
         ],
       ),
@@ -945,6 +953,10 @@ class _BuildScreenState extends State<BuildScreen>
       final def = fixtureDefs[kind]!;
       final r = _placeResult;
       if (r == null) return 'Tap the floor to aim, then Place.';
+      if (r == PlaceResult.blocksWay) {
+        return 'That would block off the red tiles. Leave a way to walk '
+            'through.';
+      }
       if (r != PlaceResult.ok) return r.message;
       return '${describeFixture(def, progress)} '
           '${_moving == null ? 'Tap Place to put it down.' : 'Tap Put down.'}';
@@ -1053,6 +1065,10 @@ class _BuildScreenState extends State<BuildScreen>
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (!_selecting && !editing && _orderCard() != null) ...[
+          _orderCard()!,
+          const SizedBox(height: 12),
+        ],
         if (!_selecting) ...[_shelf(), const SizedBox(height: 12)],
         if (editing)
           ..._placingRows(result, cost)
@@ -1065,6 +1081,71 @@ class _BuildScreenState extends State<BuildScreen>
         ],
       ],
     );
+  }
+
+  /// Today's catering order, on offer or taken, as a short card that opens it.
+  Widget? _orderCard() {
+    final taken = diner.takenContract;
+    final c = taken ?? diner.offer;
+    if (c == null) return null;
+    return Panel(
+      key: const ValueKey('order-card'),
+      padding: const EdgeInsets.all(8),
+      onTap: _openOrder,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          PxText(
+            taken != null
+                ? 'Catering for ${c.client}: taken'
+                : 'Catering order from ${c.client}',
+            style: TextStyle(
+              color: taken != null ? Pal.green : Pal.gold,
+              fontSize: 16,
+            ),
+          ),
+          PxText(
+            '${c.summary}. Pays ${c.reward}.'
+            '${taken != null && diner.closedForOrder ? ' Doors shut.' : ''}',
+            style: const TextStyle(color: Pal.dim, fontSize: 14),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Whether a tap at [c] is on one of the vending machines out front. They
+  /// are tall, so a tap above one lands on the tiles behind it.
+  bool _onVending(Cell c) {
+    for (final (name, at) in streetProps(diner)) {
+      if (!name.startsWith('vending')) continue;
+      if (c == at ||
+          c == Cell(at.x - 1, at.y - 1) ||
+          c == Cell(at.x - 2, at.y - 2)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  Future<void> _openVending() async {
+    await popupPixel<void>(context, (_) => VendingDialog(diner: diner));
+    if (!mounted) return;
+    setState(() {
+      sim = DinerSim(diner);
+      _revision++;
+    });
+  }
+
+  Future<void> _openOrder() async {
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => OrderScreen(diner: diner)));
+    if (!mounted) return;
+    setState(() {
+      sim = DinerSim(diner);
+      _coins = diner.coins;
+    });
   }
 
   /// The fixtures that can be bought, to pick one to place.
@@ -1324,7 +1405,9 @@ class _BuildScreenState extends State<BuildScreen>
         flex: 2,
         child: GoldButton(
           key: const ValueKey('start-day'),
-          label: 'Start day ${diner.progress.day}',
+          label: diner.takenContract != null && diner.closedForOrder
+              ? 'Start catering day'
+              : 'Start day ${diner.progress.day}',
           onTap: sim.report.ready ? _startDay : null,
         ),
       ),
@@ -1451,6 +1534,36 @@ class _BuildScreenState extends State<BuildScreen>
             ),
             const SizedBox(height: 8),
             PxBar(value: sim.dayProgress, color: Pal.gold),
+            if (sim.contract != null) ...[
+              const SizedBox(height: 8),
+              PxText(
+                switch (sim.cateringState) {
+                  ContractState.done =>
+                    'Catering sent: ${sim.contract!.client}. '
+                        '+${sim.cateringPaid}',
+                  ContractState.missed => 'Catering missed: not out in time',
+                  ContractState.voided => 'Catering called off',
+                  _ =>
+                    'Catering: ${sim.cateringMade} of '
+                        '${sim.contract!.portions} out',
+                },
+                key: const ValueKey('catering-progress'),
+                style: TextStyle(
+                  color: switch (sim.cateringState) {
+                    ContractState.done => Pal.green,
+                    ContractState.missed => Pal.red,
+                    ContractState.voided => Pal.dim,
+                    _ => Pal.text,
+                  },
+                  fontSize: 14,
+                ),
+              ),
+              if (sim.cateringOpen)
+                PxBar(
+                  value: sim.cateringMade / sim.contract!.portions,
+                  color: Pal.green,
+                ),
+            ],
             const SizedBox(height: 8),
             const SizedBox(height: 4),
             Row(
@@ -1641,6 +1754,26 @@ class _BuildScreenState extends State<BuildScreen>
             key: const ValueKey('unpaid-line'),
             style: const TextStyle(color: Pal.red, fontSize: 14),
           )
+        else if (r.catering != null && r.cateringState != ContractState.open)
+          PxText(
+            switch (r.cateringState) {
+              ContractState.done =>
+                'Catering sent to ${r.catering!.client}: +${r.cateringReward}.',
+              ContractState.missed =>
+                'The catering order was not ready. The ingredients are lost '
+                    'and the rating dropped ${ContractBook.missedRating}.',
+              _ => 'The catering order was called off.',
+            },
+            key: const ValueKey('catering-line'),
+            style: TextStyle(
+              color: r.cateringState == ContractState.done
+                  ? Pal.green
+                  : r.cateringState == ContractState.missed
+                  ? Pal.red
+                  : Pal.dim,
+              fontSize: 14,
+            ),
+          )
         else if (_dayGoals.isNotEmpty)
           PxText(
             _dayGoals.length == 1
@@ -1790,6 +1923,16 @@ class _BuildScreenState extends State<BuildScreen>
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTapDown: (d) {
+              // A vending machine on the street, between days: what it sells,
+              // and whether it is on.
+              if (_phase == Phase.build &&
+                  !_expanding &&
+                  !_selecting &&
+                  !_aiming &&
+                  _onVending(cellAt(d.localPosition))) {
+                _openVending();
+                return;
+              }
               if (_phase == Phase.service) {
                 _tapGuest(pickCell(d.localPosition), cellAt(d.localPosition));
                 return;
@@ -1842,6 +1985,7 @@ class _BuildScreenState extends State<BuildScreen>
                 doorOpen: () => _phase == Phase.service && sim.open,
                 grid: _aiming && _building,
                 group: _selecting ? _group : const [],
+                groupMoving: _op == _GroupOp.move,
                 ghostGroup: _ghosts,
                 expanding: _expanding && _building,
                 plotSel: _plotSel,

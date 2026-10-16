@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../ui/pixel_pie.dart';
 import '../ui/widgets.dart';
 import 'build_screen.dart' show DinerSprite;
+import 'contracts.dart';
 import 'crowd.dart';
 import 'diner.dart';
 import 'events.dart';
@@ -118,6 +119,16 @@ String busiestTime(Crowd c) {
       ? 'around midday'
       : 'late in the day';
   return 'Busiest $when.';
+}
+
+/// When catering orders come, and whether they are coming now.
+String cateringLine(double rating) {
+  const min = ContractBook.minRating;
+  return rating >= min
+      ? 'Catering orders come to you at ${min.toStringAsFixed(1)} stars and '
+            'above. Some days have one.'
+      : 'Catering orders start at ${min.toStringAsFixed(1)} stars. You are '
+            '${(((min - rating) * 10).ceil() / 10).toStringAsFixed(1)} short.';
 }
 
 enum _Tab {
@@ -543,27 +554,43 @@ class _StatsScreenState extends State<StatsScreen> {
       const SizedBox(height: 12),
       const Eyebrow('Rating'),
       Panel(
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Stars((shown.last.rating / 20).round(), of: 5),
-            const SizedBox(width: 8),
-            Expanded(
-              child: PxText(
-                shown.length < 2
-                    ? (shown.last.rating / 20).toStringAsFixed(1)
-                    : '${(shown.last.rating / 20).toStringAsFixed(1)}, '
-                          '${rating == 0 ? 'no change' : '${rating > 0 ? 'up' : 'down'} '
-                                    '${(rating.abs() / 20).toStringAsFixed(1)}'} '
-                          'over ${shown.length} days',
-                key: const ValueKey('rating-trend'),
-                style: TextStyle(
-                  color: rating > 0
-                      ? Pal.green
-                      : rating < 0
-                      ? Pal.red
-                      : Pal.text,
-                  fontSize: 14,
+            Row(
+              children: [
+                Stars((shown.last.rating / 20).round(), of: 5),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: PxText(
+                    shown.length < 2
+                        ? (shown.last.rating / 20).toStringAsFixed(1)
+                        : '${(shown.last.rating / 20).toStringAsFixed(1)}, '
+                              '${rating == 0 ? 'no change' : '${rating > 0 ? 'up' : 'down'} '
+                                        '${(rating.abs() / 20).toStringAsFixed(1)}'} '
+                              'over ${shown.length} days',
+                    key: const ValueKey('rating-trend'),
+                    style: TextStyle(
+                      color: rating > 0
+                          ? Pal.green
+                          : rating < 0
+                          ? Pal.red
+                          : Pal.text,
+                      fontSize: 14,
+                    ),
+                  ),
                 ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            PxText(
+              cateringLine(diner.progress.rating),
+              key: const ValueKey('catering-rule'),
+              style: TextStyle(
+                color: diner.progress.rating >= ContractBook.minRating
+                    ? Pal.green
+                    : Pal.dim,
+                fontSize: 14,
               ),
             ),
           ],

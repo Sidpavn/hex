@@ -1,3 +1,4 @@
+import 'contracts.dart';
 import 'service.dart';
 
 /// The one thing most worth changing after a day: whatever cost the most,
@@ -13,6 +14,13 @@ String? fixFirst(DayReport r) {
       10000,
       'Wages went unpaid. Keep enough coins back to pay the team, or let '
       'someone go.',
+    );
+  }
+  if (r.catering != null && r.cateringState == ContractState.missed) {
+    add(
+      8000,
+      'The catering order was not ready. Put more people on it, or take a '
+      'smaller one, or close the doors for the day.',
     );
   }
   if (r.soldOut >= 2) {

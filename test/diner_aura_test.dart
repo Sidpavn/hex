@@ -81,7 +81,7 @@ void main() {
     test('they say what they do in plain words', () {
       expect(
         fixtureDefs[Kind.tv]!.aura!.describe,
-        'Guests seated within 2 tiles wait 67% longer.',
+        'Guests seated within 4 tiles wait 67% longer.',
       );
       expect(
         fixtureDefs[Kind.jukebox]!.aura!.describe,
@@ -109,26 +109,37 @@ void main() {
     });
 
     test(
-      'a seat within two tiles of a TV waits longer, one further out does not',
+      'a seat within four tiles of either end of a TV waits longer, one further out does not',
       () {
         final d = room();
-        d.place(Kind.tv, const Cell(5, 3));
+        // Two tiles wide: (4,3) and (5,3).
+        d.place(Kind.tv, const Cell(4, 3));
         expect(d.drainAt(const Cell(4, 5)), closeTo(0.6, 1e-9));
         expect(
-          d.drainAt(const Cell(7, 5)),
+          d.drainAt(const Cell(9, 5)),
           closeTo(0.6, 1e-9),
-          reason: '2 away',
+          reason: '4 from the right-hand end',
         );
-        expect(d.drainAt(const Cell(8, 5)), 1, reason: '3 away');
-        expect(d.drainAt(const Cell(2, 5)), 1, reason: '3 away');
+        expect(
+          d.drainAt(const Cell(1, 5)),
+          closeTo(0.6, 1e-9),
+          reason: '3 from the left-hand end',
+        );
+        expect(
+          d.drainAt(const Cell(4, 7)),
+          closeTo(0.6, 1e-9),
+          reason: '4 away across the room',
+        );
+        expect(d.drainAt(const Cell(10, 5)), 1, reason: '5 away');
+        expect(d.drainAt(const Cell(10, 7)), 1, reason: '5 away');
       },
     );
 
     test('diagonals count: it is a square, not a diamond', () {
       final d = room();
-      d.place(Kind.tv, const Cell(5, 3));
-      expect(d.drainAt(const Cell(7, 5)), closeTo(0.6, 1e-9));
-      expect(d.drainAt(const Cell(8, 6)), 1);
+      d.place(Kind.tv, const Cell(1, 3));
+      expect(d.drainAt(const Cell(6, 7)), closeTo(0.6, 1e-9));
+      expect(d.drainAt(const Cell(7, 7)), 1);
     });
 
     test('a plant only helps the seat right next to it', () {
@@ -143,8 +154,7 @@ void main() {
       d.place(Kind.tv, const Cell(5, 3));
       d.place(Kind.plant, const Cell(4, 6));
       expect(d.drainAt(const Cell(4, 5)), closeTo(0.6 * 0.92, 1e-9));
-      d.place(Kind.tv, const Cell(4, 3));
-      d.place(Kind.tv, const Cell(6, 3));
+      d.place(Kind.tv, const Cell(3, 3));
       expect(d.drainAt(const Cell(4, 5)), Diner.auraFloor);
     });
 
@@ -172,7 +182,7 @@ void main() {
       d.place(Kind.tv, const Cell(1, 3));
       final cells = d.auraCells(d.items.last);
       expect(cells.every(d.isInside), isTrue);
-      expect(cells.length, 9, reason: 'a corner: 3 by 3');
+      expect(cells.length, 30, reason: 'the whole front room, six by five');
       expect(d.auraCells(Placed(0, Kind.table, const Cell(3, 5))), isEmpty);
     });
   });
@@ -315,7 +325,7 @@ void main() {
         }
 
         final plain = await shot(null, null);
-        final tinted = await shot(Kind.tv, const Cell(5, 3));
+        final tinted = await shot(Kind.tv, const Cell(1, 3));
         // A bare floor tile within two of the TV is bluer than before; one
         // further away is the same.
         const near = Cell(4, 4);

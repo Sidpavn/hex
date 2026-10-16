@@ -367,29 +367,39 @@ def jukebox():
 
 
 def wall_tv(f):
-    """A flat television hung on a wall, its screen facing into the room.
-    [f] is the way it faces: 'sw' on the back wall, 'se' on the left wall."""
-    img = cell_img(34)
+    """A widescreen television hung high on a wall, its screen facing into the
+    room. It is two tiles long and about sixteen to nine. [f] is the way it
+    faces: 'sw' on the back wall, 'se' on the left wall."""
     case = ramp('#2c3040')
-    z0, z1 = 12, 27
+    # Up on the glass, well clear of the panelling and of anything standing
+    # below it.
+    z0, z1 = 20, 36
+    n0, n1 = 3, 29            # the lit screen, in tile units along the wall
 
     def glow(a, z):
-        if a < 4 or a > 12 or z < z0 + 2 or z > z1 - 2:
+        if a < n0 or a > n1 or z < z0 + 2 or z > z1 - 2:
             return case.left
-        k = (int(a) + int(z)) % 6
-        return [hexc('#8fd8f4'), hexc('#a8e4fa'), hexc('#7ccaee'),
-                hexc('#ffe58a'), hexc('#b8ecfc'), hexc('#8fd8f4')][k]
+        # A calm picture: sky, a band of cloud, a strip of ground below.
+        if z <= z0 + 4:
+            return hexc('#6fae6a') if int(a) % 7 < 5 else hexc('#5a9a58')
+        if z in (z0 + 8, z0 + 9) and 8 <= a <= 22:
+            return hexc('#f2fbff')
+        return hexc('#8fd8f4') if z < z1 - 6 else hexc('#a8e4fa')
 
     if f == 'sw':
-        box(img, 1, 0, 15, 2, z0, z1, case, edge=False)
-        face_left(img, 1, 15, 2, z0, z1, glow)
-        img.put(*P(4, 2, z1 - 3), (255, 255, 255))
-        img.put(*P(5, 2, z1 - 4), (255, 255, 255))
+        # Along the back wall: two tiles to the right of the first.
+        img = cell_img(46, extra_w=32)
+        box(img, 1, 0, 31, 2, z0, z1, case, edge=False)
+        face_left(img, 1, 31, 2, z0, z1, glow)
+        img.put(*P(6, 2, z1 - 3), (255, 255, 255))
+        img.put(*P(7, 2, z1 - 4), (255, 255, 255))
     else:
-        box(img, 0, 1, 2, 15, z0, z1, case, edge=False)
-        face_right(img, 2, 1, 15, z0, z1, glow)
-        img.put(*P(2, 4, z1 - 3), (255, 255, 255))
-        img.put(*P(2, 5, z1 - 4), (255, 255, 255))
+        # Along the left wall: the second tile is down and to the left.
+        img = Img(48, 46 + 32, 32, 46)
+        box(img, 0, 1, 2, 31, z0, z1, case, edge=False)
+        face_right(img, 2, 1, 31, z0, z1, glow)
+        img.put(*P(2, 6, z1 - 3), (255, 255, 255))
+        img.put(*P(2, 7, z1 - 4), (255, 255, 255))
     add(f'tv_{f}', img, 0.55)
 
 
@@ -1064,6 +1074,44 @@ def special_board():
     add('special_board', img, 0.55)
 
 
+def vending(on=True):
+    """A vending machine on the pavement outside: a red cabinet with a glass
+    front of drinks, a lit sign on top and a coin slot, facing the street.
+    Switched off it is the same machine gone grey, its glass dark."""
+    img = cell_img(40)
+    body = ramp('#c9473b' if on else '#8a8f9c')
+    dark = ramp('#2c3040')
+    box(img, 3, 4, 13, 12, 0, 36, body)
+
+    cans = [hexc('#f2c338'), hexc('#4a9de0'), hexc('#e2e8ee'),
+            hexc('#6ec16a'), hexc('#e2493f')]
+
+    def front(u, z):
+        if u < 4 or u > 12 or z < 2 or z > 35:
+            return body.left
+        # the sign: a pale strip across the top, dark when it is off
+        if z >= 31:
+            return hexc('#fff3b0') if on else dark.right
+        # the glass: rows of cans on shelves, or just dark glass
+        if 15 <= z <= 29 and 5 <= u <= 10:
+            if not on:
+                return dark.left if int(z) % 5 != 4 else dark.right
+            if int(z) % 5 == 4:
+                return dark.left
+            return cans[(int(u) + int(z) // 5) % len(cans)]
+        # the panel: coin slot and a tray
+        if 8 <= z <= 13 and 5 <= u <= 11:
+            if z == 11 and 7 <= u <= 9:
+                return hexc('#f2c338') if on else dark.right
+            return dark.left
+        if 3 <= z <= 6 and 5 <= u <= 11:
+            return dark.right
+        return body.left
+
+    face_left(img, 3, 13, 12, 0, 36, front)
+    add('vending' if on else 'vending_off', img, 0.55)
+
+
 def street_tree():
     img = cell_img(54)
     planter = ramp('#8d6a4a')
@@ -1158,6 +1206,8 @@ def city():
     block_building('block_rb', 4, 7, 52, '#e8d3a3', '#7a7f8c')
     street_lamp()
     special_board()
+    vending()
+    vending(on=False)
     street_tree()
     emotes()
     moods()

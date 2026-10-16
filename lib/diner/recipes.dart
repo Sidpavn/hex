@@ -130,7 +130,7 @@ enum Tier {
 }
 
 /// Things to spend coins on between days.
-enum Upgrade { kitchen, checkout, cosy, staff, tray }
+enum Upgrade { kitchen, checkout, cosy, staff, tray, vending }
 
 class UpgradeDef {
   const UpgradeDef(this.name, this.info, this.max, this.cost);
@@ -172,6 +172,14 @@ const Map<Upgrade, UpgradeDef> upgradeDefs = {
     'Bigger tray',
     'Staff carry five dishes at a time, not three.',
     1,
+    150,
+  ),
+  Upgrade.vending: UpgradeDef(
+    'Vending machine',
+    'A machine on the pavement out front. It earns from people walking by, '
+        'less what it costs to stock. Tap it to choose what it sells, or '
+        'switch it off.',
+    2,
     150,
   ),
 };

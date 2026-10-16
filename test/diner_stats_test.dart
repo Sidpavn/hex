@@ -541,6 +541,30 @@ void main() {
     });
   });
 
+  group('when catering orders start', () {
+    test('it says so, and how far off you are', () {
+      expect(
+        cateringLine(2.5),
+        'Catering orders start at 3.5 stars. You are 1.0 short.',
+      );
+      expect(
+        cateringLine(3.2),
+        'Catering orders start at 3.5 stars. You are 0.3 short.',
+      );
+      // Never "0.0 short" while still short.
+      expect(cateringLine(3.46), endsWith('0.1 short.'));
+    });
+
+    test('at the line, it says they are coming', () {
+      expect(
+        cateringLine(3.5),
+        'Catering orders come to you at 3.5 stars and above. Some days have '
+        'one.',
+      );
+      expect(cateringLine(4.8), startsWith('Catering orders come to you'));
+    });
+  });
+
   group('on screen', () {
     Future<Diner> open(WidgetTester tester, Diner d) async {
       await tester.runAsync(() async {
@@ -643,6 +667,30 @@ void main() {
       );
       expect(find.byKey(const ValueKey('day-4')), findsOneWidget);
       expect(find.byKey(const ValueKey('day-3')), findsOneWidget);
+    });
+
+    testWidgets('the days tab says when catering orders start', (tester) async {
+      final d = cafe(day: 3, rep: 50);
+      play(d, seed: 2);
+      d.progress.reputation = 50;
+      await open(tester, d);
+      await tester.tap(find.byKey(const ValueKey('stats')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('tab-days')));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Catering orders start at 3.5 stars. You are 1.0 short.'),
+        findsOneWidget,
+      );
+      d.progress.reputation = 80;
+      await tester.tap(find.byKey(const ValueKey('tab-guests')));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('tab-days')));
+      await tester.pump();
+      expect(
+        find.textContaining('Catering orders come to you'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('an empty restaurant says so on every tab', (tester) async {

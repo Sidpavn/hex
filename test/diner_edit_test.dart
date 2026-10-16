@@ -660,9 +660,11 @@ void main() {
         await tester.pump();
         expect(d.objectAt(const Cell(5, 6))?.kind, Kind.table);
         expect(d.objectAt(const Cell(5, 5)), isNull);
-        // Back to choosing, with the same three still chosen.
-        expect(painter(tester).group.length, 3);
+        // Done: nothing stays chosen, and nothing is left faded.
+        expect(painter(tester).group, isEmpty);
         expect(painter(tester).ghostGroup, isEmpty);
+        expect(painter(tester).groupMoving, isFalse);
+        expect(find.byKey(const ValueKey('group-move')), findsNothing);
       },
     );
 

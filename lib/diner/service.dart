@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'actor.dart';
+import 'contracts.dart';
 import 'crowd.dart';
 import 'diner.dart';
 import 'events.dart';
@@ -8,6 +9,7 @@ import 'guests.dart';
 import 'nav.dart';
 import 'recipes.dart';
 import 'staff.dart';
+import 'vending.dart';
 import 'traits.dart';
 
 /// How long things take, in ticks (see [TickClock]).
@@ -367,6 +369,11 @@ class DayReport {
     this.queueFull = 0,
     this.spoiled = 0,
     this.crowd,
+    this.catering,
+    this.cateringState = ContractState.open,
+    this.cateringReward = 0,
+    this.closed = false,
+    this.vending,
     this.cars = 0,
     this.items = 0,
   });
@@ -432,6 +439,16 @@ class DayReport {
   /// Who came, by kind, and what they bought.
   final Crowd? crowd;
 
+  /// The catering order for the day, how it ended, what it paid, and whether
+  /// the restaurant was closed to customers for it.
+  final Contract? catering;
+  final ContractState cateringState;
+  final int cateringReward;
+  final bool closed;
+
+  /// How the machines out front did, if there are any.
+  final VendingDay? vending;
+
   /// How many of those served came by car, to the window.
   final int cars;
   final int items;
@@ -482,6 +499,160 @@ class DinerSim {
 
   /// Cars waiting for the window, the one at the window first.
   final List<Guest> _cars = [];
+
+  // ----------------------------------------------------------- catering
+
+  /// The catering order being cooked today, if one was taken.
+  Contract? contract;
+
+  /// How it stands: nothing yet, sent out, not ready in time, or never
+  /// started.
+  ContractState cateringState = ContractState.accepted;
+
+  /// Those cooking it. They leave the restaurant's work until it is done.
+  final Set<Worker> _crew = {};
+
+  /// The order as a hidden customer, whose dishes are cooked like anyone's
+  /// but handed over at the door.
+  Guest? _job;
+
+  /// Portions handed over so far, and what the order paid.
+  int cateringMade = 0;
+  int cateringPaid = 0;
+
+  /// The doors are shut to customers today: everyone works on the order.
+  bool closedDay = false;
+
+  bool get cateringOpen =>
+      contract != null && cateringState == ContractState.accepted;
+
+  bool _isCrew(Worker w) => _crew.contains(w);
+
+  /// Sets up today's order from what the restaurant has taken on.
+  void _setupCatering() {
+    contract = null;
+    _crew.clear();
+    _job = null;
+    cateringMade = 0;
+    cateringPaid = 0;
+    cateringState = ContractState.accepted;
+    closedDay = false;
+    final c = diner.takenContract;
+    if (c == null) return;
+    final team = diner.crew.map((s) => s.id).toSet();
+    final crew = [
+      for (final w in workers)
+        if (team.contains(w.staff.id)) w,
+    ];
+    if (crew.isEmpty) return;
+    contract = c;
+    _crew.addAll(crew);
+    closedDay = diner.closedForOrder;
+    final order = Guest(-1, 'cust_a', 1 << 20, diner.entrance, name: 'Catering')
+      ..state = GuestState.waiting;
+    for (final e in c.lines.entries) {
+      for (var i = 0; i < e.value; i++) {
+        order.items.add(OrderItem(order, e.key, diner.tierOf(e.key)));
+      }
+    }
+    _job = order;
+  }
+
+  /// Pays for the order's ingredients when the day starts. If they cannot be
+  /// paid for it is called off: no penalty, the crew goes back to work.
+  void _startCatering() {
+    final c = contract;
+    if (c == null) return;
+    final cost = c.ingredients(diner);
+    if (diner.coins < cost) {
+      _endCatering(ContractState.voided);
+      _tell(
+        'There was not enough money for the catering ingredients. '
+        'The order for ${c.client} was called off.',
+        Tone.bad,
+        key: 'catering',
+      );
+      return;
+    }
+    diner.coins -= cost;
+    ingredientCost += cost;
+    _tell(
+      'Catering for ${c.client}: ${c.summary}.',
+      Tone.mixed,
+      key: 'catering-start',
+    );
+  }
+
+  /// The order is over, one way or another: the crew rejoin the restaurant.
+  void _endCatering(ContractState how) {
+    cateringState = how;
+    final order = _job;
+    if (order != null) {
+      for (final i in order.items) {
+        if (i.open) i.state = ItemState.lost;
+      }
+      order.state = GuestState.leaving;
+    }
+    for (final w in _crew) {
+      w.carrying.removeWhere((i) => i.guest == order);
+      if (w.state == WorkState.toDeliver && w.target == order) {
+        w
+          ..state = WorkState.idle
+          ..target = null
+          ..path = [];
+      }
+    }
+    _crew.clear();
+  }
+
+  /// The crew hand what they carry to the courier at the door. When the last
+  /// portion is in, the order goes out and pays.
+  void _handOver(Worker w) {
+    final order = _job;
+    if (order == null) return;
+    final mine = w.carrying.where((i) => i.guest == order).toList();
+    w.carrying.removeWhere((i) => i.guest == order);
+    for (final i in mine) {
+      i.state = ItemState.delivered;
+    }
+    cateringMade += mine.length;
+    w.platesToday += mine.length;
+    w.face(diner.entrance);
+    if (order.items.every((i) => i.state == ItemState.delivered)) {
+      final c = contract!;
+      diner.coins += c.reward;
+      earned += c.reward;
+      cateringPaid = c.reward;
+      xp += c.reward ~/ 2;
+      _endCatering(ContractState.done);
+      _tell(
+        'The order for ${c.client} went out. +${c.reward}',
+        Tone.good,
+        key: 'catering',
+      );
+    }
+  }
+
+  /// What the crew do: cook the order's dishes, collect them, carry them to
+  /// the door.
+  void _cater(Worker w) {
+    w.prev = w.cell;
+    if (w.carrying.length >= _capacity && _deliverOrder(w)) return;
+    if (_pickUp(w)) return;
+    if (_startLoading(w, within: 1)) return;
+    if (w.carrying.isNotEmpty && _deliverOrder(w)) return;
+    _startLoading(w);
+  }
+
+  bool _deliverOrder(Worker w) {
+    final way = route(diner, w.cell, diner.entrance);
+    if (way == null) return false;
+    w
+      ..target = _job
+      ..path = way
+      ..state = WorkState.toDeliver;
+    return true;
+  }
 
   Progress get progress => diner.progress;
 
@@ -833,6 +1004,7 @@ class DinerSim {
       final others = helpers.where((h) => h != w.staff).length;
       w.paceMul = 1 + 0.05 * others;
     }
+    _setupCatering();
   }
 
   void tick() {
@@ -848,9 +1020,10 @@ class DinerSim {
     }
     if (ticks == 1) {
       _opening();
-      _buyStock();
+      if (!closedDay) _buyStock();
+      _startCatering();
     }
-    if (open && report.ready) _arrivals();
+    if (open && report.ready && !closedDay) _arrivals();
     _seating();
     _lane();
     for (final g in guests) {
@@ -868,10 +1041,29 @@ class DinerSim {
           (g.state != GuestState.queued && g.state != GuestState.arriving),
     );
 
+    // Closing time is the deadline: whatever is not out by then is missed.
+    if (!open && cateringOpen) {
+      final c = contract!;
+      _endCatering(ContractState.missed);
+      _tell(
+        'The order for ${c.client} was not ready. They found someone else.',
+        Tone.bad,
+        key: 'catering',
+      );
+    }
+    // A closed day is over as soon as the order is.
+    if (closedDay && !cateringOpen) {
+      finishDay();
+      return;
+    }
     if (!open) _closing();
   }
 
   void _opening() {
+    // What is special about the day, as a small note in the corner.
+    if (event != DayEvent.none) {
+      _tell('Today: ${event.label}. ${event.blurb}', Tone.mixed, key: 'event');
+    }
     final helper = workers
         .where((w) => w.staff.has(Trait.teamPlayer))
         .firstOrNull;
@@ -1740,6 +1932,10 @@ class DinerSim {
           ..target = null
           ..busy = w.takeHandling();
         if (g == null) return;
+        if (g == _job) {
+          _handOver(w);
+          return;
+        }
         final mine = w.carrying.where((i) => i.guest == g).toList();
         w.carrying.removeWhere((i) => i.guest == g);
         w.face(g.seat?.cell ?? w.cell);
@@ -2047,6 +2243,10 @@ class DinerSim {
   /// Someone with a station they prefer looks after that machine first, and
   /// helps elsewhere when it needs nothing.
   void _decide(Worker w) {
+    if (_isCrew(w)) {
+      _cater(w);
+      return;
+    }
     if (_isOperator(w)) {
       _operate(w);
       return;
@@ -2230,7 +2430,8 @@ class DinerSim {
 
   /// The machine [w] looks after first. A station only makes sense when
   /// someone else is there to cover the rest, so a lone worker has none.
-  Kind? _duty(Worker w) => workers.length > 1 ? w.staff.duty : null;
+  Kind? _duty(Worker w) =>
+      workers.length > 1 && !_isCrew(w) ? w.staff.duty : null;
 
   /// Goes to collect a finished dish, if there is one and room to carry it.
   bool _pickUp(Worker w) {
@@ -2241,6 +2442,8 @@ class DinerSim {
           !m.claimed &&
           m.item != null &&
           m.item!.guest.state == GuestState.waiting &&
+          // The crew take only the order's dishes, and no one else does.
+          _isCrew(w) == (m.item!.guest == _job) &&
           (!_isOperator(w) || m.item!.guest.car),
     );
     final duty = _duty(w);
@@ -2264,6 +2467,7 @@ class DinerSim {
   /// nothing to do.
   bool _startLoading(Worker w, {int? within}) {
     if (_isOperator(w)) return false;
+    if (_isCrew(w)) return _startOrder(w, within: within);
     // The guest who has waited longest, unless they will have left before it
     // could reach them. A good cook doesn't waste a burger on someone already
     // halfway out the door. Longer dishes first, so a meal comes out together.
@@ -2313,6 +2517,31 @@ class DinerSim {
     return tryKinds(dutyOnly: false);
   }
 
+  /// The crew start the next dish of the order on a free machine.
+  bool _startOrder(Worker w, {int? within}) {
+    final order = _job;
+    if (order == null) return false;
+    for (final item in order.toStart) {
+      if (!w.staff.canCook(item.dish)) continue;
+      final kind = recipes[item.dish]!.station;
+      final m = _nearestMachine(
+        w,
+        machines.where((m) => m.free && m.kind == kind),
+      );
+      if (m == null) continue;
+      if (within != null && m.$2.length > within) continue;
+      item.state = ItemState.claimed;
+      m.$1.claimed = true;
+      w
+        ..machine = m.$1
+        ..loading = item
+        ..path = m.$2
+        ..state = WorkState.toLoad;
+      return true;
+    }
+    return false;
+  }
+
   /// The closest of [options] to [w], with the walk to its front.
   (Machine, List<Cell>)? _nearestMachine(Worker w, Iterable<Machine> options) {
     (Machine, List<Cell>)? best;
@@ -2357,9 +2586,21 @@ class DinerSim {
     guests.clear();
     _queue.clear();
     _cars.clear();
+    // An order still open when the day is over was missed.
+    if (cateringOpen) {
+      final c = contract!;
+      _endCatering(ContractState.missed);
+      _tell(
+        'The order for ${c.client} was not ready. They found someone else.',
+        Tone.bad,
+        key: 'catering',
+      );
+    }
     final total = served + walkouts;
     final share = total == 0 ? 0.0 : served / total;
-    final stars = total == 0
+    final stars = closedDay
+        ? (cateringState == ContractState.done ? 2 : 0)
+        : total == 0
         ? 0
         : share >= 0.9
         ? 3
@@ -2396,9 +2637,38 @@ class DinerSim {
       if (total < 4) step = (step / 2).round();
       progress.reputation = (progress.reputation + step).clamp(0, 100);
     }
+    // An order that was taken and not sent costs some standing.
+    if (contract != null && cateringState == ContractState.missed) {
+      progress.reputation = (progress.reputation - ContractBook.missedRating)
+          .clamp(0, 100);
+    }
+    if (contract != null) diner.closeContract(cateringState);
     // A critic's verdict moves the rating on its own, on top of the day.
     if (reviewDelta != 0) {
       progress.reputation = (progress.reputation + reviewDelta).clamp(0, 100);
+    }
+    // The machines out front earn whether or not the doors were open.
+    final vending = Vending.run(
+      day: progress.day,
+      machines: diner.vendingActive,
+      product: diner.vend,
+      rating: progress.rating,
+      event: event,
+    );
+    if (diner.vendingActive > 0) {
+      diner.coins += vending.income - vending.restock - vending.repair;
+      earned += vending.income;
+      ingredientCost += vending.restock + vending.repair;
+      _tell(
+        vending.broken
+            ? 'The vending machine broke down. The repair cost '
+                  '${vending.repair}.'
+            : 'The vending machine sold ${vending.sold} '
+                  '${diner.vend.label.toLowerCase()}: '
+                  '${vending.net >= 0 ? '+' : ''}${vending.net}.',
+        vending.broken || vending.net < 0 ? Tone.bad : Tone.mixed,
+        key: 'vending',
+      );
     }
     // Wages come out of the takings. Anyone who can't be paid loses heart, and
     // goes if it happens again. Some take it harder than others.
@@ -2567,6 +2837,11 @@ class DinerSim {
       queueFull: queueFull,
       spoiled: spoiled,
       crowd: crowd,
+      catering: contract,
+      cateringState: cateringState,
+      cateringReward: cateringPaid,
+      closed: closedDay,
+      vending: diner.vendingActive > 0 ? vending : null,
       cars: carsServed,
       items: itemsServed,
     );

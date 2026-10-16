@@ -96,6 +96,9 @@ List<(String, Cell)> streetProps(Diner d) {
     ('tree', Cell(door - 3, kerb)),
     ('lamp', Cell(Diner.plotRight + 1, kerb)),
     ('tree', Cell(Diner.plotRight + 5, kerb)),
+    // Vending machines, along the kerb to the right of the door.
+    for (var i = 0; i < d.vendingMachines; i++)
+      (d.vendingOn ? 'vending' : 'vending_off', Cell(door + 2 + 2 * i, kerb)),
     // The day's special, chalked up beside the door.
     if (d.specialActive) ('special_board', Cell(door - 1, kerb)),
   ];

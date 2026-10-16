@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../ui/widgets.dart';
 import 'build_screen.dart' show DinerSprite;
+import 'contracts.dart';
 import 'events.dart';
 import 'recipes.dart';
 import 'service.dart';
@@ -75,6 +76,29 @@ class DayReportScreen extends StatelessWidget {
                 if (r.leftover > 0)
                   _row('Ingredients thrown away', '${r.leftover}'),
                 _row('Expected tomorrow', 'about ${r.tomorrow}'),
+                if (r.vending != null)
+                  _row(
+                    'Vending machine',
+                    r.vending!.broken
+                        ? 'broke down, -${r.vending!.repair}'
+                        : '${r.vending!.sold} sold, '
+                              '${r.vending!.net >= 0 ? '+' : ''}${r.vending!.net}',
+                    r.vending!.broken || r.vending!.net < 0
+                        ? Pal.red
+                        : Pal.green,
+                    const ValueKey('vending-row'),
+                  ),
+                if (r.catering != null && r.cateringState != ContractState.open)
+                  _row(
+                    'Catering',
+                    switch (r.cateringState) {
+                      ContractState.done => 'sent, +${r.cateringReward}',
+                      ContractState.missed => 'not ready',
+                      _ => 'called off',
+                    },
+                    r.cateringState == ContractState.done ? Pal.green : Pal.red,
+                    const ValueKey('catering-row'),
+                  ),
                 if (r.cleaned > 0) _row('Tables cleared', '${r.cleaned}'),
               ],
             ),

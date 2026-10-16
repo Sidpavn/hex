@@ -6,9 +6,11 @@ library;
 
 import 'dart:math' as math;
 
+import 'contracts.dart';
 import 'crowd.dart';
 import 'events.dart';
 import 'suppliers.dart';
+import 'vending.dart';
 import 'recipes.dart';
 import 'staff.dart';
 
@@ -325,10 +327,13 @@ const Map<Kind, FixtureDef> fixtureDefs = {
     'Wall TV',
     150,
     Role.decor,
+    w: 2,
     hung: true,
     unlock: 3,
-    aura: Aura(AuraEffect.patience, 2, 0.6),
-    info: 'Hangs on the back or left wall. Guests near it wait longer.',
+    aura: Aura(AuraEffect.patience, 4, 0.6),
+    info:
+        'A widescreen set, two tiles wide, hung high on the back or left '
+        'wall. Guests near it wait longer.',
   ),
   Kind.rug: FixtureDef(
     Kind.rug,
@@ -490,7 +495,7 @@ enum PlaceResult {
     taken => 'That spot is taken',
     entrance => 'Keep the door clear',
     broke => 'Not enough coins',
-    blocksWay => 'Leave a path to the door',
+    blocksWay => 'That would block off part of the room',
     occupied => 'Someone is standing there',
     locked => 'Not unlocked yet',
     wall => 'Goes in the right-hand wall',
@@ -627,8 +632,105 @@ class Diner {
   final Crowd crowd = Crowd();
   Crowd? lastCrowd;
 
+  /// Today's catering order: where it stands, the order itself once it has
+  /// been taken, who is cooking it, and whether the restaurant is closed to
+  /// customers so everyone can. The day each belongs to is [contractDay]; any
+  /// other day it is all forgotten.
+  int contractDay = 0;
+  ContractState _contractState = ContractState.open;
+  Contract? _taken;
+  final Set<int> crewIds = {};
+  bool closedForOrder = false;
+
+  ContractState get contractState =>
+      contractDay == progress.day ? _contractState : ContractState.open;
+
+  /// The order on offer today, if there is one and it is still open.
+  Contract? get offer => contractState == ContractState.open
+      ? ContractBook.offerFor(progress.day, this)
+      : null;
+
+  /// The order taken for today, to be cooked when the day starts.
+  Contract? get takenContract =>
+      contractState == ContractState.accepted ? _taken : null;
+
+  /// The people on the order today. Everyone, if the doors are closed.
+  List<Staff> get crew => [
+    for (final s in roster.employees)
+      if (closedForOrder || crewIds.contains(s.id)) s,
+  ];
+
+  /// Why [c] cannot be taken with [people], or null if it can.
+  String? whyNotTake(Contract c, Set<int> people, {bool closed = false}) {
+    final team = closed
+        ? roster.employees
+        : [
+            for (final s in roster.employees)
+              if (people.contains(s.id)) s,
+          ];
+    if (team.isEmpty) return 'Choose who will cook it';
+    for (final dish in c.lines.keys) {
+      if (!team.any((s) => s.canCook(dish))) {
+        return 'Nobody chosen can cook ${recipes[dish]!.name.toLowerCase()}';
+      }
+    }
+    if (coins < c.ingredients(this)) {
+      return 'Not enough coins for the ingredients';
+    }
+    return null;
+  }
+
+  /// Takes the order for today with [people] on it. Returns whether it was
+  /// taken. [closed] shuts the doors to customers for the day, so everyone
+  /// can work on it.
+  bool takeContract(Contract c, Set<int> people, {bool closed = false}) {
+    if (contractState != ContractState.open) return false;
+    if (whyNotTake(c, people, closed: closed) != null) return false;
+    contractDay = progress.day;
+    _contractState = ContractState.accepted;
+    _taken = c;
+    crewIds
+      ..clear()
+      ..addAll(people);
+    closedForOrder = closed;
+    return true;
+  }
+
+  /// Turns the offer down for today.
+  void passContract() {
+    if (contractState != ContractState.open) return;
+    contractDay = progress.day;
+    _contractState = ContractState.declined;
+  }
+
+  /// Takes back an order that has been taken but not started.
+  void cancelContract() {
+    if (contractState != ContractState.accepted) return;
+    _contractState = ContractState.open;
+    _taken = null;
+    crewIds.clear();
+    closedForOrder = false;
+  }
+
+  /// Records how the order for [day] ended.
+  void closeContract(ContractState result) {
+    contractDay = progress.day;
+    _contractState = result;
+  }
+
   /// How each of the last days went, oldest first.
   final List<DayLog> history = [];
+
+  /// How many vending machines stand out front, and what they sell.
+  int get vendingMachines => progress.upgradeLvl(Upgrade.vending);
+  Vend vend = Vend.drinks;
+
+  /// Whether the machines are switched on. Off, they sell nothing and cost
+  /// nothing: no stock, no repairs.
+  bool vendingOn = true;
+
+  /// How many are working.
+  int get vendingActive => vendingOn ? vendingMachines : 0;
 
   /// Where the ingredients come from.
   Supplier supplier = Supplier.standard;
@@ -844,6 +946,15 @@ class Diner {
       isInside(at) &&
       !isInside(wallBehind(at, facing));
 
+  /// Whether a [kind] hung with its top-left tile at [at] and facing [facing]
+  /// has a wall behind every tile it covers. A wide one needs a stretch of
+  /// wall, not just a corner of it.
+  bool hangsKind(Kind kind, Cell at, Dir facing) {
+    if (facing != Dir.sw && facing != Dir.se) return false;
+    final probe = Placed(0, kind, at, facing);
+    return probe.cells.every((c) => hangs(c, facing));
+  }
+
   /// The fixture hung over [c], if any.
   Placed? hungAt(Cell c) {
     for (final p in items) {
@@ -856,7 +967,9 @@ class Diner {
   /// something hung there, else a rug. Tapping a wall picks what hangs on it.
   Placed? pickAt(Cell c) {
     for (final p in items) {
-      if (p.def.hung && wallBehind(p.at, p.facing) == c) return p;
+      if (p.def.hung && p.cells.any((t) => wallBehind(t, p.facing) == c)) {
+        return p;
+      }
     }
     if (!isInside(c)) return null;
     return objectAt(c) ?? hungAt(c) ?? floorAt(c);
@@ -1161,7 +1274,9 @@ class Diner {
   Dir defaultFacing(Kind kind, Cell at) {
     final def = fixtureDefs[kind]!;
     if (def.hung) {
-      return hangs(at, Dir.sw) || !hangs(at, Dir.se) ? Dir.sw : Dir.se;
+      return hangsKind(kind, at, Dir.sw) || !hangsKind(kind, at, Dir.se)
+          ? Dir.sw
+          : Dir.se;
     }
     if (!def.turns) return Dir.sw;
     final probe = Placed(0, kind, at);
@@ -1197,9 +1312,14 @@ class Diner {
       if (!isInside(c)) return PlaceResult.outside;
     }
     if (def.hung) {
-      if (!hangs(at, facing)) return PlaceResult.hang;
+      if (!hangsKind(kind, at, facing)) return PlaceResult.hang;
+      final mine = probe.cells.toSet();
       final other = items.where(
-        (p) => p.def.hung && p != ignore && p.at == at && p.facing == facing,
+        (p) =>
+            p.def.hung &&
+            p != ignore &&
+            p.facing == facing &&
+            p.cells.any(mine.contains),
       );
       if (other.isNotEmpty) return PlaceResult.taken;
       if (!free && coins < def.cost) return PlaceResult.broke;
@@ -1220,17 +1340,36 @@ class Diner {
       }
     }
     if (!free && coins < def.cost) return PlaceResult.broke;
-    if (!def.floor) {
-      // No pocket of floor may be cut off from the door.
-      final had = ignore != null && items.remove(ignore);
-      items.add(probe);
-      final open = reachable();
-      final all = insideCells().where(walkable).length;
-      items.remove(probe);
-      if (had) items.add(ignore);
-      if (open.length != all) return PlaceResult.blocksWay;
+    // No pocket of floor may be cut off from the door.
+    if (!def.floor && _shutIn(probe, ignore).isNotEmpty) {
+      return PlaceResult.blocksWay;
     }
     return PlaceResult.ok;
+  }
+
+  /// The floor tiles nobody could walk to from the door if [probe] stood
+  /// where it is, with [ignore] (a fixture being moved) taken away.
+  List<Cell> _shutIn(Placed probe, Placed? ignore) {
+    final had = ignore != null && items.remove(ignore);
+    items.add(probe);
+    final open = reachable();
+    final shut = [
+      for (final c in insideCells())
+        if (walkable(c) && !open.contains(c)) c,
+    ];
+    items.remove(probe);
+    if (had) items.add(ignore);
+    return shut;
+  }
+
+  /// The tiles that putting a [kind] at [at] would shut in, so the player can
+  /// be shown where the path is blocked. Empty if it would not.
+  List<Cell> cutOff(Kind kind, Cell at, {Dir facing = Dir.sw, Placed? ignore}) {
+    final def = fixtureDefs[kind]!;
+    if (def.floor || def.hung) return const [];
+    final probe = Placed(0, kind, at, kind == Kind.window ? Dir.se : facing);
+    if (probe.cells.any((c) => !isInside(c))) return const [];
+    return _shutIn(probe, ignore);
   }
 
   PlaceResult place(Kind kind, Cell at, [Dir? facing]) {
@@ -1319,6 +1458,35 @@ class Diner {
 
   bool canUnlock(int i) => whyLocked(i) == null;
 
+  /// When the room grows backwards, whatever hung on the old back wall is left
+  /// in the middle of the room. It moves to the new back wall, along the same
+  /// stretch if it fits and the nearest that does if not, and is sold back if
+  /// there is no room for it.
+  void _rehang() {
+    for (final p in items.where((p) => p.def.hung).toList()) {
+      if (hangsKind(p.kind, p.at, p.facing)) continue;
+      if (p.facing == Dir.sw) {
+        for (final dx in [0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5]) {
+          final x = p.at.x + dx;
+          var y = p.at.y;
+          while (isInside(Cell(x, y - 1))) {
+            y--;
+          }
+          final c = Cell(x, y);
+          if (check(p.kind, c, facing: Dir.sw, ignore: p, free: true) ==
+              PlaceResult.ok) {
+            p.at = c;
+            break;
+          }
+        }
+      }
+      if (!hangsKind(p.kind, p.at, p.facing)) {
+        items.remove(p);
+        coins += p.def.cost;
+      }
+    }
+  }
+
   /// Buys section [i]. The window moves out to the new end of the wall when
   /// the front is widened.
   bool unlock(int i) {
@@ -1328,6 +1496,7 @@ class Diner {
     clearUndo();
     final w = window;
     if (i == 1 && w != null) w.at = Cell(right, w.at.y);
+    _rehang();
     return true;
   }
 
@@ -1406,6 +1575,15 @@ class Diner {
     'owned': owned.toList()..sort(),
     'goals': goalsDone.toList()..sort(),
     'supplier': supplier.name,
+    'vend': vend.name,
+    'vendOn': vendingOn,
+    'contract': {
+      'day': contractDay,
+      'state': _contractState.name,
+      'order': _taken?.toJson(),
+      'crew': crewIds.toList()..sort(),
+      'closed': closedForOrder,
+    },
     'crowd': crowd.toJson(),
     'lastCrowd': ?lastCrowd?.toJson(),
     'history': [for (final h in history) h.toJson()],
@@ -1436,6 +1614,26 @@ class Diner {
     d.special = Dish.values.where((x) => x.name == j['special']).firstOrNull;
     d.crowd.add(Crowd.fromJson(j['crowd']));
     if (j['lastCrowd'] != null) d.lastCrowd = Crowd.fromJson(j['lastCrowd']);
+    final cj = j['contract'];
+    if (cj is Map) {
+      d.contractDay = cj['day'] is int ? cj['day'] as int : 0;
+      d._contractState =
+          ContractState.values
+              .where((x) => x.name == cj['state'])
+              .firstOrNull ??
+          ContractState.open;
+      d._taken = Contract.fromJson(cj['order']);
+      if (d._contractState == ContractState.accepted && d._taken == null) {
+        d._contractState = ContractState.open;
+      }
+      final crew = cj['crew'];
+      if (crew is List) d.crewIds.addAll(crew.whereType<int>());
+      d.closedForOrder = cj['closed'] == true;
+    }
+    d.vend =
+        Vend.values.where((x) => x.name == j['vend']).firstOrNull ??
+        Vend.drinks;
+    d.vendingOn = j['vendOn'] != false;
     final log = j['history'];
     if (log is List) {
       d.history.addAll([for (final h in log) ?DayLog.fromJson(h)]);
@@ -1517,7 +1715,7 @@ class Diner {
       final probe = Placed(0, kind, at, facing);
       final fits =
           probe.cells.every(d.isInside) &&
-          (!fixtureDefs[kind]!.hung || d.hangs(at, facing)) &&
+          (!fixtureDefs[kind]!.hung || d.hangsKind(kind, at, facing)) &&
           (kind != Kind.window ||
               probe.cells.every((c) => c.x == d.right && c.y >= top));
       if (fits) {

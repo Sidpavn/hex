@@ -48,6 +48,7 @@ class DinerPainter extends CustomPainter {
     this.placeOk,
     this.guestSel,
     this.group = const [],
+    this.groupMoving = false,
     this.ghostGroup = const [],
     this.expanding = false,
     this.plotSel,
@@ -103,6 +104,9 @@ class DinerPainter extends CustomPainter {
 
   /// The fixtures chosen to be moved, turned, copied or sold together.
   final List<Placed> group;
+
+  /// The group is being moved (not copied): it is lifted from where it is.
+  final bool groupMoving;
 
   /// Where a group being moved or copied would stand, as ghosts. They show
   /// whole when [placeOk], and in red when not.
@@ -171,6 +175,7 @@ class DinerPainter extends CustomPainter {
     double lift = 0,
     bool flip = false,
     bool dim = false,
+    bool faded = false,
   }) {
     if (spr.blank) return;
     final paint = dim ? _dimPaint : _paint;
@@ -185,6 +190,28 @@ class DinerPainter extends CustomPainter {
       spr.height.toDouble(),
     );
     final dst = Rect.fromLTWH(x * s, y * s, spr.width * s, spr.height * s);
+    if (faded) {
+      // Every other art pixel, like a dither: the thing is still there, but
+      // plainly not solid. (No fading: the pixel grid stays crisp.)
+      canvas.saveLayer(dst, Paint());
+      canvas.drawImageRect(spr.image, src, dst, paint);
+      final holes = Path();
+      for (var iy = 0; iy < spr.height; iy++) {
+        for (var ix = 0; ix < spr.width; ix++) {
+          if ((x + ix + y + iy).isOdd) {
+            holes.addRect(Rect.fromLTWH((x + ix) * s, (y + iy) * s, s, s));
+          }
+        }
+      }
+      canvas.drawPath(
+        holes,
+        Paint()
+          ..blendMode = BlendMode.dstOut
+          ..isAntiAlias = false,
+      );
+      canvas.restore();
+      return;
+    }
     if (!flip) {
       canvas.drawImageRect(spr.image, src, dst, paint);
       return;
@@ -208,12 +235,14 @@ class DinerPainter extends CustomPainter {
     Cell c, {
     bool flip = false,
     bool dim = false,
+    bool faded = false,
   }) => _blit(
     canvas,
     art.sprite(name),
     view.vertex(c.x, c.y),
     flip: flip,
     dim: dim,
+    faded: faded,
   );
 
   @override
@@ -246,10 +275,11 @@ class DinerPainter extends CustomPainter {
         _Drawn(
           // Hung things are on the wall behind whatever stands in the cell.
           (p.at.x + p.def.w - 1 + p.at.y + p.def.h - 1) -
-              (p.def.hung ? 0.5 : 0),
+              (p.def.hung ? 0.1 : 0),
           true,
           () => _fixture(canvas, p),
         ),
+      ..._walls(canvas),
       ..._front(canvas),
       for (final (name, c) in streetProps(diner))
         _Drawn((c.x + c.y).toDouble(), true, () => _cell(canvas, name, c)),
@@ -309,7 +339,6 @@ class DinerPainter extends CustomPainter {
     _cell(canvas, 'mat', diner.entrance);
 
     if (grid) _gridLines(canvas);
-    _walls(canvas);
   }
 
   /// The low wall along the front and down the right of whatever is owned,
@@ -326,7 +355,10 @@ class DinerPainter extends CustomPainter {
           }
         }),
     for (final c in diner.insideCells())
-      if (!diner.isInside(Cell(c.x + 1, c.y)))
+      // Where a section's side meets the back wall of the one in front of it,
+      // the tall wall hides the end of the low one: leave that piece out.
+      if (!diner.isInside(Cell(c.x + 1, c.y)) &&
+          !diner.isInside(Cell(c.x + 1, c.y + 1)))
         _Drawn(c.x + c.y + 1.5, true, () => _cell(canvas, _rightWall(c), c)),
   ];
 
@@ -340,7 +372,10 @@ class DinerPainter extends CustomPainter {
   }
 
   void _fixture(Canvas canvas, Placed p) {
-    _cell(canvas, spriteName(p.kind, p.facing), p.at);
+    // Whatever is being picked up stays where it was, faded, so the ghost
+    // does not look like a second one.
+    final lifted = p == moving || (groupMoving && group.contains(p));
+    _cell(canvas, spriteName(p.kind, p.facing), p.at, faded: lifted);
   }
 
   void _actor(Canvas canvas, Actor a) {
@@ -427,10 +462,16 @@ class DinerPainter extends CustomPainter {
 
   /// The tall walls: along the back of whatever is owned, and down its left.
   /// Wherever a section ends, its edge gets a wall.
-  void _walls(Canvas canvas) {
-    final back = <_Drawn>[];
-    void wall(String name, Cell c) => back.add(
-      _Drawn((c.x + c.y).toDouble(), true, () => _cell(canvas, name, c)),
+  ///
+  /// They are sorted in with everything else. A wall stands on the line just
+  /// in front of its own tile, so whatever is north or west of that line is
+  /// behind it, and whatever is on the room's side is in front: a low wall
+  /// across the gap beside a section is hidden by the tall wall in front of
+  /// it, not drawn over it.
+  List<_Drawn> _walls(Canvas canvas) {
+    final out = <_Drawn>[];
+    void wall(String name, Cell c) => out.add(
+      _Drawn(c.x + c.y + 1 - 0.25, true, () => _cell(canvas, name, c)),
     );
     String across(int x) {
       final i = x - Diner.left;
@@ -449,13 +490,7 @@ class DinerPainter extends CustomPainter {
       }
       if (north && west) wall('wall_corner', Cell(c.x - 1, c.y - 1));
     }
-    for (var i = 0; i < back.length; i++) {
-      back[i].seq = i;
-    }
-    back.sort();
-    for (final d in back) {
-      d.draw();
-    }
+    return out;
   }
 
   /// A red mark over every fixture the layout check complains about.
@@ -676,7 +711,26 @@ class DinerPainter extends CustomPainter {
       _line(path, c.translate(0, -4), c.translate(0, 4));
     }
     _stroke(canvas, path, ok ? _ok : _bad);
-    if (ok) _frontMarker(canvas, ghost);
+    if (ok) {
+      _frontMarker(canvas, ghost);
+    } else {
+      _shutInTiles(canvas, kind, at);
+    }
+  }
+
+  /// When a fixture would shut a tile in, the tile is marked, so it is clear
+  /// where the way is blocked.
+  void _shutInTiles(Canvas canvas, Kind kind, Cell at) {
+    final shut = diner.cutOff(kind, at, facing: facing, ignore: moving);
+    if (shut.isEmpty) return;
+    final path = Path();
+    for (final c in shut) {
+      _outline(path, c, 1, 1);
+      final m = view.vertex(c.x + 0.5, c.y + 0.5);
+      _line(path, m.translate(-6, 0), m.translate(6, 0));
+      _line(path, m.translate(0, -3), m.translate(0, 3));
+    }
+    _stroke(canvas, path, _bad);
   }
 
   /// While a window is being placed: every place on the right-hand wall it
@@ -744,6 +798,7 @@ class DinerPainter extends CustomPainter {
       old.placeOk != placeOk ||
       old.guestSel != guestSel ||
       old.group != group ||
+      old.groupMoving != groupMoving ||
       old.ghostGroup != ghostGroup ||
       old.plotSel != plotSel ||
       old.flashPlot != flashPlot ||

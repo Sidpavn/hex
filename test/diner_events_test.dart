@@ -106,6 +106,70 @@ void main() {
       expect(seen, containsAll(DayEvent.values));
     });
 
+    test('they do not come at regular gaps', () {
+      final days = [
+        for (var d = 2; d < 400; d++)
+          if (DayEvent.forDay(d, 6) != DayEvent.none) d,
+      ];
+      final gaps = {
+        for (var i = 1; i < days.length; i++) days[i] - days[i - 1],
+      };
+      // Next day, and a handful of different waits: nothing like every third
+      // or fourth day.
+      expect(gaps, contains(1));
+      expect(gaps.length, greaterThanOrEqualTo(5));
+      expect(gaps.reduce((a, b) => a > b ? a : b), greaterThanOrEqualTo(5));
+      final counts = <int, int>{};
+      for (var i = 1; i < days.length; i++) {
+        final g = days[i] - days[i - 1];
+        counts[g] = (counts[g] ?? 0) + 1;
+      }
+      // No one gap makes up most of them.
+      final common = counts.values.reduce((a, b) => a > b ? a : b);
+      expect(common / (days.length - 1), lessThan(0.45));
+    });
+
+    test('a run of special days, and a run of plain ones, both happen', () {
+      var special = 0;
+      var plain = 0;
+      var bestSpecial = 0;
+      var bestPlain = 0;
+      for (var d = 2; d < 500; d++) {
+        if (DayEvent.forDay(d, 6) == DayEvent.none) {
+          plain++;
+          special = 0;
+          bestPlain = plain > bestPlain ? plain : bestPlain;
+        } else {
+          special++;
+          plain = 0;
+          bestSpecial = special > bestSpecial ? special : bestSpecial;
+        }
+      }
+      expect(bestSpecial, greaterThanOrEqualTo(3));
+      expect(bestPlain, greaterThanOrEqualTo(5));
+    });
+
+    test('the same kind does not fall on every Nth day', () {
+      for (final kind in [DayEvent.rain, DayEvent.lunchRush, DayEvent.quiet]) {
+        final days = [
+          for (var d = 2; d < 600; d++)
+            if (DayEvent.forDay(d, 6) == kind) d,
+        ];
+        final gaps = {
+          for (var i = 1; i < days.length; i++) days[i] - days[i - 1],
+        };
+        expect(gaps.length, greaterThan(6), reason: kind.name);
+      }
+    });
+
+    test('two reviewers never come on back-to-back days', () {
+      for (var d = 3; d < 800; d++) {
+        final a = DayEvent.forDay(d - 1, 9);
+        final b = DayEvent.forDay(d, 9);
+        expect(a.reviewed && b.reviewed, isFalse, reason: 'day $d');
+      }
+    });
+
     test('there is no critic until the restaurant is worth reviewing', () {
       for (var day = 2; day < 600; day++) {
         for (var level = 1; level < DayEvent.criticLevel; level++) {
@@ -243,12 +307,22 @@ void main() {
       );
     });
 
-    test('the report remembers the day, and the toasts do not repeat it', () {
+    test('the report remembers the day, and the story tells it once', () {
       final r = play(cafe(day: dayWith(DayEvent.quiet)), seed: 2).result!;
       expect(r.event, DayEvent.quiet);
       expect(play(cafe(day: plainDay()), seed: 2).result!.event, DayEvent.none);
-      final sim = DinerSim(cafe(day: dayWith(DayEvent.rain)), seed: 2)..tick();
-      expect(sim.story.any((l) => l.text.startsWith('Today')), isFalse);
+      for (final e in [DayEvent.rain, DayEvent.lunchRush, DayEvent.quiet]) {
+        final sim = DinerSim(cafe(day: dayWith(e)), seed: 2)
+          ..tick()
+          ..tick();
+        expect(
+          sim.story.where((l) => l.text == 'Today: ${e.label}. ${e.blurb}'),
+          hasLength(1),
+          reason: e.label,
+        );
+      }
+      final plain = DinerSim(cafe(day: plainDay()), seed: 2)..tick();
+      expect(plain.story.any((l) => l.text.startsWith('Today')), isFalse);
     });
   });
 
@@ -414,24 +488,23 @@ void main() {
       expect(find.textContaining('Food critic'), findsOneWidget);
     });
 
-    testWidgets('starting an event day stops for an alert in the middle', (
+    testWidgets('an event day starts at once, with a note in the corner', (
       tester,
     ) async {
       final e = DayEvent.rain;
       await open(tester, cafe(day: dayWith(e)));
       await tester.tap(find.byKey(const ValueKey('start-day')));
       await tester.pump(const Duration(milliseconds: 300));
-      // The day has not begun: the alert is up and says what to expect.
-      expect(find.byKey(const ValueKey('event-ok')), findsOneWidget);
-      expect(find.text(e.label), findsOneWidget);
-      expect(find.text(e.blurb), findsOneWidget);
-      expect(find.byKey(const ValueKey('pause')), findsNothing);
-      final box = tester.getRect(find.byKey(const ValueKey('event-ok')));
-      expect(box.center.dx, closeTo(tester.view.physicalSize.width / 6, 2));
-      await tester.tap(find.byKey(const ValueKey('event-ok')));
-      await tester.pump(const Duration(milliseconds: 300));
+      // No alert in the middle of the screen: the day is already running.
       expect(find.byKey(const ValueKey('event-ok')), findsNothing);
       expect(find.byKey(const ValueKey('pause')), findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 300));
+      final note = find.textContaining('Today: ${e.label}');
+      expect(note, findsOneWidget);
+      // Small, and at the top left.
+      final box = tester.getRect(note);
+      expect(box.left, lessThan(tester.view.physicalSize.width / 6));
+      expect(box.top, lessThan(tester.view.physicalSize.height / 3 / 4));
     });
 
     testWidgets('an ordinary day starts straight away', (tester) async {

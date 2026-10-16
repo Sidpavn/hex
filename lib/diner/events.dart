@@ -1,4 +1,4 @@
-import 'dart:math' as math;
+import 'luck.dart';
 
 /// What makes a day different: a crowd at lunch, rain, a festival, a quiet
 /// spell, a shortage, or a food critic. Which one comes is fixed by the day
@@ -58,11 +58,23 @@ enum DayEvent {
   /// Someone comes to review the place.
   bool get reviewed => this == DayEvent.critic || this == DayEvent.blogger;
 
-  /// The event on [day] for a restaurant at [level].
+  /// How likely any given day is to have something special.
+  static const chance = 0.42;
+
+  /// The event on [day] for a restaurant at [level]. Every day is its own
+  /// toss: runs of special days and long stretches of plain ones both happen.
+  /// Two reviewers never come on back-to-back days.
   static DayEvent forDay(int day, int level) {
+    final e = _draw(day, level);
+    if (e.reviewed && day > 2 && _draw(day - 1, level).reviewed) {
+      return DayEvent.none;
+    }
+    return e;
+  }
+
+  static DayEvent _draw(int day, int level) {
     if (day <= 1) return DayEvent.none;
-    final rng = math.Random(day * 7919 + 13);
-    if (rng.nextDouble() >= 0.45) return DayEvent.none;
+    if (dayLuck(day, 1) >= chance) return DayEvent.none;
     final pool = <DayEvent, int>{
       DayEvent.lunchRush: 20,
       DayEvent.rain: 15,
@@ -72,7 +84,8 @@ enum DayEvent {
       if (level >= criticLevel) DayEvent.critic: 25,
       if (level >= bloggerLevel) DayEvent.blogger: 20,
     };
-    var pick = rng.nextInt(pool.values.reduce((a, b) => a + b));
+    final total = pool.values.reduce((a, b) => a + b);
+    var pick = (dayLuck(day, 2) * total).floor();
     for (final e in pool.entries) {
       if (pick < e.value) return e.key;
       pick -= e.value;
