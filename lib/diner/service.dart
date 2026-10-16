@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'actor.dart';
+import 'bank.dart';
 import 'crowd.dart';
 import 'diner.dart';
 import 'events.dart';
@@ -249,7 +250,7 @@ class CounterState {
   int timer = 0;
 }
 
-enum WorkState { idle, toPickup, toLoad, toDeliver, toClean }
+enum WorkState { idle, toPickup, toLoad, toDeliver, toClean, toRest, resting }
 
 class Worker extends Person {
   Worker(this.staff, super.cell);
@@ -267,6 +268,12 @@ class Worker extends Person {
 
   /// The seat they are on their way to clear.
   Seat? cleaning;
+
+  /// How much they have left in them, 0 to 100. Work wears it down, a rest in
+  /// the staff room builds it back, and below [tired] they slow down.
+  double energy = 100;
+  static const tired = 40.0;
+  bool get isTired => energy < tired;
 
   /// Ticks left on whatever they are doing with their hands.
   int busy = 0;
@@ -299,7 +306,7 @@ class Worker extends Person {
   bool walk() {
     final start = cell;
     mid = null;
-    _walkAcc += staff.pace * paceMul;
+    _walkAcc += staff.pace * paceMul * (isTired ? 0.85 : 1);
     var steps = _walkAcc.floor().clamp(0, 2);
     _walkAcc -= steps;
     var moved = false;
@@ -320,7 +327,7 @@ class Worker extends Person {
 
   /// Ticks to spend handling a plate now.
   int takeHandling() {
-    _handleAcc += staff.handlingTicks;
+    _handleAcc += staff.handlingTicks / (isTired ? 0.85 : 1);
     final n = _handleAcc.floor();
     _handleAcc -= n;
     return n;
@@ -367,6 +374,8 @@ class DayReport {
     this.queueFull = 0,
     this.spoiled = 0,
     this.crowd,
+    this.loanPaid = 0,
+    this.loanMissed = false,
     this.cars = 0,
     this.items = 0,
   });
@@ -431,6 +440,10 @@ class DayReport {
 
   /// Who came, by kind, and what they bought.
   final Crowd? crowd;
+
+  /// What the bank took tonight, and whether it went without.
+  final int loanPaid;
+  final bool loanMissed;
 
   /// How many of those served came by car, to the window.
   final int cars;
@@ -1668,7 +1681,56 @@ class DinerSim {
   int _cookTime(Dish dish, Staff staff) =>
       (progress.cookTicks(dish) * staff.masteryTime(dish)).round().clamp(2, 99);
 
+  /// How quickly [w] tires: hot-headed people fast, loyal ones slowly. A
+  /// worker on their feet tires faster than one standing about.
+  double _wear(Worker w) {
+    final trait = w.staff.has(Trait.hotHeaded)
+        ? 1.3
+        : w.staff.has(Trait.loyal)
+        ? 0.85
+        : 1.0;
+    final on = w.busy > 0 || w.state != WorkState.idle;
+    return (on ? 0.25 : 0.05) * trait;
+  }
+
+  /// Whether food is waiting to be cooked for someone, so a rest can be cut
+  /// short.
+  bool get _foodWaiting => guests.any(
+    (g) =>
+        g.state == GuestState.waiting &&
+        g.items.any((i) => i.state == ItemState.pending),
+  );
+
+  /// A worker with nothing to do and not much left goes to the staff room, if
+  /// there is one and a sofa free.
+  void _maybeRest(Worker w) {
+    if (diner.room.sofaCount == 0 || w.energy >= 55) return;
+    final taking = workers
+        .where(
+          (o) => o.state == WorkState.toRest || o.state == WorkState.resting,
+        )
+        .length;
+    if (taking >= diner.room.sofaCount) return;
+    final door = diner.staffDoor;
+    if (door == null) return;
+    final way = route(diner, w.cell, door);
+    if (way == null) return;
+    w
+      ..path = way
+      ..state = WorkState.toRest;
+  }
+
   void _work(Worker w) {
+    if (w.state == WorkState.resting) {
+      w.energy = math.min(100, w.energy + 1.0);
+      w.prev = w.cell;
+      // Back out when rested, or sooner if there is food nobody is cooking.
+      if (w.energy >= 85 || (w.energy >= Worker.tired && _foodWaiting)) {
+        w.state = WorkState.idle;
+      }
+      return;
+    }
+    w.energy = math.max(0, w.energy - _wear(w));
     if (w.busy > 0) {
       w.prev = w.cell;
       w.busy--;
@@ -1719,6 +1781,13 @@ class DinerSim {
         } else if (item.state == ItemState.claimed) {
           item.state = ItemState.pending;
         }
+      case WorkState.resting:
+        break;
+      case WorkState.toRest:
+        w.walk();
+        if (w.path.isNotEmpty) return;
+        // Through the door and out of sight.
+        w.state = WorkState.resting;
       case WorkState.toClean:
         w.walk();
         if (w.path.isNotEmpty) return;
@@ -2099,7 +2168,8 @@ class DinerSim {
         return;
       }
     }
-    _startLoading(w);
+    if (_startLoading(w)) return;
+    _maybeRest(w);
   }
 
   /// The window operator: fetches finished food for the cars, hands it over,
@@ -2523,6 +2593,35 @@ class DinerSim {
         Tone.mixed,
       );
     }
+    // The bank takes its share each night, after the wages.
+    var loanPaid = 0;
+    var loanMissed = false;
+    if (diner.loan > 0) {
+      final due = Bank.due(diner.loan);
+      if (diner.coins >= due) {
+        diner.coins -= due;
+        diner.loan -= due;
+        loanPaid = due;
+        diner.loanLate = 0;
+        if (diner.loan == 0) {
+          _tell('The loan is paid off.', Tone.good, key: 'loan');
+        }
+      } else {
+        loanMissed = true;
+        diner.loanLate++;
+        diner.loan += (diner.loan * Bank.latePenalty).ceil();
+        progress.reputation = (progress.reputation - Bank.lateRating).clamp(
+          0,
+          100,
+        );
+        _tell(
+          'The bank did not get its payment. It has been added to what you '
+          'owe.',
+          Tone.bad,
+          key: 'loan',
+        );
+      }
+    }
     final gained = progress.gain(xp);
     progress.day++;
     diner.history
@@ -2567,6 +2666,8 @@ class DinerSim {
       queueFull: queueFull,
       spoiled: spoiled,
       crowd: crowd,
+      loanPaid: loanPaid,
+      loanMissed: loanMissed,
       cars: carsServed,
       items: itemsServed,
     );
@@ -2645,6 +2746,8 @@ class DinerSim {
     }
 
     for (final w in workers) {
+      // Resting is out of sight, in the staff room.
+      if (w.state == WorkState.resting) continue;
       out.add(
         person(
           w,

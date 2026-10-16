@@ -16,6 +16,7 @@ import 'package:hex/main.dart';
 import 'package:hex/ui/pixel/pixel_assets.dart';
 import 'package:hex/ui/pixel/pixel_ui.dart' show PxText;
 import 'package:hex/ui/pixel_pie.dart';
+import 'support/office.dart';
 
 Diner cafe({int day = 1, int rep = 70, int cooks = 3}) {
   final d = Diner(
@@ -559,8 +560,7 @@ void main() {
 
     testWidgets('a restaurant with no guests says so', (tester) async {
       await open(tester, cafe());
-      await tester.tap(find.byKey(const ValueKey('stats')));
-      await tester.pumpAndSettle();
+      await openApp(tester, 'stats');
       expect(find.byKey(const ValueKey('crowd-empty')), findsOneWidget);
       expect(find.text('Nobody yet'), findsOneWidget);
       expect(find.byKey(const ValueKey('by-gender')), findsNothing);
@@ -572,8 +572,7 @@ void main() {
       final d = cafe(day: 3);
       play(d, seed: 2);
       await open(tester, d);
-      await tester.tap(find.byKey(const ValueKey('stats')));
-      await tester.pumpAndSettle();
+      await openApp(tester, 'stats');
       for (final k in ['by-gender', 'by-wallet']) {
         expect(find.byKey(ValueKey(k)), findsOneWidget);
         expect(find.byKey(ValueKey('$k-pie')), findsOneWidget);
@@ -604,8 +603,7 @@ void main() {
       final d = cafe(day: 3);
       play(d, seed: 2);
       await open(tester, d);
-      await tester.tap(find.byKey(const ValueKey('stats')));
-      await tester.pumpAndSettle();
+      await openApp(tester, 'stats');
       await tester.tap(find.byKey(const ValueKey('tab-dishes')));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('by-dish-pie')), findsOneWidget);
@@ -631,8 +629,7 @@ void main() {
       d.progress.day = 4;
       play(d, seed: 3);
       await open(tester, d);
-      await tester.tap(find.byKey(const ValueKey('stats')));
-      await tester.pumpAndSettle();
+      await openApp(tester, 'stats');
       await tester.tap(find.byKey(const ValueKey('tab-days')));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('by-day')), findsOneWidget);
@@ -647,8 +644,7 @@ void main() {
 
     testWidgets('an empty restaurant says so on every tab', (tester) async {
       await open(tester, cafe());
-      await tester.tap(find.byKey(const ValueKey('stats')));
-      await tester.pumpAndSettle();
+      await openApp(tester, 'stats');
       await tester.tap(find.byKey(const ValueKey('tab-dishes')));
       await tester.pump();
       expect(find.byKey(const ValueKey('dishes-empty')), findsOneWidget);
@@ -661,8 +657,7 @@ void main() {
       final d = cafe(day: 3);
       play(d, seed: 2);
       await open(tester, d);
-      await tester.tap(find.byKey(const ValueKey('stats')));
-      await tester.pumpAndSettle();
+      await openApp(tester, 'stats');
       var sum = 0;
       for (final g in Gender.values) {
         final t = tester.widget<PxText>(
@@ -679,8 +674,7 @@ void main() {
       d.progress.day = 4;
       final second = play(d, seed: 3).result!;
       await open(tester, d);
-      await tester.tap(find.byKey(const ValueKey('stats')));
-      await tester.pumpAndSettle();
+      await openApp(tester, 'stats');
       expect(find.textContaining('${d.crowd.total} guests'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('crowd-last')));
       await tester.pump();

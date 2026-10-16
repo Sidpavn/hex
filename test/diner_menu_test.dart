@@ -14,6 +14,7 @@ import 'package:hex/diner/staff.dart';
 import 'package:hex/main.dart';
 import 'package:hex/ui/pixel/pixel_assets.dart';
 import 'package:hex/ui/widgets.dart' show GoldButton;
+import 'support/office.dart';
 
 Staff person({
   int id = 70,
@@ -866,8 +867,7 @@ void main() {
     }
 
     Future<void> openMenu(WidgetTester tester) async {
-      await tester.tap(find.byKey(const ValueKey('menu')));
-      await tester.pumpAndSettle();
+      await openApp(tester, 'menu');
     }
 
     Future<void> show(WidgetTester tester, Finder f) async {
@@ -1074,8 +1074,7 @@ void main() {
       final s = d.roster.employees.single..mastery[Dish.burger] = 30;
       d.coins = 900;
       await open(tester, d);
-      await tester.tap(find.byKey(const ValueKey('staff')));
-      await tester.pumpAndSettle();
+      await openApp(tester, 'staff');
       await tester.tap(find.byKey(ValueKey('team-${s.id}')));
       await tester.pumpAndSettle();
       expect(find.byKey(ValueKey('mastery-${s.id}')), findsOneWidget);
@@ -1101,8 +1100,7 @@ void main() {
         person(id: 200, name: 'Gio', specialty: Dish.pizza),
       ];
       await open(tester, d);
-      await tester.tap(find.byKey(const ValueKey('staff')));
-      await tester.pumpAndSettle();
+      await openApp(tester, 'staff');
       await tester.tap(find.byKey(const ValueKey('hire')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('cand-200')));

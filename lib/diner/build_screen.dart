@@ -11,19 +11,16 @@ import 'diner.dart';
 import 'advice.dart';
 import 'events.dart';
 import 'goals.dart';
-import 'goals_screen.dart';
 import 'diner_art.dart';
 import 'diner_painter.dart';
 import 'iso.dart';
-import 'menu_screen.dart';
 import 'recipes.dart';
 import 'service.dart';
 import 'report_screen.dart';
-import 'staff_screen.dart';
-import 'stats_screen.dart';
+import 'room_screen.dart';
+import 'staff_room.dart';
 import 'toast.dart';
 import 'traits.dart';
-import 'upgrade_screen.dart';
 
 /// Where the day is up to. The layout can only be changed while building:
 /// once the doors open, you live with it.
@@ -154,6 +151,7 @@ class _BuildScreenState extends State<BuildScreen>
   @override
   void initState() {
     super.initState();
+    diner.ensureDoor();
     _coins = diner.coins;
     WidgetsBinding.instance.addObserver(this);
     _ticker = createTicker((elapsed) {
@@ -285,58 +283,48 @@ class _BuildScreenState extends State<BuildScreen>
     });
   }
 
-  Future<void> _openStaff() async {
-    await Navigator.of(
-      context,
-    ).push(MaterialPageRoute<void>(builder: (_) => StaffScreen(diner: diner)));
-    if (!mounted) return;
-    // Who works here may have changed.
-    setState(() {
-      sim = DinerSim(diner);
-      _coins = diner.coins;
-      _revision++;
-      _checkGoals();
-    });
+  /// Whether a tap at [c] is on the staff room's door: the tile in front of
+  /// it, or the wall it is set in.
+  bool _onDoor(Cell c) {
+    final d = diner.staffDoor;
+    if (d == null) return false;
+    return diner.pickAt(c)?.kind == Kind.staffDoor ||
+        c == Cell(d.x - 1, d.y - 1) ||
+        c == Cell(d.x - 1, d.y - 2);
   }
 
-  Future<void> _openGoals() async {
-    var startOver = false;
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
+  /// Opens the staff room. What it returns, if anything, is something the
+  /// computer asked the restaurant to do.
+  Future<void> _openStaffRoom() async {
+    final app = await Navigator.of(context).push<DeskApp>(
+      MaterialPageRoute(
         builder: (_) =>
-            GoalsScreen(diner: diner, onReset: () => startOver = true),
+            RoomScreen(diner: diner, sim: _phase == Phase.service ? sim : null),
       ),
     );
     if (!mounted) return;
-    setState(() {});
-    if (startOver) await _reset();
-  }
-
-  Future<void> _openMenu() async {
-    await Navigator.of(
-      context,
-    ).push(MaterialPageRoute<void>(builder: (_) => MenuScreen(diner: diner)));
-    if (!mounted) return;
-    setState(() {
-      sim = DinerSim(diner);
-      _coins = diner.coins;
-      _revision++;
-      _checkGoals();
-    });
-  }
-
-  Future<void> _openUpgrades() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => UpgradeScreen(diner: diner)),
-    );
-    if (!mounted) return;
-    // Staff and speeds may have changed.
-    setState(() {
-      sim = DinerSim(diner);
-      _coins = diner.coins;
-      _revision++;
-      _checkGoals();
-    });
+    // Anything bought or changed on the computer shows in the restaurant.
+    if (_phase == Phase.build) {
+      setState(() {
+        sim = DinerSim(diner);
+        _coins = diner.coins;
+        _revision++;
+        _checkGoals();
+      });
+    }
+    switch (app) {
+      case DeskApp.expand:
+        _startExpanding();
+      case DeskApp.moveDoor:
+        final door = diner.staffDoorItem;
+        if (door == null) return;
+        setState(() => _selected = door);
+        _startMove();
+      case DeskApp.reset:
+        await _reset();
+      default:
+        break;
+    }
   }
 
   // ------------------------------------------------------------- editing
@@ -577,6 +565,10 @@ class _BuildScreenState extends State<BuildScreen>
     setState(() {
       if (p.kind == Kind.window) {
         _note = 'The window is moved on its own';
+        return;
+      }
+      if (p.kind == Kind.staffDoor) {
+        _note = 'The door is moved on its own, from the staff room';
         return;
       }
       _note = '';
@@ -889,20 +881,6 @@ class _BuildScreenState extends State<BuildScreen>
               ],
             ),
           ),
-          if (_phase == Phase.build) ...[
-            GestureDetector(
-              key: const ValueKey('goals'),
-              behavior: HitTestBehavior.opaque,
-              onTap: _openGoals,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-                child: PxText(
-                  'Goals',
-                  style: const TextStyle(color: Pal.gold, fontSize: 14),
-                ),
-              ),
-            ),
-          ],
           PxText(
             ':coin: ${diner.coins}',
             style: const TextStyle(color: Pal.text, fontSize: 20),
@@ -948,6 +926,11 @@ class _BuildScreenState extends State<BuildScreen>
       if (r != PlaceResult.ok) return r.message;
       return '${describeFixture(def, progress)} '
           '${_moving == null ? 'Tap Place to put it down.' : 'Tap Put down.'}';
+    }
+    // Tonight's wages are more than is in the till: worth a look.
+    if (!_expanding && diner.coins < diner.roster.wages) {
+      return 'Wages tonight are ${diner.roster.wages}, more than is in the '
+          'till. Staff is on the computer in the staff room.';
     }
     // Nothing else to say: what is special about today.
     final today = diner.today;
@@ -1059,8 +1042,7 @@ class _BuildScreenState extends State<BuildScreen>
         else if (_selecting)
           ..._groupRows()
         else ...[
-          if (sel != null) _selectedRow(sel) else _idleRow(),
-          const SizedBox(height: 8),
+          if (sel != null) ...[_selectedRow(sel), const SizedBox(height: 8)],
           _bottomRow(),
         ],
       ],
@@ -1073,17 +1055,18 @@ class _BuildScreenState extends State<BuildScreen>
     child: Row(
       children: [
         for (final def in fixtureDefs.values)
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: _FixtureTile(
-              key: ValueKey('fixture-${def.kind.name}'),
-              def: def,
-              selected: _placing == def.kind,
-              affordable: diner.coins >= def.cost,
-              locked: def.unlock > diner.progress.level,
-              onTap: () => _pick(def.kind),
+          if (def.kind != Kind.staffDoor || diner.staffDoor == null)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: _FixtureTile(
+                key: ValueKey('fixture-${def.kind.name}'),
+                def: def,
+                selected: _placing == def.kind,
+                affordable: diner.coins >= def.cost,
+                locked: def.unlock > diner.progress.level,
+                onTap: () => _pick(def.kind),
+              ),
             ),
-          ),
       ],
     ),
   );
@@ -1250,7 +1233,7 @@ class _BuildScreenState extends State<BuildScreen>
     ],
   );
 
-  Widget _idleRow() => Row(
+  Widget _bottomRow() => Row(
     children: [
       Expanded(
         child: GoldButton(
@@ -1259,64 +1242,6 @@ class _BuildScreenState extends State<BuildScreen>
           filled: false,
           color: diner.canUndo ? Pal.text : Pal.dim,
           onTap: diner.canUndo ? _undo : null,
-        ),
-      ),
-      const SizedBox(width: 8),
-      Expanded(
-        child: GoldButton(
-          key: const ValueKey('expand'),
-          label: 'Expand',
-          filled: false,
-          color: Pal.text,
-          onTap: _startExpanding,
-        ),
-      ),
-      const SizedBox(width: 8),
-      Expanded(
-        child: GoldButton(
-          key: const ValueKey('upgrades'),
-          label: 'Upgrades',
-          filled: false,
-          color: Pal.text,
-          onTap: _openUpgrades,
-        ),
-      ),
-    ],
-  );
-
-  Widget _bottomRow() => Row(
-    children: [
-      Expanded(
-        child: GoldButton(
-          key: const ValueKey('staff'),
-          // A red flag when tonight's wages are more than is in the till:
-          // the takings may still cover it, but it is worth a look.
-          label: diner.coins < diner.roster.wages ? 'Staff !' : 'Staff',
-          filled: false,
-          color: diner.coins < diner.roster.wages ? Pal.red : Pal.text,
-          onTap: _openStaff,
-        ),
-      ),
-      const SizedBox(width: 8),
-      Expanded(
-        child: GoldButton(
-          key: const ValueKey('menu'),
-          label: 'Menu',
-          filled: false,
-          color: Pal.text,
-          onTap: _openMenu,
-        ),
-      ),
-      const SizedBox(width: 8),
-      Expanded(
-        child: GoldButton(
-          key: const ValueKey('stats'),
-          label: 'Stats',
-          filled: false,
-          color: Pal.text,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(builder: (_) => StatsScreen(diner: diner)),
-          ),
         ),
       ),
       const SizedBox(width: 8),
@@ -1790,6 +1715,13 @@ class _BuildScreenState extends State<BuildScreen>
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTapDown: (d) {
+              if (!_expanding &&
+                  !_selecting &&
+                  !_aiming &&
+                  _onDoor(cellAt(d.localPosition))) {
+                _openStaffRoom();
+                return;
+              }
               if (_phase == Phase.service) {
                 _tapGuest(pickCell(d.localPosition), cellAt(d.localPosition));
                 return;

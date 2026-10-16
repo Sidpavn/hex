@@ -12,6 +12,7 @@ import 'package:hex/diner/iso.dart';
 import 'package:hex/diner/recipes.dart';
 import 'package:hex/main.dart';
 import 'package:hex/ui/pixel/pixel_assets.dart';
+import 'support/office.dart';
 
 void main() {
   final board = find.byKey(const ValueKey('diner-board'));
@@ -145,8 +146,7 @@ void main() {
   testWidgets('upgrades can be bought between days', (tester) async {
     final d = await open(tester);
     d.coins = 1000;
-    await tester.tap(find.byKey(const ValueKey('upgrades')));
-    await tester.pumpAndSettle();
+    await openApp(tester, 'upgrades');
     expect(find.text('Upgrades'), findsWidgets);
     final cost = d.progress.upgradeCost(Upgrade.kitchen)!;
     final before = d.coins;
@@ -210,7 +210,7 @@ void main() {
       tester.pump(const Duration(milliseconds: 100));
 
   Future<void> expand(WidgetTester tester) async {
-    await tester.tap(find.byKey(const ValueKey('expand')));
+    await openApp(tester, 'expand');
     await beat(tester);
   }
 
@@ -293,6 +293,8 @@ void main() {
     final d = await open(tester);
     d.coins = 50000;
     d.progress.level = 9;
+    // Goals pay as things happen: leave them out of the sums here.
+    d.goalsDone.addAll([for (final g in goals) g.id]);
     await expand(tester);
     await tester.tapAt(onCell(tester, const Cell(9, -4)));
     await beat(tester);
@@ -352,15 +354,19 @@ void main() {
 
   /// Start over is on the goals page, out of the way.
   Future<void> openReset(WidgetTester tester) async {
-    await tester.tap(find.byKey(const ValueKey('goals')));
-    await tester.pumpAndSettle();
+    await openApp(tester, 'goals');
     await tester.scrollUntilVisible(
       find.byKey(const ValueKey('reset')),
       200,
       scrollable: find.byType(Scrollable).first,
     );
+    await tester.ensureVisible(find.byKey(const ValueKey('reset')));
+    await tester.pump();
     await tester.tap(find.byKey(const ValueKey('reset')));
-    await tester.pump(const Duration(milliseconds: 600));
+    // Goals, the computer and the staff room each close in turn, then it asks.
+    for (var i = 0; i < 8; i++) {
+      await tester.pump(const Duration(milliseconds: 400));
+    }
   }
 
   testWidgets('reset wipes the saved restaurant, after asking', (tester) async {
@@ -369,6 +375,7 @@ void main() {
     d.progress.level = 4;
     d.progress.day = 9;
     d.items.clear();
+    d.ensureDoor();
     Storage.saveDiner(d);
     expect(Storage.diner, isNotNull);
 
@@ -398,13 +405,14 @@ void main() {
     expect(find.text('Start day 1'), findsOneWidget);
   });
 
-  testWidgets('there is no goals button while the diner is open', (
+  testWidgets('the menu and the rest are on the computer, not on buttons', (
     tester,
   ) async {
     await open(tester);
-    expect(find.byKey(const ValueKey('goals')), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('start-day')));
-    await tester.pump();
-    expect(find.byKey(const ValueKey('goals')), findsNothing);
+    for (final k in ['menu', 'staff', 'stats', 'upgrades', 'goals', 'expand']) {
+      expect(find.byKey(ValueKey(k)), findsNothing, reason: k);
+    }
+    expect(find.byKey(const ValueKey('start-day')), findsOneWidget);
+    expect(find.byKey(const ValueKey('undo')), findsOneWidget);
   });
 }

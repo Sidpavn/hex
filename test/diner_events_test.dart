@@ -13,6 +13,7 @@ import 'package:hex/diner/service.dart';
 import 'package:hex/diner/staff.dart';
 import 'package:hex/main.dart';
 import 'package:hex/ui/pixel/pixel_assets.dart';
+import 'support/office.dart';
 
 /// The first day from [from] with [event] at [level].
 int dayWith(DayEvent event, {int level = 5, int from = 2}) {
@@ -445,8 +446,7 @@ void main() {
     testWidgets('the portions page knows how many to expect', (tester) async {
       final d = cafe(day: dayWith(DayEvent.festival));
       await open(tester, d);
-      await tester.tap(find.byKey(const ValueKey('menu')));
-      await tester.pumpAndSettle();
+      await openApp(tester, 'menu');
       await tester.tap(find.byKey(const ValueKey('open-prep')));
       await tester.pumpAndSettle();
       expect(find.textContaining('street festival'), findsOneWidget);

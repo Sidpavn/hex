@@ -14,6 +14,7 @@ import 'package:hex/diner/service.dart';
 import 'package:hex/diner/staff.dart';
 import 'package:hex/main.dart';
 import 'package:hex/ui/pixel/pixel_assets.dart';
+import 'support/office.dart';
 
 Diner kitchen({int rep = 70, int staff = 3, Tier tier = Tier.standard}) {
   final d = Diner(
@@ -336,8 +337,7 @@ void main() {
       final d = kitchen();
       await tester.pumpWidget(HexApp(home: BuildScreen(diner: d)));
       await tester.pump();
-      await tester.tap(find.byKey(const ValueKey('menu')));
-      await tester.pumpAndSettle();
+      await openApp(tester, 'menu');
       await tester.tap(find.byKey(const ValueKey('dish-burger')));
       await tester.pumpAndSettle();
       return d;

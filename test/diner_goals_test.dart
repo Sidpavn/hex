@@ -11,6 +11,7 @@ import 'package:hex/diner/service.dart';
 import 'package:hex/diner/staff.dart';
 import 'package:hex/main.dart';
 import 'package:hex/ui/pixel/pixel_assets.dart';
+import 'support/office.dart';
 
 DayReport report({
   int served = 5,
@@ -107,8 +108,9 @@ void main() {
       final d = Diner.starter();
       expect(
         d.hint,
-        'Goal: Open the doors. Press Start day when you are ready. Guests '
-        'come to the door.',
+        'Goal: Open the doors. Press Start day when you are ready. The door '
+        'in the back wall is the staff room: its computer has the menu, '
+        'staff and the rest.',
       );
     });
   });
@@ -137,7 +139,7 @@ void main() {
       expect(
         meets('fries', (d) {
           d.progress.level = 2;
-          d.place(Kind.fryer, const Cell(4, 3), Dir.sw);
+          d.place(Kind.fryer, const Cell(5, 3), Dir.sw);
         }),
         isTrue,
       );
@@ -330,8 +332,7 @@ void main() {
       tester,
     ) async {
       await open(tester);
-      await tester.tap(find.byKey(const ValueKey('goals')));
-      await tester.pumpAndSettle();
+      await openApp(tester, 'goals');
       expect(find.text('0 of ${goals.length} done'), findsOneWidget);
       for (final id in ['open', 'serve10', 'level2']) {
         expect(find.byKey(ValueKey('goal-$id')), findsOneWidget);
@@ -343,8 +344,7 @@ void main() {
     testWidgets('done goals move to the bottom, marked', (tester) async {
       final d = Diner.starter()..goalsDone.add('open');
       await open(tester, diner: d);
-      await tester.tap(find.byKey(const ValueKey('goals')));
-      await tester.pumpAndSettle();
+      await openApp(tester, 'goals');
       expect(find.text('1 of ${goals.length} done'), findsOneWidget);
       // The next three have moved on.
       expect(find.byKey(const ValueKey('goal-rating2')), findsOneWidget);
@@ -385,15 +385,16 @@ void main() {
     ) async {
       final d = await open(tester);
       d.goalsDone.addAll(['open', 'serve10', 'level2', 'rating2', 'fries']);
-      await tester.tap(find.byKey(const ValueKey('menu')));
-      await tester.pumpAndSettle();
+      await openApp(tester, 'menu');
       await tester.tap(find.byKey(const ValueKey('dish-burger')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('price-plus')));
       await tester.pump();
-      tester.state<NavigatorState>(find.byType(Navigator)).pop();
-      await tester.pumpAndSettle();
-      tester.state<NavigatorState>(find.byType(Navigator)).pop();
+      // Back out: dish, menu, computer, staff room.
+      for (var i = 0; i < 4; i++) {
+        tester.state<NavigatorState>(find.byType(Navigator)).pop();
+        await tester.pump(const Duration(milliseconds: 500));
+      }
       await tester.pump(const Duration(milliseconds: 500));
       expect(d.goalsDone, contains('price'));
       expect(
@@ -406,8 +407,7 @@ void main() {
       final d = Diner.starter()
         ..goalsDone.addAll([for (final g in goals) g.id]);
       await open(tester, diner: d);
-      await tester.tap(find.byKey(const ValueKey('goals')));
-      await tester.pumpAndSettle();
+      await openApp(tester, 'goals');
       expect(find.byKey(const ValueKey('all-done')), findsOneWidget);
     });
   });

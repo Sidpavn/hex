@@ -8,6 +8,7 @@ import 'package:hex/diner/diner_painter.dart';
 import 'package:hex/diner/iso.dart';
 import 'package:hex/main.dart';
 import 'package:hex/ui/pixel/pixel_assets.dart';
+import 'support/office.dart';
 
 void main() {
   group('BoardFit', () {
@@ -199,8 +200,7 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('zoom-in')));
       await tester.pump();
       expect(fit(tester).zoomed, isTrue);
-      await tester.tap(find.byKey(const ValueKey('expand')));
-      await tester.pump(const Duration(milliseconds: 100));
+      await openApp(tester, 'expand');
       expect(fit(tester).zoomed, isFalse, reason: 'the whole plot is shown');
       await tester.tap(find.byKey(const ValueKey('buy-plot')));
       await tester.pump(const Duration(milliseconds: 100));

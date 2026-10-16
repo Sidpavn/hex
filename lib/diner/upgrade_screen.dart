@@ -25,6 +25,7 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
     setState(() {
       diner.coins -= cost;
       progress.upgrades[u] = progress.upgradeLvl(u) + 1;
+      diner.syncSofas();
     });
     Storage.saveDiner(diner);
   }

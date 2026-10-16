@@ -116,7 +116,7 @@ void main() {
       d.place(Kind.plant, const Cell(5, 5));
       d.undo();
       final back = Diner.fromJson(d.toJson());
-      expect(back.items.length, 1);
+      expect(back.items.where((p) => p.kind != Kind.staffDoor).length, 1);
       expect(back.coins, d.coins);
     });
   });
@@ -381,7 +381,11 @@ void main() {
       final at = painter(tester).hover;
       expect(at, isNotNull);
       expect(d.check(Kind.table, at!), PlaceResult.ok);
-      expect(d.items.length, 9, reason: 'nothing placed yet');
+      expect(
+        d.items.where((p) => p.kind != Kind.staffDoor).length,
+        9,
+        reason: 'nothing placed yet',
+      );
     });
 
     testWidgets('tapping or dragging the board never places anything', (

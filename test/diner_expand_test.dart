@@ -13,6 +13,7 @@ import 'package:hex/diner/diner_painter.dart';
 import 'package:hex/diner/iso.dart';
 import 'package:hex/main.dart';
 import 'package:hex/ui/pixel/pixel_assets.dart';
+import 'support/office.dart';
 
 void main() {
   const size = ui.Size(390, 560);
@@ -240,8 +241,7 @@ void main() {
       tester,
     ) async {
       await open(tester);
-      await tester.tap(find.byKey(const ValueKey('expand')));
-      await tester.pump(const Duration(milliseconds: 50));
+      await openApp(tester, 'expand');
       await tester.tapAt(onCell(tester, const Cell(3, 0)));
       await tester.pump();
       expect(painter(tester).flashPlot, 2);
@@ -259,8 +259,7 @@ void main() {
       tester,
     ) async {
       await open(tester);
-      await tester.tap(find.byKey(const ValueKey('expand')));
-      await tester.pump(const Duration(milliseconds: 50));
+      await openApp(tester, 'expand');
       await tester.tap(find.byKey(const ValueKey('buy-plot')));
       await tester.pump();
       expect(painter(tester).flashPlot, 1);
@@ -271,8 +270,7 @@ void main() {
 
     testWidgets('nothing flashes when the mode is left', (tester) async {
       await open(tester);
-      await tester.tap(find.byKey(const ValueKey('expand')));
-      await tester.pump(const Duration(milliseconds: 50));
+      await openApp(tester, 'expand');
       await tester.tap(find.byKey(const ValueKey('done-expanding')));
       await tester.pump(const Duration(milliseconds: 600));
       expect(painter(tester).flash, 0);

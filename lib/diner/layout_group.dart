@@ -108,6 +108,7 @@ extension GroupEditing on Diner {
   }) {
     final list = group.toList();
     if (list.any((p) => p.kind == Kind.window)) return PlaceResult.wall;
+    if (list.any((p) => p.kind == Kind.staffDoor)) return PlaceResult.hang;
     final moved = movedBy(list, m);
     final own = list.toSet();
     final taken = <Cell>{};
@@ -120,7 +121,9 @@ extension GroupEditing on Diner {
       final floor = mv.from.def.floor;
       for (final c in mv.cells) {
         if (!isInside(c)) return PlaceResult.outside;
-        if (!floor && c == entrance) return PlaceResult.entrance;
+        if (!floor && (c == entrance || c == staffDoor)) {
+          return PlaceResult.entrance;
+        }
         final other = floor ? floorAt(c) : objectAt(c);
         if (other != null && (copy || !own.contains(other))) {
           return PlaceResult.taken;
@@ -189,6 +192,7 @@ extension GroupEditing on Diner {
           : 'Sold ${list.length} fixtures',
     );
     for (final p in list) {
+      if (p.kind == Kind.staffDoor) continue;
       items.remove(p);
       coins += p.def.refund;
     }

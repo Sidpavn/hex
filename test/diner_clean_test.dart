@@ -15,6 +15,7 @@ import 'package:hex/diner/service.dart';
 import 'package:hex/diner/staff.dart';
 import 'package:hex/main.dart';
 import 'package:hex/ui/pixel/pixel_assets.dart';
+import 'support/office.dart';
 
 Staff person(int id, {Kind? duty}) => Staff(
   id: id,
@@ -389,8 +390,7 @@ void main() {
       await tester.pumpWidget(HexApp(home: BuildScreen(diner: d)));
       await tester.pump();
       final s = d.roster.employees.first;
-      await tester.tap(find.byKey(const ValueKey('staff')));
-      await tester.pumpAndSettle();
+      await openApp(tester, 'staff');
       await tester.tap(find.byKey(ValueKey('team-${s.id}')));
       await tester.pumpAndSettle();
       expect(find.text('Clears tables'), findsOneWidget);

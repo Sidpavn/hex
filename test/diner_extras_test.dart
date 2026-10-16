@@ -17,6 +17,7 @@ import 'package:hex/diner/staff.dart';
 import 'package:hex/diner/suppliers.dart';
 import 'package:hex/main.dart';
 import 'package:hex/ui/pixel/pixel_assets.dart';
+import 'support/office.dart';
 
 int dayWith(DayEvent event, {int level = 5}) {
   for (var d = 2; d < 600; d++) {
@@ -477,8 +478,7 @@ void main() {
       tester,
     ) async {
       final d = await open(tester, cafe());
-      await tester.tap(find.byKey(const ValueKey('menu')));
-      await tester.pumpAndSettle();
+      await openApp(tester, 'menu');
       await tester.tap(find.byKey(const ValueKey('dish-burger')));
       await tester.pumpAndSettle();
       final btn = find.byKey(const ValueKey('special'));
@@ -497,8 +497,7 @@ void main() {
     testWidgets('the menu says which dish is the special', (tester) async {
       final d = cafe()..toggleSpecial(Dish.burger);
       await open(tester, d);
-      await tester.tap(find.byKey(const ValueKey('menu')));
-      await tester.pumpAndSettle();
+      await openApp(tester, 'menu');
       expect(find.textContaining('special'), findsOneWidget);
     });
 
@@ -506,8 +505,7 @@ void main() {
       'the portions page chooses the supplier, and says what it means',
       (tester) async {
         final d = await open(tester, cafe());
-        await tester.tap(find.byKey(const ValueKey('menu')));
-        await tester.pumpAndSettle();
+        await openApp(tester, 'menu');
         await tester.tap(find.byKey(const ValueKey('open-prep')));
         await tester.pumpAndSettle();
         expect(find.byKey(const ValueKey('suppliers')), findsOneWidget);
@@ -525,8 +523,7 @@ void main() {
 
     testWidgets('the farm is locked until level 3', (tester) async {
       final d = await open(tester, cafe(level: 2));
-      await tester.tap(find.byKey(const ValueKey('menu')));
-      await tester.pumpAndSettle();
+      await openApp(tester, 'menu');
       await tester.tap(find.byKey(const ValueKey('open-prep')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('supplier-farm')));

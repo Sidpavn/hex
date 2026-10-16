@@ -247,7 +247,7 @@ void main() {
           {'k': 'table', 'x': 3, 'y': 4, 'f': 'sw'},
         ],
       });
-      expect(d.items.length, 1);
+      expect(d.items.where((p) => p.kind != Kind.staffDoor).length, 1);
       expect(d.coins, fixtureDefs[Kind.table]!.cost);
     });
   });

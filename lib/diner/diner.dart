@@ -6,7 +6,9 @@ library;
 
 import 'dart:math' as math;
 
+import 'bank.dart';
 import 'crowd.dart';
+import 'room.dart';
 import 'events.dart';
 import 'suppliers.dart';
 import 'recipes.dart';
@@ -100,6 +102,7 @@ enum Kind {
   jukebox,
   tv,
   rug,
+  staffDoor,
 }
 
 /// What a fixture does in the restaurant.
@@ -201,7 +204,11 @@ class FixtureDef {
 
   /// Whether it has a front that matters.
   bool get turns =>
-      hung || (role != Role.decor && role != Role.table && role != Role.window);
+      (hung && kind != Kind.staffDoor) ||
+      (!hung &&
+          role != Role.decor &&
+          role != Role.table &&
+          role != Role.window);
 
   int get refund => cost ~/ 2;
 }
@@ -329,6 +336,16 @@ const Map<Kind, FixtureDef> fixtureDefs = {
     unlock: 3,
     aura: Aura(AuraEffect.patience, 2, 0.6),
     info: 'Hangs on the back or left wall. Guests near it wait longer.',
+  ),
+  Kind.staffDoor: FixtureDef(
+    Kind.staffDoor,
+    'Staff room door',
+    0,
+    Role.decor,
+    hung: true,
+    info:
+        'The door to the staff room, anywhere along the back wall. Tap it to '
+        'open the room and its computer.',
   ),
   Kind.rug: FixtureDef(
     Kind.rug,
@@ -481,7 +498,9 @@ enum PlaceResult {
   wall,
   noRoad,
   onlyOne,
-  hang;
+  hang,
+  oneDoor,
+  backWallOnly;
 
   /// What to tell the player when a placement is refused.
   String get message => switch (this) {
@@ -497,6 +516,8 @@ enum PlaceResult {
     noRoad => 'Needs the room to the right first',
     onlyOne => 'One window is enough',
     hang => 'Hangs on the back or left wall',
+    oneDoor => 'One door is enough',
+    backWallOnly => 'The door goes in the back wall',
   };
 }
 
@@ -529,6 +550,7 @@ class Diner {
     d._put(Kind.chair, const Cell(left, top + 2), Dir.se);
     d._put(Kind.table, const Cell(left + 4, top + 2));
     d._put(Kind.chair, const Cell(left + 5, top + 2), Dir.nw);
+    d.ensureDoor();
     return d;
   }
 
@@ -627,6 +649,37 @@ class Diner {
   final Crowd crowd = Crowd();
   Crowd? lastCrowd;
 
+  /// What is owed to the bank, and how many nights in a row a payment was
+  /// missed.
+  int loan = 0;
+  int loanLate = 0;
+
+  /// Whether the bank will make [o] now: nothing owed, and a restaurant big
+  /// enough.
+  String? whyNotLend(LoanOffer o) {
+    if (loan > 0) return 'Pay off what you owe first';
+    if (progress.level < o.level) return 'Opens at level ${o.level}';
+    return null;
+  }
+
+  /// Takes the loan [o]. Returns whether it was made.
+  bool borrow(LoanOffer o) {
+    if (whyNotLend(o) != null) return false;
+    coins += o.amount;
+    loan = o.owed;
+    loanLate = 0;
+    return true;
+  }
+
+  /// Pays back up to [amount] of the loan now. Returns what was paid.
+  int repay(int amount) {
+    final n = math.max(0, math.min(amount, math.min(loan, coins)));
+    coins -= n;
+    loan -= n;
+    if (loan == 0) loanLate = 0;
+    return n;
+  }
+
   /// How each of the last days went, oldest first.
   final List<DayLog> history = [];
 
@@ -696,6 +749,133 @@ class Diner {
   int get right => owned.contains(1) ? plots[1].x1 : plots[0].x1;
   int get width => right - left + 1;
   int get height => bottom - top + 1;
+
+  /// How many sofas the staff room may hold: one for each level of the
+  /// upgrade.
+  int get loungeLevel => progress.upgradeLvl(Upgrade.lounge);
+
+  /// The staff room behind the door: its computer, sofas and the rest.
+  StaffRoom room = StaffRoom.starter();
+
+  /// Makes sure every sofa the upgrade allows is in the room, putting new ones
+  /// on the first free tile.
+  void syncSofas() {
+    while (room.sofaCount < loungeLevel) {
+      final spot = room.freeSpot(RoomKind.sofa, sofas: loungeLevel);
+      if (spot == null) return;
+      room.put(RoomKind.sofa, spot, Dir.sw);
+    }
+  }
+
+  /// Puts a new [kind] in the staff room at [at], paying for it.
+  RoomResult roomPlace(RoomKind kind, Cell at, Dir facing) {
+    final def = roomDefs[kind]!;
+    final r = room.check(kind, at, sofas: loungeLevel);
+    if (r != RoomResult.ok) return r;
+    if (coins < def.cost) return RoomResult.broke;
+    coins -= def.cost;
+    room.put(kind, at, def.turns ? facing : Dir.sw);
+    return RoomResult.ok;
+  }
+
+  /// Moves or turns [i] in the room, for free.
+  RoomResult roomMove(RoomItem i, Cell at, Dir facing) {
+    final r = room.check(i.kind, at, sofas: loungeLevel, ignore: i);
+    if (r != RoomResult.ok) return r;
+    i.at = at;
+    if (i.def.turns) i.facing = facing;
+    return r;
+  }
+
+  /// Sells [i] for what it is worth. The computer and the sofas stay.
+  void roomSell(RoomItem i) {
+    if (i.kind == RoomKind.computer || i.kind == RoomKind.sofa) return;
+    if (!room.items.remove(i)) return;
+    coins += i.def.refund;
+  }
+
+  /// The door to the staff room, hung on the back wall. There is one once the
+  /// room is built. Null before that.
+  Placed? get staffDoorItem {
+    for (final p in items) {
+      if (p.kind == Kind.staffDoor) return p;
+    }
+    return null;
+  }
+
+  /// The tile in front of the door, which must stay clear.
+  Cell? get staffDoor => staffDoorItem?.at;
+
+  /// Where the back wall is at column [x]: the first row of the restaurant
+  /// there, counting from the front. Null if the column is not the room's.
+  int? backRowAt(int x) {
+    final rows = [
+      for (final i in owned)
+        if (plots[i].x0 <= x && x <= plots[i].x1) plots[i].y0,
+    ];
+    return rows.isEmpty ? null : rows.reduce((a, b) => a < b ? a : b);
+  }
+
+  /// A free place for the staff room door along the back wall, nearest the
+  /// middle, or null if the whole wall is taken.
+  Cell? doorSpot() {
+    final mid = (left + right) ~/ 2;
+    final xs = [for (var x = left; x <= right; x++) x]
+      ..sort((a, b) => (a - mid).abs().compareTo((b - mid).abs()));
+    for (final x in xs) {
+      final y = backRowAt(x);
+      if (y == null) continue;
+      final c = Cell(x, y);
+      if (check(Kind.staffDoor, c, free: true) == PlaceResult.ok) return c;
+    }
+    return null;
+  }
+
+  /// Hangs the door if there is none: every restaurant has a staff room.
+  void ensureDoor() {
+    if (staffDoor == null) placeStaffDoor();
+  }
+
+  /// Hangs the door at the first free place on the back wall. Returns whether
+  /// there was one.
+  bool placeStaffDoor() {
+    final c = doorSpot();
+    if (c == null) return false;
+    _put(Kind.staffDoor, c, Dir.sw);
+    return true;
+  }
+
+  /// When the room grows backwards, what hung on the old back wall is left
+  /// in the middle of the room. It goes to the new back wall, along the same
+  /// column if it can, and is sold back if there is no room for it.
+  void _rehang() {
+    for (final p in items.toList()) {
+      if (!p.def.hung || hangs(p.at, p.facing)) continue;
+      var y = p.at.y;
+      while (isInside(Cell(p.at.x, y - 1))) {
+        y--;
+      }
+      final xs = [for (var x = left; x <= right; x++) x]
+        ..sort((a, b) => (a - p.at.x).abs().compareTo((b - p.at.x).abs()));
+      Cell? to;
+      for (final x in xs) {
+        final top = backRowAt(x);
+        if (top == null) continue;
+        final c = Cell(x, top);
+        if (check(p.kind, c, facing: Dir.sw, ignore: p, free: true) ==
+            PlaceResult.ok) {
+          to = c;
+          break;
+        }
+      }
+      if (to != null && p.facing == Dir.sw) {
+        p.at = to;
+      } else if (p.kind != Kind.staffDoor) {
+        items.remove(p);
+        coins += p.def.cost;
+      }
+    }
+  }
 
   /// The door is in the bottom row, two cells in from the left wall, and it
   /// never moves sideways so growing the room can't put it under a fixture.
@@ -1196,6 +1376,17 @@ class Diner {
     for (final c in probe.cells) {
       if (!isInside(c)) return PlaceResult.outside;
     }
+    if (kind == Kind.staffDoor) {
+      if (items.any((p) => p.kind == Kind.staffDoor && p != ignore)) {
+        return PlaceResult.oneDoor;
+      }
+      if (facing != Dir.sw || !hangs(at, Dir.sw)) {
+        return PlaceResult.backWallOnly;
+      }
+      // Someone has to be able to walk up to it.
+      final other = objectAt(at);
+      if (other != null && other != ignore) return PlaceResult.taken;
+    }
     if (def.hung) {
       if (!hangs(at, facing)) return PlaceResult.hang;
       final other = items.where(
@@ -1208,7 +1399,9 @@ class Diner {
     for (final c in probe.cells) {
       final other = def.floor ? floorAt(c) : objectAt(c);
       if (other != null && other != ignore) return PlaceResult.taken;
-      if (!def.floor && c == entrance) return PlaceResult.entrance;
+      if (!def.floor && (c == entrance || c == staffDoor)) {
+        return PlaceResult.entrance;
+      }
     }
     if (kind == Kind.window) {
       if (!owned.contains(1)) return PlaceResult.noRoad;
@@ -1289,7 +1482,8 @@ class Diner {
 
   /// Sells [p] back for half its price.
   void sell(Placed p) {
-    if (!items.contains(p)) return;
+    // The door to the staff room is moved, not sold.
+    if (!items.contains(p) || p.kind == Kind.staffDoor) return;
     remember('Sold ${p.def.name.toLowerCase()}');
     items.remove(p);
     coins += p.def.refund;
@@ -1328,6 +1522,7 @@ class Diner {
     clearUndo();
     final w = window;
     if (i == 1 && w != null) w.at = Cell(right, w.at.y);
+    _rehang();
     return true;
   }
 
@@ -1406,6 +1601,9 @@ class Diner {
     'owned': owned.toList()..sort(),
     'goals': goalsDone.toList()..sort(),
     'supplier': supplier.name,
+    'loan': loan,
+    'room': room.toJson(),
+    'loanLate': loanLate,
     'crowd': crowd.toJson(),
     'lastCrowd': ?lastCrowd?.toJson(),
     'history': [for (final h in history) h.toJson()],
@@ -1436,6 +1634,8 @@ class Diner {
     d.special = Dish.values.where((x) => x.name == j['special']).firstOrNull;
     d.crowd.add(Crowd.fromJson(j['crowd']));
     if (j['lastCrowd'] != null) d.lastCrowd = Crowd.fromJson(j['lastCrowd']);
+    d.loan = ((j['loan'] as int?) ?? 0).clamp(0, 100000);
+    d.loanLate = ((j['loanLate'] as int?) ?? 0).clamp(0, 100);
     final log = j['history'];
     if (log is List) {
       d.history.addAll([for (final h in log) ?DayLog.fromJson(h)]);
@@ -1526,6 +1726,9 @@ class Diner {
         d.coins += fixtureDefs[kind]!.cost;
       }
     }
+    d.room = StaffRoom.fromJson(j['room'], sofas: d.loungeLevel);
+    d.syncSofas();
+    d.ensureDoor();
     return d;
   }
 }

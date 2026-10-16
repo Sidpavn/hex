@@ -130,7 +130,7 @@ enum Tier {
 }
 
 /// Things to spend coins on between days.
-enum Upgrade { kitchen, checkout, cosy, staff, tray }
+enum Upgrade { kitchen, checkout, cosy, staff, tray, lounge }
 
 class UpgradeDef {
   const UpgradeDef(this.name, this.info, this.max, this.cost);
@@ -163,7 +163,7 @@ const Map<Upgrade, UpgradeDef> upgradeDefs = {
     70,
   ),
   Upgrade.staff: UpgradeDef(
-    'Staff room',
+    'Bigger team',
     'Room for one more person on the team.',
     3,
     120,
@@ -173,6 +173,12 @@ const Map<Upgrade, UpgradeDef> upgradeDefs = {
     'Staff carry five dishes at a time, not three.',
     1,
     150,
+  ),
+  Upgrade.lounge: UpgradeDef(
+    'Staff sofas',
+    'Another sofa in the staff room, for tired staff to rest on.',
+    3,
+    200,
   ),
 };
 

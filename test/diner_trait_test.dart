@@ -13,6 +13,7 @@ import 'package:hex/diner/traits.dart';
 import 'package:hex/main.dart';
 import 'package:hex/ui/pixel/pixel_assets.dart';
 import 'package:hex/ui/widgets.dart' show PixelBox;
+import 'support/office.dart';
 
 Staff person({
   int id = 70,
@@ -721,8 +722,7 @@ void main() {
           ..traits.add(Trait.clumsy)
           ..remember(1, 'dropped Marge\'s burger');
         await open(tester, d);
-        await tester.tap(find.byKey(const ValueKey('staff')));
-        await tester.pumpAndSettle();
+        await openApp(tester, 'staff');
         await tester.tap(find.byKey(ValueKey('team-${sam.id}')));
         await tester.pumpAndSettle();
         expect(find.byKey(ValueKey('trait-${sam.id}-loyal')), findsOneWidget);

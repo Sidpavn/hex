@@ -277,7 +277,10 @@ void main() {
           {'k': 'grill', 'x': 1, 'y': 3},
         ],
       });
-      expect(d.items.single.facing, Dir.sw);
+      expect(
+        d.items.singleWhere((p) => p.kind != Kind.staffDoor).facing,
+        Dir.sw,
+      );
       expect(d.progress.level, 1);
     });
 
@@ -298,7 +301,7 @@ void main() {
         ],
       });
       expect([d.width, d.height], [10, 5]);
-      expect(d.items.length, 1);
+      expect(d.items.where((p) => p.kind != Kind.staffDoor).length, 1);
       expect(d.progress.level, 1);
       expect(
         d.progress.upgradeLvl(Upgrade.staff),

@@ -41,7 +41,9 @@ final List<Goal> goals = [
     'Open the doors',
     30,
     (f) => f.diner.progress.day > 1,
-    hint: 'Press Start day when you are ready. Guests come to the door.',
+    hint:
+        'Press Start day when you are ready. The door in the back wall is the '
+        'staff room: its computer has the menu, staff and the rest.',
   ),
   Goal(
     'serve10',
@@ -87,7 +89,7 @@ final List<Goal> goals = [
     'Hire a second person',
     80,
     (f) => f.diner.roster.employees.length >= 2,
-    hint: 'Upgrades has a Staff room for one more place. Then hire from Staff.',
+    hint: 'Upgrades has Bigger team for one more place. Then hire from Staff.',
   ),
   Goal(
     'clean5',
@@ -149,6 +151,15 @@ final List<Goal> goals = [
     hint:
         'Open a dish in the Menu and make it the special. A board goes '
         'outside the door.',
+  ),
+  Goal(
+    'sofa',
+    'Put a sofa in the staff room',
+    80,
+    (f) => f.diner.room.sofaCount >= 1,
+    hint:
+        'Staff sofas is in Upgrades, on the computer in the staff room. '
+        'Tired staff rest on them.',
   ),
   Goal(
     'plot',

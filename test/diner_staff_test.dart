@@ -11,6 +11,7 @@ import 'package:hex/diner/traits.dart';
 import 'package:hex/ui/widgets.dart' show Pal;
 import 'package:hex/main.dart';
 import 'package:hex/ui/pixel/pixel_assets.dart';
+import 'support/office.dart';
 
 Staff person({
   int id = 70,
@@ -727,8 +728,7 @@ void main() {
       final d = diner ?? (Diner.starter()..coins = 900);
       await tester.pumpWidget(HexApp(home: BuildScreen(diner: d)));
       await tester.pump();
-      await tester.tap(find.byKey(const ValueKey('staff')));
-      await tester.pumpAndSettle();
+      await openApp(tester, 'staff');
       return d;
     }
 
@@ -1090,8 +1090,7 @@ void main() {
       await tester.pumpWidget(HexApp(home: BuildScreen(diner: d)));
       await tester.pump();
       if (staff) {
-        await tester.tap(find.byKey(const ValueKey('staff')));
-        await tester.pumpAndSettle();
+        await openApp(tester, 'staff');
       }
       return d;
     }
@@ -1116,12 +1115,19 @@ void main() {
     ) async {
       final short = Diner.starter()..coins = 3;
       await open(tester, short, staff: false);
+      // The warning is on the idle panel, and on the computer's Staff icon.
+      expect(find.textContaining('Wages tonight are'), findsOneWidget);
+      await openRoom(tester);
+      await openComputer(tester);
       expect(find.text('Staff !'), findsOneWidget);
     });
 
     testWidgets('and is calm when the till is fine', (tester) async {
       final fine = Diner.starter()..coins = 500;
       await open(tester, fine, staff: false);
+      expect(find.textContaining('Wages tonight are'), findsNothing);
+      await openRoom(tester);
+      await openComputer(tester);
       expect(find.text('Staff'), findsOneWidget);
       expect(find.text('Staff !'), findsNothing);
     });

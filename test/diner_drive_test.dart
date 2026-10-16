@@ -17,6 +17,7 @@ import 'package:hex/diner/service.dart';
 import 'package:hex/diner/staff.dart';
 import 'package:hex/main.dart';
 import 'package:hex/ui/pixel/pixel_assets.dart';
+import 'support/office.dart';
 
 Staff person({int id = 70, Kind? duty}) => Staff(
   id: id,
@@ -685,8 +686,7 @@ void main() {
       d.progress.upgrades[Upgrade.staff] = 2;
       final s = d.roster.employees.first;
       await open(tester, d);
-      await tester.tap(find.byKey(const ValueKey('staff')));
-      await tester.pumpAndSettle();
+      await openApp(tester, 'staff');
       await tester.tap(find.byKey(ValueKey('team-${s.id}')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(ValueKey('duty-${s.id}-window')));

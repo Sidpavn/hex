@@ -25,6 +25,7 @@ String spriteName(Kind kind, Dir facing) => switch (kind) {
   Kind.bench => '${kind.name}_${facing.name}',
   Kind.window => 'window_se',
   Kind.tv => 'tv_${facing == Dir.se ? 'se' : 'sw'}',
+  Kind.staffDoor => 'staff_door',
   _ => kind.name,
 };
 

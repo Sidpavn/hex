@@ -85,3 +85,12 @@ Future<void> noticePixel(
     ),
   ),
 );
+
+/// Shows a popup built by [builder] over a dimmed screen, and returns what it
+/// pops with.
+Future<T?> popupPixel<T>(BuildContext context, WidgetBuilder builder) =>
+    showDialog<T>(
+      context: context,
+      barrierColor: const Color(0xAA000000),
+      builder: builder,
+    );

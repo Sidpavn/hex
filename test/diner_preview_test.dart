@@ -21,6 +21,7 @@ import 'package:hex/diner/iso.dart';
 import 'package:hex/diner/recipes.dart';
 import 'package:hex/diner/staff.dart';
 import 'package:hex/diner/traits.dart';
+import 'support/office.dart';
 
 Diner _full() {
   final d = Diner(
@@ -256,8 +257,7 @@ void main() {
       await tester.pump();
     }
     if (Platform.environment['STAFF'] != null) {
-      await tester.tap(find.byKey(const ValueKey('staff')));
-      await tester.pumpAndSettle();
+      await openApp(tester, 'staff');
       final scroll = int.tryParse(Platform.environment['STAFF']!) ?? 0;
       if (scroll > 0) {
         await tester.drag(find.byType(ListView), Offset(0, -scroll.toDouble()));
@@ -284,8 +284,7 @@ void main() {
       }
     }
     if (Platform.environment['MENU'] != null) {
-      await tester.tap(find.byKey(const ValueKey('menu')));
-      await tester.pumpAndSettle();
+      await openApp(tester, 'menu');
       final scroll = int.tryParse(Platform.environment['MENU']!) ?? 0;
       if (scroll > 0) {
         await tester.drag(find.byType(ListView), Offset(0, -scroll.toDouble()));
@@ -301,12 +300,10 @@ void main() {
       }
     }
     if (Platform.environment['EXPAND'] != null) {
-      await tester.tap(find.byKey(const ValueKey('expand')));
-      await tester.pump(const Duration(milliseconds: 100));
+      await openApp(tester, 'expand');
     }
     if (Platform.environment['UPGRADES'] != null) {
-      await tester.tap(find.byKey(const ValueKey('upgrades')));
-      await tester.pumpAndSettle();
+      await openApp(tester, 'upgrades');
     }
     if (Platform.environment['SELECT'] != null) {
       final b = find.byKey(const ValueKey('diner-board'));

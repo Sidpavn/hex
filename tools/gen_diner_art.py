@@ -1064,6 +1064,93 @@ def special_board():
     add('special_board', img, 0.55)
 
 
+def staff_door():
+    """The door to the staff room, set in the back wall: a wooden door in a
+    frame with a brass plate, its face toward the dining room."""
+    img = cell_img(34)
+    frame = ramp('#6b4a2f')
+    door = ramp('#a9763f')
+    box(img, 2, 0, 14, 2, 0, 28, frame, edge=False)
+
+    def face(u, z):
+        if u < 3.5 or u > 12.5 or z > 26:
+            return frame.left
+        # two raised panels, a plate, and a handle
+        if 17 <= z <= 19 and 6.5 <= u <= 9.5:
+            return hexc('#e2b95a')
+        if 11 <= z <= 12 and 10.5 <= u <= 11.5:
+            return hexc('#e2b95a')
+        panel = (3 <= z <= 9 or 20 <= z <= 25) and 5 <= u <= 11
+        return door.hi if panel and z in (9, 25) else (
+            door.top if panel else door.left)
+
+    face_left(img, 2, 14, 2, 0, 28, face)
+    add('staff_door', img, 0.55)
+
+
+def sofa(f):
+    """A one-seat sofa in the staff room. Its back is on the side away from the
+    way it faces, and kept low when that side is toward the viewer."""
+    img = cell_img(26)
+    cloth = ramp('#4f7fb8')
+    frame = ramp('#3b5a85')
+    seat = ramp('#6a96cf')
+    shadow(img, 8, 8, 15, 6)
+    box(img, 1, 1, 15, 15, 0, 7, frame, edge=False)
+    box(img, 3, 3, 13, 13, 7, 10, seat)
+    if f == 'sw':       # faces +v, back on the low-v side
+        box(img, 1, 1, 15, 5, 7, 17, cloth)
+        box(img, 1, 5, 3, 15, 7, 12, cloth)
+        box(img, 13, 5, 15, 15, 7, 12, cloth)
+    elif f == 'se':     # faces +u, back on the low-u side
+        box(img, 1, 1, 5, 15, 7, 17, cloth)
+        box(img, 5, 1, 15, 3, 7, 12, cloth)
+        box(img, 5, 13, 15, 15, 7, 12, cloth)
+    elif f == 'nw':     # faces -u, back on the high-u side, kept low
+        box(img, 11, 1, 15, 15, 7, 13, cloth)
+        box(img, 1, 1, 11, 3, 7, 12, cloth)
+        box(img, 1, 13, 11, 15, 7, 12, cloth)
+    else:               # faces -v, back on the high-v side, kept low
+        box(img, 1, 11, 15, 15, 7, 13, cloth)
+        box(img, 1, 1, 3, 11, 7, 12, cloth)
+        box(img, 13, 1, 15, 11, 7, 12, cloth)
+    add(f'sofa_{f}', img, 0.55)
+
+
+def office_pc(f):
+    """A desk with a computer on it. The screen faces the way [f] says; seen
+    from behind it is just the dark case."""
+    img = cell_img(30)
+    desk = ramp('#c58a56')
+    case = ramp('#2c3040')
+    keys = ramp('#aab0c0')
+    shadow(img, 8, 8, 15, 6)
+    box(img, 1, 1, 15, 15, 0, 11, desk)
+
+    def glow(a, z):
+        if a < 5.5 or a > 10.5 or z < 12.5 or z > 20.5:
+            return case.left
+        k = (int(a) + int(z)) % 5
+        return [hexc('#8fd8f4'), hexc('#a8e4fa'), hexc('#7ccaee'),
+                hexc('#b8ecfc'), hexc('#8fd8f4')][k]
+
+    if f == 'sw':
+        box(img, 5, 3, 11, 5, 11, 22, case, edge=False)
+        face_left(img, 5, 11, 5, 11, 22, glow)
+        box(img, 4, 8, 12, 11, 11, 12, keys, edge=False)
+    elif f == 'se':
+        box(img, 3, 5, 5, 11, 11, 22, case, edge=False)
+        face_right(img, 5, 5, 11, 11, 22, glow)
+        box(img, 8, 4, 11, 12, 11, 12, keys, edge=False)
+    elif f == 'nw':
+        box(img, 11, 5, 13, 11, 11, 22, case, edge=False)
+        box(img, 5, 4, 8, 12, 11, 12, keys, edge=False)
+    else:
+        box(img, 5, 11, 11, 13, 11, 22, case, edge=False)
+        box(img, 4, 5, 12, 8, 11, 12, keys, edge=False)
+    add(f'office_pc_{f}', img, 0.55)
+
+
 def street_tree():
     img = cell_img(54)
     planter = ramp('#8d6a4a')
@@ -1158,6 +1245,10 @@ def city():
     block_building('block_rb', 4, 7, 52, '#e8d3a3', '#7a7f8c')
     street_lamp()
     special_board()
+    staff_door()
+    for f in ('sw', 'se', 'nw', 'ne'):
+        sofa(f)
+        office_pc(f)
     street_tree()
     emotes()
     moods()

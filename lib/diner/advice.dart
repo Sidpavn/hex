@@ -15,6 +15,13 @@ String? fixFirst(DayReport r) {
       'someone go.',
     );
   }
+  if (r.loanMissed) {
+    add(
+      9000,
+      'The bank did not get its payment. Keep coins back for it, or pay the '
+      'loan down in the Bank.',
+    );
+  }
   if (r.soldOut >= 2) {
     add(
       r.soldOut * 12,
