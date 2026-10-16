@@ -22,6 +22,14 @@ The UI must not look AI-generated. Before adding or changing any UI, check it ag
 - Every screen has one clear primary action; secondary actions are visibly lower weight.
 - Prefer removing a decoration over adding one. If an element has no function, cut it.
 
+## Keep screens light (diner screens)
+- One screen, one job. At most about five facts visible at once; a card has at most three lines. Anything more goes behind a tap, onto its own page.
+- Help appears right next to what was tapped (an inline line under it), never in a fixed spot at the top of a page that scrolls.
+- Text is never clipped. A box either grows to fit its text or the text is made shorter. No fixed-height text boxes.
+- News during play is a toast: small, top-left, self-dismissing. It is not a permanent line on a panel.
+- Buttons and rows say what they do and what you get ("Extend dining room: +2 rows"), never a bare "Max", "Deeper" or "Owned".
+- Lists of people or things are compact rows. Details and actions open on their own page.
+
 ## Self-check before finishing a UI change
 1. Could this screen be swapped for any other app's "dark fantasy game" template? If yes, make a choice that is specific to Hex (the hex grid, its pieces, its rules).
 2. Count distinct effects (glow, gradient, blur, bounce). More than one per screen is too many.

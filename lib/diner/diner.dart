@@ -1,7 +1,11 @@
 /// The restaurant's build grid: which cells are open, what stands on them,
-/// and the rules for placing, selling and expanding. Pure Dart, no Flutter, so
-/// it can be tested and later driven by the idle clock.
+/// which way each thing faces, and the rules for placing, rotating, moving,
+/// selling and expanding. Pure Dart, no Flutter, so it can be tested and
+/// driven by the service sim.
 library;
+
+import 'recipes.dart';
+import 'staff.dart';
 
 /// Size of one cell in art pixels.
 const cellPx = 16;
@@ -27,6 +31,14 @@ enum Dir {
     return null;
   }
 
+  /// A quarter turn clockwise on screen.
+  Dir get cw => switch (this) {
+    sw => nw,
+    nw => ne,
+    ne => se,
+    se => sw,
+  };
+
   /// Sprites are drawn facing `sw` and `nw`; the other two are mirrors.
   bool get mirrored => this == se || this == ne;
 
@@ -34,7 +46,7 @@ enum Dir {
   String get art => (this == sw || this == se) ? 'sw' : 'nw';
 }
 
-/// A square cell on the build grid. `x` runs right, `y` runs down.
+/// A square cell on the build grid.
 class Cell {
   const Cell(this.x, this.y);
 
@@ -42,6 +54,9 @@ class Cell {
   final int y;
 
   Cell operator +(Cell o) => Cell(x + o.x, y + o.y);
+
+  /// The cell one step in [d].
+  Cell step(Dir d) => Cell(x + d.dx, y + d.dy);
 
   /// The four orthogonal neighbours: customers and staff walk in these steps.
   List<Cell> get neighbors => [
@@ -62,78 +77,287 @@ class Cell {
   String toString() => '($x,$y)';
 }
 
-enum Kind { counter, grill, table, chair, plant, jukebox, rug, bench }
+enum Kind {
+  counter,
+  grill,
+  fryer,
+  soda,
+  espresso,
+  oven,
+  freezer,
+  window,
+  table,
+  chair,
+  bench,
+  plant,
+  jukebox,
+  rug,
+}
 
-/// What a fixture is. The sprite has the same name as the [Kind].
+/// What a fixture does in the restaurant.
+enum Role {
+  /// Cooks a dish. Staff load and empty it from the cell in front.
+  station,
+
+  /// Where guests pay, one at a time, from the cell in front.
+  counter,
+
+  /// Where a guest sits, facing the table in front of it.
+  seat,
+
+  /// Where seated guests are served.
+  table,
+
+  /// A hatch in the front wall where drivers are served from the street. An
+  /// operator stands behind it.
+  window,
+
+  /// Looks nice; does nothing.
+  decor,
+}
+
+/// What a fixture is. Sprites are named after the [Kind], plus the facing for
+/// those that turn.
 class FixtureDef {
   const FixtureDef(
     this.kind,
     this.name,
-    this.cost, {
+    this.cost,
+    this.role, {
     this.w = 1,
     this.h = 1,
     this.floor = false,
+    this.unlock = 1,
+    this.info = '',
   });
 
   final Kind kind;
   final String name;
   final int cost;
+  final Role role;
 
-  /// Footprint in cells.
+  /// Footprint in cells when facing `sw` or `ne`; swapped for `se` and `nw`.
   final int w;
   final int h;
 
   /// Floor decoration: sits under everything and never blocks walking.
   final bool floor;
 
+  /// Restaurant level that unlocks it.
+  final int unlock;
+
+  /// What it does, in a sentence for the player.
+  final String info;
+
+  /// Whether it has a front that matters.
+  bool get turns =>
+      role != Role.decor && role != Role.table && role != Role.window;
+
   int get refund => cost ~/ 2;
 }
 
 const Map<Kind, FixtureDef> fixtureDefs = {
-  Kind.counter: FixtureDef(Kind.counter, 'Counter', 20),
-  Kind.grill: FixtureDef(Kind.grill, 'Grill', 60),
-  Kind.table: FixtureDef(Kind.table, 'Table', 30),
-  Kind.chair: FixtureDef(Kind.chair, 'Chair', 10),
-  Kind.bench: FixtureDef(Kind.bench, 'Bench', 40, w: 2),
-  Kind.plant: FixtureDef(Kind.plant, 'Plant', 15),
-  Kind.rug: FixtureDef(Kind.rug, 'Rug', 12, floor: true),
-  Kind.jukebox: FixtureDef(Kind.jukebox, 'Jukebox', 120),
+  Kind.grill: FixtureDef(
+    Kind.grill,
+    'Grill',
+    60,
+    Role.station,
+    info:
+        'Cooks burgers, one at a time. Staff stand on the tile in front to '
+        'load it and take the burger off.',
+  ),
+  Kind.fryer: FixtureDef(
+    Kind.fryer,
+    'Fryer',
+    90,
+    Role.station,
+    unlock: 2,
+    info: 'Cooks fries, one batch at a time. Staff use it from the front.',
+  ),
+  Kind.soda: FixtureDef(
+    Kind.soda,
+    'Soda machine',
+    110,
+    Role.station,
+    unlock: 3,
+    info: 'Pours drinks fast. Staff use it from the front.',
+  ),
+  Kind.espresso: FixtureDef(
+    Kind.espresso,
+    'Espresso machine',
+    130,
+    Role.station,
+    unlock: 4,
+    info: 'Makes coffee. Staff use it from the front, and need to know how.',
+  ),
+  Kind.oven: FixtureDef(
+    Kind.oven,
+    'Pizza oven',
+    200,
+    Role.station,
+    unlock: 5,
+    info:
+        'Bakes pizza, slowly. Only someone who knows pizza can use it, and '
+        'staff use it from the front.',
+  ),
+  Kind.freezer: FixtureDef(
+    Kind.freezer,
+    'Ice cream freezer',
+    160,
+    Role.station,
+    unlock: 6,
+    info: 'Scoops ice cream, quickly. Staff use it from the front.',
+  ),
+  Kind.window: FixtureDef(
+    Kind.window,
+    'Takeaway window',
+    180,
+    Role.window,
+    w: 2,
+    unlock: 3,
+    info:
+        'A hatch two tiles wide in the right-hand wall, onto the side '
+        'street. Cars queue there for it. Anyone can serve it, and someone '
+        'you set to the window stays on it. Staff bring the food to the '
+        'tiles behind it.',
+  ),
+  Kind.counter: FixtureDef(
+    Kind.counter,
+    'Counter',
+    40,
+    Role.counter,
+    info:
+        'Guests pay here, one at a time, standing in front. A second '
+        'counter doubles the checkout.',
+  ),
+  Kind.table: FixtureDef(
+    Kind.table,
+    'Table',
+    30,
+    Role.table,
+    info: 'Guests eat here. It needs a chair or bench facing it.',
+  ),
+  Kind.chair: FixtureDef(
+    Kind.chair,
+    'Chair',
+    10,
+    Role.seat,
+    info: 'Seats one guest. Turn it to face a table.',
+  ),
+  Kind.bench: FixtureDef(
+    Kind.bench,
+    'Bench',
+    40,
+    Role.seat,
+    w: 2,
+    unlock: 2,
+    info: 'Seats two guests side by side. Turn it to face a table.',
+  ),
+  Kind.plant: FixtureDef(
+    Kind.plant,
+    'Plant',
+    15,
+    Role.decor,
+    info: 'Just for looks.',
+  ),
+  Kind.jukebox: FixtureDef(
+    Kind.jukebox,
+    'Jukebox',
+    120,
+    Role.decor,
+    unlock: 2,
+    info: 'Just for looks.',
+  ),
+  Kind.rug: FixtureDef(
+    Kind.rug,
+    'Rug',
+    12,
+    Role.decor,
+    floor: true,
+    info: 'Just for looks.',
+  ),
 };
 
 /// One fixture standing on the grid. [at] is its top-left cell.
 class Placed {
-  Placed(this.id, this.kind, this.at);
+  Placed(this.id, this.kind, this.at, [this.facing = Dir.sw]);
 
   final int id;
   final Kind kind;
-  final Cell at;
+  Cell at;
+  Dir facing;
 
   FixtureDef get def => fixtureDefs[kind]!;
 
+  /// Footprint in cells now: a bench lies the other way when it faces
+  /// `se` or `nw`.
+  int get w => (facing == Dir.se || facing == Dir.nw) ? def.h : def.w;
+  int get h => (facing == Dir.se || facing == Dir.nw) ? def.w : def.h;
+
   Iterable<Cell> get cells sync* {
-    for (var dy = 0; dy < def.h; dy++) {
-      for (var dx = 0; dx < def.w; dx++) {
+    for (var dy = 0; dy < h; dy++) {
+      for (var dx = 0; dx < w; dx++) {
         yield Cell(at.x + dx, at.y + dy);
       }
     }
   }
+
+  /// The cell in front of [c], one of this fixture's cells.
+  Cell frontOf(Cell c) => c.step(facing);
+
+  /// The cells just in front of the fixture, outside its footprint.
+  Iterable<Cell> get fronts sync* {
+    final own = cells.toSet();
+    for (final c in cells) {
+      final f = frontOf(c);
+      if (!own.contains(f)) yield f;
+    }
+  }
 }
 
-/// One size of the room and what it costs to grow into it.
-class Stage {
-  const Stage(this.width, this.height, this.cost);
+/// One section of the plot, bought as a whole. The plot is ten tiles wide and
+/// thirteen deep; the restaurant starts with the front left corner and takes
+/// on the rest a section at a time. A section can only be bought once the one
+/// in front of it (nearer the street) is yours, which also keeps the room one
+/// connected shape.
+class Plot {
+  const Plot(
+    this.name,
+    this.x0,
+    this.y0,
+    this.x1,
+    this.y1, {
+    this.needs,
+    this.level = 1,
+  });
 
-  final int width;
-  final int height;
-  final int cost;
+  final String name;
+  final int x0;
+  final int y0;
+  final int x1;
+  final int y1;
+
+  /// The section that has to be yours first.
+  final int? needs;
+
+  /// The restaurant level it opens at.
+  final int level;
+
+  int get width => x1 - x0 + 1;
+  int get height => y1 - y0 + 1;
+  int get tiles => width * height;
+
+  bool contains(Cell c) => c.x >= x0 && c.x <= x1 && c.y >= y0 && c.y <= y1;
 }
 
-/// A spot a customer can sit, and the table cell they eat at.
+/// A spot a guest can sit: the cell, the table cell in front of it, and the
+/// way they face.
 class Seat {
-  const Seat(this.cell, this.table);
+  const Seat(this.cell, this.table, this.facing);
 
   final Cell cell;
   final Cell table;
+  final Dir facing;
 }
 
 class Problem {
@@ -164,6 +388,25 @@ class Report {
   }
 }
 
+/// What happened when the player tried to hire, fire or train someone.
+enum StaffResult {
+  ok,
+  noRoom,
+  broke,
+  tired,
+  maxed,
+  gone;
+
+  String get message => switch (this) {
+    ok => '',
+    noRoom => 'No room on the team',
+    broke => 'Not enough coins',
+    tired => 'Already trained today',
+    maxed => 'Already as good as they can be',
+    gone => 'They are no longer here',
+  };
+}
+
 enum PlaceResult {
   ok,
   outside,
@@ -171,7 +414,11 @@ enum PlaceResult {
   entrance,
   broke,
   blocksWay,
-  occupied;
+  occupied,
+  locked,
+  wall,
+  noRoad,
+  onlyOne;
 
   /// What to tell the player when a placement is refused.
   String get message => switch (this) {
@@ -182,81 +429,163 @@ enum PlaceResult {
     broke => 'Not enough coins',
     blocksWay => 'Leave a path to the door',
     occupied => 'Someone is standing there',
+    locked => 'Not unlocked yet',
+    wall => 'Goes in the right-hand wall',
+    noRoad => 'Needs the room to the right first',
+    onlyOne => 'One window is enough',
   };
 }
 
 class Diner {
-  Diner({this.coins = 200, this.stage = 0});
+  Diner({this.coins = 200, Set<int>? owned, Progress? progress, Roster? roster})
+    : owned = owned ?? {0},
+      progress = progress ?? Progress(),
+      roster = roster ?? Roster.starter();
 
-  /// A small working diner: grill and counter along the back wall, two tables
-  /// with chairs, a plant.
+  /// A small working diner: grill and counters along the back wall, two
+  /// tables with a chair each, a plant.
   factory Diner.starter() {
     final d = Diner(coins: 120);
-    d._put(Kind.grill, const Cell(left, top));
-    d._put(Kind.counter, const Cell(left + 1, top));
-    d._put(Kind.counter, const Cell(left + 2, top));
+    d._put(Kind.grill, const Cell(left, top), Dir.sw);
+    d._put(Kind.counter, const Cell(left + 1, top), Dir.sw);
+    d._put(Kind.counter, const Cell(left + 2, top), Dir.sw);
     d._put(Kind.plant, const Cell(left + 5, top));
     d._put(Kind.rug, const Cell(left + 2, top + 2));
     d._put(Kind.table, const Cell(left + 1, top + 2));
-    d._put(Kind.chair, const Cell(left, top + 2));
+    d._put(Kind.chair, const Cell(left, top + 2), Dir.se);
     d._put(Kind.table, const Cell(left + 4, top + 2));
-    d._put(Kind.chair, const Cell(left + 5, top + 2));
+    d._put(Kind.chair, const Cell(left + 5, top + 2), Dir.nw);
     return d;
   }
 
-  /// The grid is 12 wide and 14 tall. The back wall is row [wallY]; the
-  /// dining room starts one row below it and only ever grows right and down.
+  /// The grid is 12 wide and 14 tall. The plot fills most of it: ten tiles
+  /// wide, from row [top] at the front back to row -5.
   static const cols = 12;
   static const rows = 14;
   static const left = 1;
-  static const wallY = 2;
-  static const top = wallY + 1;
+  static const top = 3;
 
-  static const stages = [
-    Stage(6, 5, 0),
-    Stage(8, 5, 80),
-    Stage(8, 7, 160),
-    Stage(10, 7, 300),
-    Stage(10, 9, 500),
+  /// The plot's right-hand column and back row. The side street runs just
+  /// beyond the column.
+  static const plotRight = 10;
+  static const plotTop = -5;
+
+  /// The sections of the plot, the first being where the restaurant starts.
+  /// Behind the front row, sections are four tiles deep.
+  static const plots = [
+    Plot('The restaurant', 1, 3, 6, 7),
+    Plot('Room to the right', 7, 3, 10, 7, needs: 0, level: 2),
+    Plot('Room behind', 1, -1, 6, 2, needs: 0, level: 3),
+    Plot('Room behind, right', 7, -1, 10, 2, needs: 1, level: 4),
+    Plot('Room further back', 1, -5, 6, -2, needs: 2, level: 5),
+    Plot('Room further back, right', 7, -5, 10, -2, needs: 3, level: 6),
   ];
 
+  /// The plot's cheapest price a tile, and how much dearer each section
+  /// already bought makes the next.
+  static const pricePerTile = 6;
+  static const priceRise = 0.35;
+
   int coins;
-  int stage;
+
+  /// The sections of the plot that are the restaurant's, by index in [plots].
+  final Set<int> owned;
+  final Progress progress;
+  final Roster roster;
   final List<Placed> items = [];
+
+  /// The menu: what is on offer, in order. Kept in step with what the
+  /// restaurant can actually make (see [menu]).
+  final List<Dish> offered = [];
+
+  /// Dishes the player has taken off the menu themselves, so they are not
+  /// put back when there is room.
+  final Set<Dish> declined = {};
+
+  /// The ingredients chosen for each dish. Standard if not chosen.
+  final Map<Dish, Tier> tiers = {};
+
+  /// Portions the player has chosen to prepare for the day. A dish not here
+  /// gets the forecast.
+  final Map<Dish, int> plan = {};
   int _nextId = 1;
 
-  int get width => stages[stage].width;
-  int get height => stages[stage].height;
-  int get right => left + width - 1;
-  int get bottom => top + height - 1;
+  /// The front row of the restaurant, at the street, and its right-hand end:
+  /// the front widens when the section beside it is bought.
+  int get bottom => plots[0].y1;
+  int get right => owned.contains(1) ? plots[1].x1 : plots[0].x1;
+  int get width => right - left + 1;
+  int get height => bottom - top + 1;
 
   /// The door is in the bottom row, two cells in from the left wall, and it
   /// never moves sideways so growing the room can't put it under a fixture.
   Cell get entrance => Cell(left + 2, bottom);
 
-  Stage? get nextStage => stage + 1 < stages.length ? stages[stage + 1] : null;
+  /// The pavement cell outside the door: the head of the queue.
+  Cell get street => Cell(entrance.x, bottom + 1);
 
-  /// Inside the dining room as it is now.
-  bool isInside(Cell c) =>
-      c.x >= left && c.x <= right && c.y >= top && c.y <= bottom;
+  /// Where guests line up on the pavement, nearest the door first.
+  Cell queueSlot(int i) => Cell(entrance.x + i, bottom + 1);
 
-  /// Inside the biggest the room can get. Cells in here but not yet inside are
-  /// lots waiting to be unlocked.
-  static bool inLot(Cell c) =>
-      c.x >= left &&
-      c.x <= left + stages.last.width - 1 &&
-      c.y >= top &&
-      c.y <= top + stages.last.height - 1;
+  /// How many guests can queue.
+  int get queueLength => 4;
 
-  /// Ground that the next expansion will open up.
-  bool isNextLot(Cell c) {
-    final n = nextStage;
-    if (n == null || isInside(c)) return false;
-    return c.x >= left &&
-        c.x <= left + n.width - 1 &&
-        c.y >= top &&
-        c.y <= top + n.height - 1;
+  /// How far the pavement runs each way from the door. Guests come and go
+  /// from beyond the edge of the screen.
+  static const sidewalkReach = 10;
+
+  /// Where guests step onto the pavement, left and right of the door.
+  Cell get arrivalLeft => Cell(entrance.x - sidewalkReach, bottom + 1);
+  Cell get arrivalRight => Cell(entrance.x + sidewalkReach, bottom + 1);
+
+  bool isSidewalk(Cell c) =>
+      c.y == bottom + 1 && (c.x - entrance.x).abs() <= sidewalkReach;
+
+  /// Part of the restaurant: inside any section that has been bought.
+  bool isInside(Cell c) {
+    for (final i in owned) {
+      if (plots[i].contains(c)) return true;
+    }
+    return false;
   }
+
+  /// Every cell of the restaurant.
+  Iterable<Cell> insideCells() sync* {
+    for (final i in owned) {
+      final p = plots[i];
+      for (var y = p.y0; y <= p.y1; y++) {
+        for (var x = p.x0; x <= p.x1; x++) {
+          yield Cell(x, y);
+        }
+      }
+    }
+  }
+
+  /// Whether [c] is on the plot but not yet the restaurant's.
+  bool isLocked(Cell c) {
+    for (var i = 0; i < plots.length; i++) {
+      if (!owned.contains(i) && plots[i].contains(c)) return true;
+    }
+    return false;
+  }
+
+  /// The sections that could be bought next if there were the money: the
+  /// ones whose front neighbour is already the restaurant's.
+  List<int> get nextPlots => [
+    for (var i = 0; i < plots.length; i++)
+      if (!owned.contains(i) && owned.contains(plots[i].needs)) i,
+  ];
+
+  /// The rows and columns to keep in view: what is owned, and what could be
+  /// bought next, so the player can see where the restaurant can grow.
+  Iterable<Plot> get framed sync* {
+    for (var i = 0; i < plots.length; i++) {
+      if (owned.contains(i) || nextPlots.contains(i)) yield plots[i];
+    }
+  }
+
+  int get topRow => framed.map((p) => p.y0).reduce((a, b) => a < b ? a : b);
+  int get rightCol => framed.map((p) => p.x1).reduce((a, b) => a > b ? a : b);
 
   Placed? objectAt(Cell c) {
     for (final p in items) {
@@ -277,6 +606,109 @@ class Diner {
 
   bool walkable(Cell c) => isInside(c) && objectAt(c) == null;
 
+  /// Cells next to [c] a person can stand on.
+  List<Cell> approaches(Cell c) => [
+    for (final n in c.neighbors)
+      if (walkable(n)) n,
+  ];
+
+  /// The takeaway window, if there is one.
+  Placed? get window {
+    for (final p in items) {
+      if (p.kind == Kind.window) return p;
+    }
+    return null;
+  }
+
+  /// Where staff stand to serve the window: the tiles behind it.
+  List<Cell> get operatorSpots {
+    final w = window;
+    if (w == null) return const [];
+    return [
+      for (var dy = 0; dy < w.h; dy++)
+        if (walkable(Cell(w.at.x - 1, w.at.y + dy)))
+          Cell(w.at.x - 1, w.at.y + dy),
+    ];
+  }
+
+  /// The first of those, or null if there is no room behind the window.
+  Cell? get operatorSpot => operatorSpots.firstOrNull;
+
+  /// Whether cars can be served: a window with room behind it.
+  bool get driveThrough => operatorSpots.isNotEmpty;
+
+  /// Cars come up the side street in the lane nearest the building, and turn
+  /// round at the window to go back down the other.
+  int get inLane => Diner.plotRight + 2;
+  int get outLane => Diner.plotRight + 3;
+
+  /// The cell in the street where a car stops at the window.
+  Cell? get bay {
+    final w = window;
+    return w == null ? null : Cell(inLane, w.at.y);
+  }
+
+  /// The lane along the main road cars arrive in, and the one beside it for
+  /// cars driving past or away.
+  int get laneRow => bottom + 3;
+  int get passRow => bottom + 4;
+
+  /// A car is two cells long, so those waiting stand three apart.
+  static const carSpacing = 3;
+
+  /// Where cars wait for the window, nearest first. Slot 0 is the bay, and
+  /// the rest are down the street from it.
+  Cell carSlot(int i) => Cell(inLane, window!.at.y + carSpacing * i);
+
+  /// How many cars can wait on the side street, including the one at the
+  /// window: the nearer the back, the longer the line.
+  int get carQueueLength {
+    final w = window;
+    if (w == null) return 0;
+    return ((bottom + 2 - w.at.y) ~/ carSpacing + 1).clamp(1, 4);
+  }
+
+  /// Whether a window could go in the right-hand wall with its top at row
+  /// [y].
+  bool windowFits(int y, {Placed? ignore}) =>
+      check(Kind.window, Cell(right, y), free: true, ignore: ignore) ==
+      PlaceResult.ok;
+
+  /// The row nearest [y] where a window can go, or null if none can.
+  int? windowRow(int y, {Placed? ignore}) {
+    int? best;
+    for (var r = top; r <= bottom; r++) {
+      if (!windowFits(r, ignore: ignore)) continue;
+      if (best == null || (r - y).abs() < (best - y).abs()) best = r;
+    }
+    return best;
+  }
+
+  /// Where cars come on and go off the main road.
+  Cell get laneStart => Cell(arrivalLeft.x, laneRow);
+  Cell get passStart => Cell(arrivalLeft.x, passRow);
+  Cell get laneEnd => Cell(carExit, laneRow);
+
+  /// How far along the road cars go before they are gone: past the edge of
+  /// the picture, however much of the restaurant is showing, so they drive
+  /// out of sight rather than vanishing in view.
+  int get carExit => passRow + (rightCol + 1 - topRow) + 5;
+
+  /// Every cell of [kind] fixtures.
+  Iterable<Cell> cellsOf(Kind kind) sync* {
+    for (final p in items) {
+      if (p.kind == kind) yield* p.cells;
+    }
+  }
+
+  Iterable<Placed> ofRole(Role r) => items.where((p) => p.def.role == r);
+
+  /// The walkable cells in front of a fixture, where it is used from.
+  List<Cell> useCells(Placed p) => [
+    for (final c in p.fronts)
+      if (walkable(c)) c,
+  ];
+
   /// Every walkable cell reachable from the door.
   Set<Cell> reachable() {
     final seen = <Cell>{entrance};
@@ -290,166 +722,477 @@ class Diner {
     return seen;
   }
 
-  /// Which way a chair at [c] faces: toward the table beside it.
-  Dir chairFacing(Cell c) {
-    for (final d in Dir.values) {
-      if (objectAt(Cell(c.x + d.dx, c.y + d.dy))?.kind == Kind.table) return d;
-    }
-    return Dir.sw;
-  }
-
-  /// The pavement cell outside the door, where customers come from and go.
-  Cell get street => Cell(entrance.x, bottom + 1);
-
-  /// Cells next to [c] a person can stand on.
-  List<Cell> approaches(Cell c) => [
-    for (final n in c.neighbors)
-      if (walkable(n)) n,
-  ];
-
-  /// Every cell of [kind] fixtures.
-  Iterable<Cell> cellsOf(Kind kind) sync* {
-    for (final p in items) {
-      if (p.kind == kind) yield* p.cells;
-    }
-  }
-
-  /// A place a customer can sit: a chair or bench cell with a table beside
-  /// it and somewhere to walk up from.
+  /// The places a guest can sit: a seat with a table in front and somewhere
+  /// to walk up from.
   List<Seat> seats() {
     final out = <Seat>[];
-    for (final p in items) {
-      if (p.kind != Kind.chair && p.kind != Kind.bench) continue;
+    for (final p in ofRole(Role.seat)) {
       for (final c in p.cells) {
-        final table = [
-          for (final n in c.neighbors)
-            if (objectAt(n)?.kind == Kind.table) n,
-        ];
-        if (table.isEmpty || approaches(c).isEmpty) continue;
-        out.add(Seat(c, table.first));
+        final front = p.frontOf(c);
+        if (objectAt(front)?.def.role != Role.table) continue;
+        if (approaches(c).isEmpty) continue;
+        out.add(Seat(c, front, p.facing));
       }
     }
     return out;
+  }
+
+  /// How many dishes the menu has room for. It grows with the restaurant.
+  int get menuSlots => 1 + (progress.level + 1) ~/ 2;
+
+  /// The recipe level at which premium ingredients become available.
+  static const premiumLevel = 3;
+
+  /// The ingredients used for [d]. Premium needs a well-developed recipe.
+  Tier tierOf(Dish d) {
+    final t = tiers[d] ?? Tier.standard;
+    if (t == Tier.premium && progress.recipeLvl(d) < premiumLevel) {
+      return Tier.standard;
+    }
+    return t;
+  }
+
+  /// Whether there is a machine in working order that makes [d].
+  bool hasMachineFor(Dish d) => ofRole(
+    Role.station,
+  ).any((p) => p.kind == recipes[d]!.station && useCells(p).isNotEmpty);
+
+  /// Whether someone on the team knows how to make [d].
+  bool someoneCooks(Dish d) => roster.employees.any((s) => s.canCook(d));
+
+  /// Why [d] cannot be sold, or null if it can.
+  String? whyNot(Dish d) {
+    if (!progress.unlocked(d)) return 'Unlocks at level ${recipes[d]!.unlock}';
+    if (!hasMachineFor(d)) {
+      return 'Needs a ${fixtureDefs[recipes[d]!.station]!.name.toLowerCase()}';
+    }
+    if (!someoneCooks(d)) return 'Needs someone who knows how';
+    return null;
+  }
+
+  bool available(Dish d) => whyNot(d) == null;
+
+  /// What is on the menu today: what the player offered, and what the
+  /// restaurant can really make. New dishes join by themselves while there is
+  /// room, unless the player has turned them down.
+  List<Dish> menu() {
+    offered.removeWhere((d) => !available(d));
+    for (final d in Dish.values) {
+      if (offered.length >= menuSlots) break;
+      if (offered.contains(d) || declined.contains(d) || !available(d)) {
+        continue;
+      }
+      offered.add(d);
+    }
+    return List.of(offered);
+  }
+
+  /// Puts [d] on the menu or takes it off. False if it can't be put on: it
+  /// can't be made, or the menu is full.
+  bool toggleOffer(Dish d) {
+    menu();
+    if (offered.contains(d)) {
+      offered.remove(d);
+      declined.add(d);
+      return true;
+    }
+    if (!available(d) || offered.length >= menuSlots) return false;
+    declined.remove(d);
+    offered.add(d);
+    return true;
+  }
+
+  /// What a portion of [d] costs in ingredients, at the chosen quality.
+  double unitCost(Dish d) => recipes[d]!.price * tierOf(d).costFrac;
+
+  /// How many portions of each dish to prepare for [guests] guests, with a
+  /// little spare. A guest orders one main, and maybe a side, drink or
+  /// dessert, shared between whatever the menu has in each course.
+  Map<Dish, int> forecastPlan(int guests) {
+    final menu = this.menu();
+    final out = <Dish, int>{};
+    for (final c in Course.values) {
+      final dishes = [
+        for (final d in menu)
+          if (recipes[d]!.course == c) d,
+      ];
+      for (final d in dishes) {
+        out[d] = (guests * c.appetite / dishes.length * 1.15).ceil();
+      }
+    }
+    return out;
+  }
+
+  /// Portions that will be prepared: the player's choice, else the forecast.
+  int portions(Dish d) =>
+      plan[d] ?? (forecastPlan(progress.expectedGuests)[d] ?? 0);
+
+  /// What the ingredients for the day's plan cost.
+  int prepCost() {
+    var total = 0.0;
+    for (final d in menu()) {
+      total += portions(d) * unitCost(d);
+    }
+    return total.round();
   }
 
   /// What is wrong with the layout, and whether the diner can open.
   Report report() {
     final problems = <Problem>[];
     final seatCells = {for (final s in seats()) s.cell};
+    final tablesServed = {for (final s in seats()) s.table};
     for (final p in items) {
-      switch (p.kind) {
-        case Kind.table:
-          final hasSeat = p.cells.any(
-            (c) => c.neighbors.any(seatCells.contains),
-          );
-          if (!hasSeat) problems.add(Problem(p, 'Table has no seat'));
-        case Kind.chair || Kind.bench:
-          final usable = p.cells.any(seatCells.contains);
-          if (!usable) {
-            final nextToTable = p.cells.any(
-              (c) => c.neighbors.any((n) => objectAt(n)?.kind == Kind.table),
+      switch (p.def.role) {
+        case Role.table:
+          if (!p.cells.any(tablesServed.contains)) {
+            problems.add(Problem(p, 'Nothing is seated at this table'));
+          }
+        case Role.seat:
+          if (!p.cells.any(seatCells.contains)) {
+            final faces = p.cells.any(
+              (c) => objectAt(p.frontOf(c))?.def.role == Role.table,
             );
             problems.add(
               Problem(
                 p,
-                nextToTable
+                faces
                     ? '${p.def.name} is boxed in'
-                    : '${p.def.name} needs a table beside it',
+                    : '${p.def.name} must face a table',
               ),
             );
           }
-        case Kind.grill || Kind.counter:
-          if (!p.cells.any((c) => approaches(c).isNotEmpty)) {
-            problems.add(Problem(p, '${p.def.name} is boxed in'));
+        case Role.station || Role.counter:
+          if (useCells(p).isEmpty) {
+            problems.add(
+              Problem(p, '${p.def.name} needs a free tile in front'),
+            );
           }
-        default:
+        case Role.window:
+          if (operatorSpots.isEmpty) {
+            problems.add(Problem(p, 'Keep a tile behind the window free'));
+          }
+        case Role.decor:
       }
     }
-    bool usable(Kind k) => items.any(
-      (p) => p.kind == k && p.cells.any((c) => approaches(c).isNotEmpty),
-    );
+    bool usable(Role r, [Kind? k]) => ofRole(
+      r,
+    ).any((p) => (k == null || p.kind == k) && useCells(p).isNotEmpty);
     final missing = [
-      if (!usable(Kind.grill)) 'Needs a grill',
-      if (!usable(Kind.counter)) 'Needs a counter',
-      if (seatCells.isEmpty) 'Needs a chair beside a table',
+      if (!usable(Role.station, Kind.grill)) 'Needs a grill',
+      if (!usable(Role.counter)) 'Needs a counter',
+      if (seatCells.isEmpty) 'Needs a seat facing a table',
+      if (roster.employees.isEmpty) 'Needs someone to work',
+      // With a grill but nothing to cook on it, the menu was emptied.
+      if (usable(Role.station, Kind.grill) &&
+          !menu().any((d) => recipes[d]!.course == Course.main))
+        'Needs a main dish on the menu',
     ];
     return Report(problems, missing, seatCells.length);
   }
 
-  PlaceResult check(Kind kind, Cell at) {
+  /// Which way a new [kind] at [at] should face to start with: seats toward a
+  /// neighbouring table, machines toward free floor.
+  Dir defaultFacing(Kind kind, Cell at) {
     final def = fixtureDefs[kind]!;
+    if (!def.turns) return Dir.sw;
     final probe = Placed(0, kind, at);
+    for (final d in [Dir.sw, Dir.se, Dir.nw, Dir.ne]) {
+      probe.facing = d;
+      for (final c in probe.cells) {
+        final f = probe.frontOf(c);
+        final isFront = !probe.cells.contains(f);
+        if (!isFront) continue;
+        if (def.role == Role.seat) {
+          if (objectAt(f)?.def.role == Role.table) return d;
+        } else if (walkable(f)) {
+          return d;
+        }
+      }
+    }
+    return Dir.sw;
+  }
+
+  /// Whether a [kind] facing [facing] fits at [at]. [ignore] is a fixture
+  /// being moved or turned, treated as not there; [free] skips the price.
+  PlaceResult check(
+    Kind kind,
+    Cell at, {
+    Dir facing = Dir.sw,
+    Placed? ignore,
+    bool free = false,
+  }) {
+    final def = fixtureDefs[kind]!;
+    if (def.unlock > progress.level && !free) return PlaceResult.locked;
+    final probe = Placed(0, kind, at, kind == Kind.window ? Dir.se : facing);
     for (final c in probe.cells) {
       if (!isInside(c)) return PlaceResult.outside;
     }
     for (final c in probe.cells) {
-      if (def.floor ? floorAt(c) != null : objectAt(c) != null) {
-        return PlaceResult.taken;
-      }
+      final other = def.floor ? floorAt(c) : objectAt(c);
+      if (other != null && other != ignore) return PlaceResult.taken;
       if (!def.floor && c == entrance) return PlaceResult.entrance;
     }
-    if (coins < def.cost) return PlaceResult.broke;
+    if (kind == Kind.window) {
+      if (!owned.contains(1)) return PlaceResult.noRoad;
+      if (probe.cells.any((c) => c.x != right || c.y < top)) {
+        return PlaceResult.wall;
+      }
+      if (items.any((p) => p.kind == Kind.window && p != ignore)) {
+        return PlaceResult.onlyOne;
+      }
+    }
+    if (!free && coins < def.cost) return PlaceResult.broke;
     if (!def.floor) {
       // No pocket of floor may be cut off from the door.
+      final had = ignore != null && items.remove(ignore);
       items.add(probe);
       final open = reachable();
-      var all = 0;
-      for (var y = top; y <= bottom; y++) {
-        for (var x = left; x <= right; x++) {
-          if (walkable(Cell(x, y))) all++;
-        }
-      }
+      final all = insideCells().where(walkable).length;
       items.remove(probe);
+      if (had) items.add(ignore);
       if (open.length != all) return PlaceResult.blocksWay;
     }
     return PlaceResult.ok;
   }
 
-  PlaceResult place(Kind kind, Cell at) {
-    final r = check(kind, at);
+  PlaceResult place(Kind kind, Cell at, [Dir? facing]) {
+    final f = kind == Kind.window ? Dir.se : facing ?? defaultFacing(kind, at);
+    final r = check(kind, at, facing: f);
     if (r != PlaceResult.ok) return r;
     coins -= fixtureDefs[kind]!.cost;
-    _put(kind, at);
+    _put(kind, at, f);
     return r;
   }
 
-  void _put(Kind kind, Cell at) => items.add(Placed(_nextId++, kind, at));
+  void _put(Kind kind, Cell at, [Dir facing = Dir.sw]) =>
+      items.add(Placed(_nextId++, kind, at, facing));
+
+  /// Turns [p] a quarter turn clockwise, if it still fits.
+  PlaceResult rotate(Placed p) {
+    if (p.kind == Kind.window) return PlaceResult.ok;
+    final next = p.facing.cw;
+    final r = check(p.kind, p.at, facing: next, ignore: p, free: true);
+    if (r == PlaceResult.ok) p.facing = next;
+    return r;
+  }
+
+  /// Moves [p] so its top-left cell is [to], keeping its facing. Free.
+  PlaceResult moveTo(Placed p, Cell to) {
+    final r = check(p.kind, to, facing: p.facing, ignore: p, free: true);
+    if (r == PlaceResult.ok) p.at = to;
+    return r;
+  }
+
+  /// Picks [p] up and puts it down with its top-left at [to], facing
+  /// [facing]. Free.
+  PlaceResult relocate(Placed p, Cell to, Dir facing) {
+    if (p.kind == Kind.window) facing = Dir.se;
+    final r = check(p.kind, to, facing: facing, ignore: p, free: true);
+    if (r == PlaceResult.ok) {
+      p.at = to;
+      p.facing = facing;
+    }
+    return r;
+  }
 
   /// Sells [p] back for half its price.
   void sell(Placed p) {
     if (items.remove(p)) coins += p.def.refund;
   }
 
-  bool get canExpand => nextStage != null && coins >= nextStage!.cost;
+  /// What section [i] costs now. The more of the plot is yours, the more each
+  /// further section costs.
+  int unlockCost(int i) {
+    final raw =
+        plots[i].tiles * pricePerTile * (1 + priceRise * (owned.length - 1));
+    return (raw / 10).round() * 10;
+  }
 
-  bool expand() {
-    if (!canExpand) return false;
-    coins -= nextStage!.cost;
-    stage++;
+  /// Why section [i] cannot be bought now, or null if it can.
+  String? whyLocked(int i) {
+    if (owned.contains(i)) return 'Yours already';
+    final needs = plots[i].needs;
+    if (needs != null && !owned.contains(needs)) {
+      return 'Buy ${plots[needs].name.toLowerCase()} first';
+    }
+    if (progress.level < plots[i].level) {
+      return 'Needs restaurant level ${plots[i].level}';
+    }
+    if (coins < unlockCost(i)) return 'Not enough coins';
+    return null;
+  }
+
+  bool canUnlock(int i) => whyLocked(i) == null;
+
+  /// Buys section [i]. The window moves out to the new end of the wall when
+  /// the front is widened.
+  bool unlock(int i) {
+    if (!canUnlock(i)) return false;
+    coins -= unlockCost(i);
+    owned.add(i);
+    final w = window;
+    if (i == 1 && w != null) w.at = Cell(right, w.at.y);
     return true;
+  }
+
+  // ---------------------------------------------------------------- staff
+
+  /// Makes sure there are people looking for work today.
+  void lookForStaff() => roster.dropStale(progress.day);
+
+  /// Takes on a candidate: their fee, and a place on the team.
+  StaffResult hire(Staff c) {
+    if (!roster.candidates.contains(c)) return StaffResult.gone;
+    if (roster.employees.length >= progress.staffLimit) {
+      return StaffResult.noRoom;
+    }
+    if (coins < c.fee) return StaffResult.broke;
+    coins -= c.fee;
+    roster.candidates = [
+      for (final x in roster.candidates)
+        if (x != c) x,
+    ];
+    roster.employees.add(c);
+    return StaffResult.ok;
+  }
+
+  /// Lets someone go, paying them a day's wages if there is the money.
+  StaffResult fire(Staff s) {
+    if (!roster.employees.remove(s)) return StaffResult.gone;
+    coins -= coins < s.severance ? coins : s.severance;
+    return StaffResult.ok;
+  }
+
+  /// Raises one of their stats by a point, once a day.
+  StaffResult train(Staff s, Stat stat) {
+    if (!roster.employees.contains(s)) return StaffResult.gone;
+    if (s.trainedToday) return StaffResult.tired;
+    if (s.stat(stat) >= s.cap(stat)) return StaffResult.maxed;
+    final cost = s.trainCost(stat);
+    if (coins < cost) return StaffResult.broke;
+    coins -= cost;
+    s.train(stat);
+    return StaffResult.ok;
+  }
+
+  /// What it costs to teach someone a dish that needs a trained hand.
+  static const teachCost = 150;
+
+  /// Teaches [s] to make [d]. It takes their day, and the price of a course.
+  StaffResult teach(Staff s, Dish d) {
+    if (!roster.employees.contains(s)) return StaffResult.gone;
+    if (!recipes[d]!.skilled || s.canCook(d)) return StaffResult.maxed;
+    if (s.trainedToday) return StaffResult.tired;
+    if (coins < teachCost) return StaffResult.broke;
+    coins -= teachCost;
+    s.teach(d);
+    s.trainedToday = true;
+    return StaffResult.ok;
+  }
+
+  /// Pays for an advert, and people answer it. Several adverts in a day each
+  /// bring a new set, replacing those who had not been hired.
+  StaffResult advertise(Ad ad) {
+    lookForStaff();
+    if (roster.employees.length >= progress.staffLimit) {
+      return StaffResult.noRoom;
+    }
+    final def = adDefs[ad]!;
+    if (coins < def.cost) return StaffResult.broke;
+    coins -= def.cost;
+    roster.refreshes++;
+    roster.rollCandidates(progress.day, progress.level, progress.rating, ad);
+    return StaffResult.ok;
   }
 
   Map<String, Object?> toJson() => {
     'coins': coins,
-    'stage': stage,
+    'owned': owned.toList()..sort(),
+    'progress': progress.toJson(),
+    'staff': roster.toJson(),
+    'menu': [for (final d in offered) d.name],
+    'declined': [for (final d in declined) d.name],
+    'tiers': {for (final e in tiers.entries) e.key.name: e.value.name},
+    'plan': {for (final e in plan.entries) e.key.name: e.value},
     'items': [
-      for (final p in items) {'k': p.kind.name, 'x': p.at.x, 'y': p.at.y},
+      for (final p in items)
+        {'k': p.kind.name, 'x': p.at.x, 'y': p.at.y, 'f': p.facing.name},
     ],
   };
 
   static Diner fromJson(Map<String, Object?> j) {
     final d = Diner(
       coins: (j['coins'] as int?) ?? 0,
-      stage: ((j['stage'] as int?) ?? 0).clamp(0, stages.length - 1),
+      progress: Progress.fromJson(j['progress'] as Map<String, Object?>?),
+      roster: Roster.fromJson(j['staff']),
     );
+    final saved = j['owned'];
+    if (saved is List) {
+      d.owned
+        ..clear()
+        ..addAll([
+          for (final i in saved)
+            if (i is int && i >= 0 && i < plots.length) i,
+        ])
+        ..add(0);
+    } else {
+      // Saves from when the room grew wider, deeper and into a yard: the
+      // width becomes the section beside it, the yard those behind.
+      final wide = (j['wide'] as int?) ?? 0;
+      final old = [(0, 0), (1, 0), (1, 1), (2, 1), (2, 2)];
+      final stage = old[((j['stage'] as int?) ?? 0).clamp(0, 4)];
+      if (wide >= 1 || (j['wide'] == null && stage.$1 >= 1)) d.owned.add(1);
+      if (j['backLot'] == true) {
+        d.owned.addAll(d.owned.contains(1) ? {2, 3, 4, 5} : {2, 4});
+      }
+    }
+    Dish? dishNamed(Object? n) =>
+        Dish.values.where((x) => x.name == n).firstOrNull;
+    for (final n in (j['menu'] as List?) ?? const []) {
+      final dish = dishNamed(n);
+      if (dish != null) d.offered.add(dish);
+    }
+    for (final n in (j['declined'] as List?) ?? const []) {
+      final dish = dishNamed(n);
+      if (dish != null) d.declined.add(dish);
+    }
+    final tiers = j['tiers'];
+    if (tiers is Map) {
+      for (final e in tiers.entries) {
+        final dish = dishNamed(e.key);
+        final tier = Tier.values.where((t) => t.name == e.value).firstOrNull;
+        if (dish != null && tier != null) d.tiers[dish] = tier;
+      }
+    }
+    final plan = j['plan'];
+    if (plan is Map) {
+      for (final e in plan.entries) {
+        final dish = dishNamed(e.key);
+        if (dish != null && e.value is int) {
+          d.plan[dish] = (e.value as int).clamp(0, 200);
+        }
+      }
+    }
     for (final raw in (j['items'] as List?) ?? const []) {
       final m = raw as Map;
       final kind = Kind.values.where((k) => k.name == m['k']).firstOrNull;
       if (kind == null) continue;
       final at = Cell(m['x'] as int, m['y'] as int);
-      // Re-validate so a bad save can't put things outside the room.
-      final probe = Placed(0, kind, at);
-      if (probe.cells.every(d.isInside)) d._put(kind, at);
+      var facing =
+          Dir.values.where((f) => f.name == m['f']).firstOrNull ?? Dir.sw;
+      if (kind == Kind.window) facing = Dir.se;
+      // Re-validate so a bad save can't put things outside the room. Whatever
+      // no longer fits is sold back at full price.
+      final probe = Placed(0, kind, at, facing);
+      final fits =
+          probe.cells.every(d.isInside) &&
+          (kind != Kind.window ||
+              probe.cells.every((c) => c.x == d.right && c.y >= top));
+      if (fits) {
+        d._put(kind, at, facing);
+      } else {
+        d.coins += fixtureDefs[kind]!.cost;
+      }
     }
     return d;
   }

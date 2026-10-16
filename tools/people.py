@@ -157,6 +157,17 @@ def draw(spec, facing, frame, seated=False):
         if spec.top in ('tee', 'hoodie', 'cardigan', 'jacket'):
             rect(img, -5, top_y + th - 1, 10, 1, pants.lo if spec.bottom == 'pants' else shirt.lo)
 
+    # a waiter's long white apron
+    if spec.extra == 'apron' and not seated:
+        if not back:
+            rect(img, -4, top_y + 3, 8, th - 2, WHITE)
+            rect(img, 1, top_y + 3, 3, th - 2, hexc('#e6dff0'))
+            rect(img, -4, top_y + th - 1, 8, 1, hexc('#cfc6e0'))
+            img.put(-1, top_y + 5, GOLD_BTN)
+        else:
+            rect(img, -5, top_y + th - 4, 10, 1, WHITE)
+            rect(img, -1, top_y + th - 3, 2, 3, WHITE)
+
     # collar / front details
     if spec.top == 'jacket':
         # double-breasted chef jacket with gold buttons

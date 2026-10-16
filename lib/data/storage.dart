@@ -117,6 +117,9 @@ class Storage {
 
   static void saveDiner(Diner d) => _put('diner', jsonEncode(d.toJson()));
 
+  /// Forgets the saved diner, so the next one starts from scratch.
+  static void clearDiner() => _put('diner', null);
+
   // ───────────────────────── unlocks ─────────────────────────
 
   static Set<CardType> get unlockedCards => {

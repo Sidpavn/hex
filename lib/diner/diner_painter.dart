@@ -4,11 +4,28 @@ import 'package:flutter/material.dart';
 
 import '../ui/pixel/palette.dart';
 import 'actor.dart';
+import 'city.dart';
 import 'clock.dart';
 import 'diner.dart';
 import 'diner_art.dart';
 import 'iso.dart';
 import 'service.dart';
+
+/// The sprite for a [kind] turned to [facing]. Only things with a front have
+/// four.
+String spriteName(Kind kind, Dir facing) => switch (kind) {
+  Kind.counter ||
+  Kind.grill ||
+  Kind.fryer ||
+  Kind.soda ||
+  Kind.espresso ||
+  Kind.oven ||
+  Kind.freezer ||
+  Kind.chair ||
+  Kind.bench => '${kind.name}_${facing.name}',
+  Kind.window => 'window_se',
+  _ => kind.name,
+};
 
 /// Draws the diner in isometric. [s] is the logical size of one art pixel and
 /// must be a whole number of device pixels, so every sprite lands on the pixel
@@ -24,9 +41,13 @@ class DinerPainter extends CustomPainter {
     this.placing,
     this.hover,
     this.selected,
+    this.facing = Dir.sw,
+    this.moving,
     this.grid = false,
     this.showProblems = true,
     this.revision = 0,
+    this.gesturing = false,
+    this.doorOpen = _closed,
     StaticLayer? layer,
   }) : layer = layer ?? StaticLayer(),
        super(repaint: clock);
@@ -49,6 +70,13 @@ class DinerPainter extends CustomPainter {
   final Cell? hover;
   final Placed? selected;
 
+  /// Which way the fixture being placed will face.
+  final Dir facing;
+
+  /// A fixture being picked up and moved. It stays where it stood, outlined,
+  /// until it is put down, so it never disappears.
+  final Placed? moving;
+
   /// Outline every cell while building.
   final bool grid;
 
@@ -57,6 +85,15 @@ class DinerPainter extends CustomPainter {
 
   /// Bumped by the owner on every change, since [diner] is mutated in place.
   final int revision;
+
+  /// The view is being dragged or pinched: draw the still parts directly, as
+  /// caching an image that changes every frame would cost more than it saves.
+  final bool gesturing;
+
+  /// Whether the door sign says open. Asked every frame, since the day can
+  /// end between rebuilds.
+  final bool Function() doorOpen;
+  static bool _closed() => false;
 
   /// The ground, floor and walls, drawn once and reused until something
   /// changes. The owner keeps it between painters so it survives rebuilds.
@@ -68,8 +105,11 @@ class DinerPainter extends CustomPainter {
       hover != null &&
       diner.check(placing!, hover!) == PlaceResult.ok;
 
-  /// The ground colour, also used behind the board so it has no edge.
-  static const grass = Color(0xFF8DCB6A);
+  /// The ground colour, dimmed like everything beyond the plot, so the
+  /// restaurant is what the eye goes to. It is also used behind the board so
+  /// it has no edge.
+  static const _dim = Color(0x73141E1A);
+  static final grass = Color.alphaBlend(_dim, const Color(0xFF8DCB6A));
   static const _gridLine = Color(0xFFB98F5E);
   static const _ok = Color(0xFF2F9E44);
   static const _bad = Color(0xFFD4301F);
@@ -82,6 +122,12 @@ class DinerPainter extends CustomPainter {
     ..filterQuality = FilterQuality.none
     ..isAntiAlias = false;
 
+  /// Like [_paint], but darker: for the ground beyond the plot.
+  final Paint _dimPaint = Paint()
+    ..filterQuality = FilterQuality.none
+    ..isAntiAlias = false
+    ..colorFilter = const ColorFilter.mode(_dim, BlendMode.srcATop);
+
   /// Draws [spr] with its origin at board point [at], [lift] art pixels up.
   void _blit(
     Canvas canvas,
@@ -89,8 +135,10 @@ class DinerPainter extends CustomPainter {
     Offset at, {
     double lift = 0,
     bool flip = false,
+    bool dim = false,
   }) {
     if (spr.blank) return;
+    final paint = dim ? _dimPaint : _paint;
     blits++;
     final ax = flip ? spr.width - 1 - spr.ax : spr.ax;
     final x = (at.dx - ax).round();
@@ -103,7 +151,7 @@ class DinerPainter extends CustomPainter {
     );
     final dst = Rect.fromLTWH(x * s, y * s, spr.width * s, spr.height * s);
     if (!flip) {
-      canvas.drawImageRect(spr.image, src, dst, _paint);
+      canvas.drawImageRect(spr.image, src, dst, paint);
       return;
     }
     canvas
@@ -114,25 +162,49 @@ class DinerPainter extends CustomPainter {
       spr.image,
       src,
       Rect.fromLTWH(0, 0, dst.width, dst.height),
-      _paint,
+      paint,
     );
     canvas.restore();
   }
 
-  void _cell(Canvas canvas, String name, Cell c, {bool flip = false}) =>
-      _blit(canvas, art.sprite(name), view.vertex(c.x, c.y), flip: flip);
+  void _cell(
+    Canvas canvas,
+    String name,
+    Cell c, {
+    bool flip = false,
+    bool dim = false,
+  }) => _blit(
+    canvas,
+    art.sprite(name),
+    view.vertex(c.x, c.y),
+    flip: flip,
+    dim: dim,
+  );
 
   @override
   void paint(Canvas canvas, Size size) {
     // Everything that only changes when the layout does: one image.
-    layer.paint(
-      canvas,
-      size,
-      (revision, fit.s, size, grid),
-      fit.dpr,
-      (c) => _still(c, size),
-    );
+    if (gesturing) {
+      canvas
+        ..save()
+        ..clipRect(Offset.zero & size);
+      _still(canvas, size);
+      canvas.restore();
+    } else {
+      layer.paint(
+        canvas,
+        size,
+        (revision, fit.key, size, grid),
+        fit.dpr,
+        (c) => _still(c, size),
+      );
+    }
 
+    // Everything below moves about, and some of it (a car driving out, the
+    // building across the street) reaches past the board: keep it on it.
+    canvas
+      ..save()
+      ..clipRect(Offset.zero & size);
     final live = [...actors, ...?sim?.actors(clock?.alpha ?? 1)];
     final things = <_Drawn>[
       for (final p in diner.items.where((p) => !p.def.floor))
@@ -141,14 +213,23 @@ class DinerPainter extends CustomPainter {
           true,
           () => _fixture(canvas, p),
         ),
+      ..._front(canvas),
+      for (final (name, c) in streetProps(diner))
+        _Drawn((c.x + c.y).toDouble(), true, () => _cell(canvas, name, c)),
       for (final a in live) _Drawn(a.depth, false, () => _actor(canvas, a)),
-    ]..sort();
+    ];
+    // Equal depths keep the order they were added in, whatever the sort does.
+    for (var i = 0; i < things.length; i++) {
+      things[i].seq = i;
+    }
+    things.sort();
     for (final d in things) {
       d.draw();
     }
 
     _warnings(canvas);
     _cursor(canvas);
+    canvas.restore();
   }
 
   /// The parts of the picture that never move between layout changes.
@@ -157,24 +238,22 @@ class DinerPainter extends CustomPainter {
       ..clipRect(Offset.zero & size)
       ..drawRect(Offset.zero & size, Paint()..color = grass);
 
-    // Ground, lots and floor.
+    // The street, the plot and the floor. Everything off the plot is dimmed.
     for (final c in view.ground(diner, size.width / s, size.height / s)) {
-      final String name;
-      if (diner.isInside(c)) {
-        name = (c.x + c.y).isEven ? 'floor_a' : 'floor_b';
-      } else if (diner.isNextLot(c)) {
-        name = 'lot';
-      } else {
-        name = (c.x * 7 + c.y * 13) % 5 == 0 ? 'grass_b' : 'grass_a';
-      }
-      _cell(canvas, name, c);
+      _cell(canvas, groundTile(diner, c), c, dim: !onPlot(c));
     }
-    // The floor's front edges, so it has thickness.
-    for (var x = Diner.left; x <= diner.right; x++) {
-      _cell(canvas, 'edge_l', Cell(x, diner.bottom));
+    // The neighbours, each a single sprite, dimmed with the rest.
+    final towers = [...buildings]
+      ..sort(
+        (a, b) => (a.x0 + a.y0 + a.w + a.d).compareTo(b.x0 + b.y0 + b.w + b.d),
+      );
+    for (final b in towers) {
+      _cell(canvas, b.sprite, Cell(b.x0, b.y0), dim: true);
     }
-    for (var y = Diner.top; y <= diner.bottom; y++) {
-      _cell(canvas, 'edge_r', Cell(diner.right, y));
+    // The floor's front and right-hand edges, so it has thickness.
+    for (final c in diner.insideCells()) {
+      if (!diner.isInside(Cell(c.x, c.y + 1))) _cell(canvas, 'edge_l', c);
+      if (!diner.isInside(Cell(c.x + 1, c.y))) _cell(canvas, 'edge_r', c);
     }
 
     for (final p in diner.items.where((p) => p.def.floor)) {
@@ -186,62 +265,146 @@ class DinerPainter extends CustomPainter {
     _walls(canvas);
   }
 
+  /// The low wall along the front and down the right of whatever is owned,
+  /// and the doorway in it. They stand in front of the people inside, and
+  /// behind those on the pavement.
+  List<_Drawn> _front(Canvas canvas) => [
+    for (final c in diner.insideCells())
+      if (!diner.isInside(Cell(c.x, c.y + 1)))
+        _Drawn((c.x + c.y + 1.5), true, () {
+          if (c == diner.entrance) {
+            _cell(canvas, doorOpen() ? 'door_open' : 'door_closed', c);
+          } else {
+            _cell(canvas, 'front_l', c);
+          }
+        }),
+    for (final c in diner.insideCells())
+      if (!diner.isInside(Cell(c.x + 1, c.y)))
+        _Drawn(c.x + c.y + 1.5, true, () => _cell(canvas, _rightWall(c), c)),
+  ];
+
+  /// The right-hand wall at row [y]: plain, or the two halves of the window.
+  String _rightWall(Cell c) {
+    final w = diner.window;
+    if (w == null || c.x != w.at.x || c.y < w.at.y || c.y >= w.at.y + w.h) {
+      return 'front_r';
+    }
+    return c.y == w.at.y ? 'front_win_r0' : 'front_win_r1';
+  }
+
   void _fixture(Canvas canvas, Placed p) {
-    final name = p.kind == Kind.chair
-        ? 'chair_${diner.chairFacing(p.at).name}'
-        : p.kind.name;
-    _cell(canvas, name, p.at);
+    _cell(canvas, spriteName(p.kind, p.facing), p.at);
   }
 
   void _actor(Canvas canvas, Actor a) {
-    final spr = art.sprite(a.name);
     final feet = view.vertex(a.x, a.y);
-    _blit(canvas, spr, feet, lift: a.lift, flip: a.flip);
+    var top = a.lift;
+    if (a.hasSprite) {
+      final spr = art.sprite(a.name);
+      _blit(canvas, spr, feet, lift: a.lift, flip: a.flip);
+      if (!spr.blank) top += spr.ay - spr.trim.top;
+    }
+    final meter = a.meter;
+    if (meter != null) {
+      _meter(canvas, feet, top + 3, meter, a.meterKind);
+      top += 6;
+    }
     final badge = a.badge;
-    if (badge != null && !spr.blank) {
-      final head = spr.ay - spr.trim.top;
-      _blit(
-        canvas,
-        art.sprite(badge),
-        feet.translate(0, 0),
-        lift: a.lift + head + 2,
-      );
+    if (badge != null) {
+      _blit(canvas, art.sprite(badge), feet, lift: top + 3);
+    }
+    if (a.items.isNotEmpty) _order(canvas, feet, top + 3, a.items);
+  }
+
+  static const _white = Color(0xFFFFFFFF);
+
+  /// A speech bubble with a picture of everything a guest is waiting for.
+  void _order(Canvas canvas, Offset feet, double lift, List<String> items) {
+    final n = items.length;
+    final w = 5 + n * 11;
+    const h = 15;
+    final x = (feet.dx - w / 2).round();
+    final y = (feet.dy - lift).round() - h - 3;
+    void bar(int bx, int by, int bw, int bh, Color c) => canvas.drawRect(
+      Rect.fromLTWH(bx * s, by * s, bw * s, bh * s),
+      Paint()
+        ..color = c
+        ..isAntiAlias = false,
+    );
+    // Outline, then the white inside, with the corners cut.
+    bar(x + 1, y, w - 2, h, _meterEdge);
+    bar(x, y + 1, w, h - 2, _meterEdge);
+    bar(x + 2, y + 1, w - 4, h - 2, _white);
+    bar(x + 1, y + 2, w - 2, h - 4, _white);
+    // The tail pointing down at them.
+    final mid = (x + w / 2).round();
+    bar(mid - 2, y + h, 4, 1, _meterEdge);
+    bar(mid - 1, y + h + 1, 2, 1, _meterEdge);
+    bar(mid - 1, y + h - 1, 2, 1, _white);
+    for (var i = 0; i < n; i++) {
+      final ico = art.sprite('ico_${items[i]}');
+      _blit(canvas, ico, Offset(x + 2 + 6 + i * 11 + 0.0, y + 7.5), lift: 0);
     }
   }
 
+  static const _meterW = 14;
+  static const _meterEdge = Color(0xFF2A2036);
+  static const _meterBack = Color(0xFF5A4F6B);
+  static const _meterOk = Color(0xFF5CB85A);
+  static const _meterMid = Color(0xFFF2C338);
+  static const _meterLow = Color(0xFFE2493F);
+
+  /// A small bar over someone's head: green, then yellow, then red as
+  /// patience runs out; gold while something cooks.
+  void _meter(Canvas canvas, Offset at, double lift, double v, Meter kind) {
+    final x = (at.dx - _meterW / 2).round();
+    final y = (at.dy - lift).round() - 3;
+    final fill = kind == Meter.cooking
+        ? _meterMid
+        : v > 0.66
+        ? _meterOk
+        : v > 0.33
+        ? _meterMid
+        : _meterLow;
+    void bar(int bx, int by, int w, int h, Color c) => canvas.drawRect(
+      Rect.fromLTWH(bx * s, by * s, w * s, h * s),
+      Paint()
+        ..color = c
+        ..isAntiAlias = false,
+    );
+    bar(x, y, _meterW, 4, _meterEdge);
+    bar(x + 1, y + 1, _meterW - 2, 2, _meterBack);
+    final w = ((_meterW - 2) * v.clamp(0.0, 1.0)).round();
+    if (w > 0) bar(x + 1, y + 1, w, 2, fill);
+  }
+
+  /// The tall walls: along the back of whatever is owned, and down its left.
+  /// Wherever a section ends, its edge gets a wall.
   void _walls(Canvas canvas) {
     final back = <_Drawn>[];
-    for (var x = Diner.left; x <= diner.right; x++) {
+    void wall(String name, Cell c) => back.add(
+      _Drawn((c.x + c.y).toDouble(), true, () => _cell(canvas, name, c)),
+    );
+    String across(int x) {
       final i = x - Diner.left;
-      final name = i % 3 == 1
+      return i % 3 == 1
           ? 'wall_a_window'
           : (i == 2 ? 'wall_a_board' : 'wall_a');
-      back.add(
-        _Drawn(
-          (x + Diner.top - 1).toDouble(),
-          true,
-          () => _cell(canvas, name, Cell(x, Diner.top - 1)),
-        ),
-      );
     }
-    for (var y = Diner.top; y <= diner.bottom; y++) {
-      final j = y - Diner.top;
-      final name = j % 3 == 1 ? 'wall_b_window' : 'wall_b';
-      back.add(
-        _Drawn(
-          (Diner.left - 1 + y).toDouble(),
-          true,
-          () => _cell(canvas, name, Cell(Diner.left - 1, y)),
-        ),
-      );
+
+    for (final c in diner.insideCells()) {
+      final north = !diner.isInside(Cell(c.x, c.y - 1));
+      final west = !diner.isInside(Cell(c.x - 1, c.y));
+      if (north) wall(across(c.x), Cell(c.x, c.y - 1));
+      if (west) {
+        final j = c.y - Diner.top;
+        wall(j % 3 == 1 ? 'wall_b_window' : 'wall_b', Cell(c.x - 1, c.y));
+      }
+      if (north && west) wall('wall_corner', Cell(c.x - 1, c.y - 1));
     }
-    back.add(
-      _Drawn(
-        (Diner.left + Diner.top - 2).toDouble(),
-        true,
-        () => _cell(canvas, 'wall_corner', Cell(Diner.left - 1, Diner.top - 1)),
-      ),
-    );
+    for (var i = 0; i < back.length; i++) {
+      back[i].seq = i;
+    }
     back.sort();
     for (final d in back) {
       d.draw();
@@ -253,11 +416,11 @@ class DinerPainter extends CustomPainter {
     if (!showProblems) return;
     final mark = art.sprite('warn');
     for (final p in _report.problems) {
-      final spr = art.sprite(p.at.kind.name);
+      final spr = art.sprite(spriteName(p.at.kind, p.at.facing));
       final top = spr.ay - spr.trim.top;
       final centre = view.vertex(
-        p.at.at.x + p.at.def.w / 2,
-        p.at.at.y + p.at.def.h / 2,
+        p.at.at.x + p.at.w / 2,
+        p.at.at.y + p.at.h / 2,
       );
       _blit(canvas, mark, centre, lift: top - 2);
     }
@@ -312,56 +475,84 @@ class DinerPainter extends CustomPainter {
 
   void _gridLines(Canvas canvas) {
     final path = Path();
-    for (var y = Diner.top; y <= diner.bottom; y++) {
-      for (var x = Diner.left; x <= diner.right; x++) {
-        _outline(path, Cell(x, y), 1, 1, full: false);
+    for (final c in diner.insideCells()) {
+      _outline(path, c, 1, 1, full: false);
+      // Close the far sides wherever the restaurant ends.
+      if (!diner.isInside(Cell(c.x, c.y + 1))) {
+        _line(path, view.vertex(c.x, c.y + 1), view.vertex(c.x + 1, c.y + 1));
       }
-    }
-    // Close the far two sides of the room.
-    for (var x = Diner.left; x <= diner.right; x++) {
-      _line(
-        path,
-        view.vertex(x, diner.bottom + 1),
-        view.vertex(x + 1, diner.bottom + 1),
-      );
-    }
-    for (var y = Diner.top; y <= diner.bottom; y++) {
-      _line(
-        path,
-        view.vertex(diner.right + 1, y),
-        view.vertex(diner.right + 1, y + 1),
-      );
+      if (!diner.isInside(Cell(c.x + 1, c.y))) {
+        _line(path, view.vertex(c.x + 1, c.y), view.vertex(c.x + 1, c.y + 1));
+      }
     }
     _stroke(canvas, path, _gridLine);
   }
 
   void _cursor(Canvas canvas) {
-    final sel = selected;
+    final sel = selected ?? moving;
     if (sel != null) {
       final path = Path();
-      _outline(path, sel.at, sel.def.w, sel.def.h);
+      _outline(path, sel.at, sel.w, sel.h);
       // Two pixels thick so it reads over the floor pattern.
-      _outlineShifted(path, sel.at, sel.def.w, sel.def.h);
+      _outlineShifted(path, sel.at, sel.w, sel.h);
       _stroke(canvas, path, Pal.gold);
     }
     final kind = placing;
     final at = hover;
+    if (kind == Kind.window) _windowSpots(canvas, at);
     if (kind == null || at == null) return;
-    final def = fixtureDefs[kind]!;
+    final ghost = Placed(0, kind, at, kind == Kind.window ? Dir.se : facing);
     final ok = _ghostOk;
-    if (ok) {
-      final name = kind == Kind.chair ? 'chair_${Dir.sw.name}' : kind.name;
-      _cell(canvas, name, at);
-    }
+    if (ok) _cell(canvas, spriteName(kind, facing), at);
     final path = Path();
-    _outline(path, at, def.w, def.h);
-    _outlineShifted(path, at, def.w, def.h);
+    _outline(path, at, ghost.w, ghost.h);
+    _outlineShifted(path, at, ghost.w, ghost.h);
     if (!ok) {
-      final c = view.vertex(at.x + def.w / 2, at.y + def.h / 2);
+      final c = view.vertex(at.x + ghost.w / 2, at.y + ghost.h / 2);
       _line(path, c.translate(-8, 0), c.translate(8, 0));
       _line(path, c.translate(0, -4), c.translate(0, 4));
     }
     _stroke(canvas, path, ok ? _ok : _bad);
+    if (ok) _frontMarker(canvas, ghost);
+  }
+
+  /// While a window is being placed: every place on the right-hand wall it
+  /// could go, and, for the one chosen, the tiles behind it where staff stand
+  /// and the spot in the side street where a car will pull up.
+  void _windowSpots(Canvas canvas, Cell? at) {
+    final spots = Path();
+    for (var y = Diner.top; y <= diner.bottom; y++) {
+      if (diner.windowFits(y, ignore: moving)) {
+        _outline(spots, Cell(diner.right, y), 1, 1);
+      }
+    }
+    _stroke(canvas, spots, Pal.gold);
+    if (at == null ||
+        at.x != diner.right ||
+        !diner.windowFits(at.y, ignore: moving)) {
+      return;
+    }
+    final marks = Path();
+    for (var dy = 0; dy < 2; dy++) {
+      final inside = view.vertex(at.x - 0.5, at.y + dy + 0.5);
+      _line(marks, inside.translate(-3, 0), inside.translate(3, 0));
+      _line(marks, inside.translate(0, -1), inside.translate(0, 1));
+    }
+    _outline(marks, Cell(diner.inLane, at.y), 1, 2);
+    _stroke(canvas, marks, _ok);
+  }
+
+  /// A small chevron on the tile in front of a fixture being placed, so it is
+  /// clear which way it faces.
+  void _frontMarker(Canvas canvas, Placed g) {
+    if (!g.def.turns) return;
+    final path = Path();
+    for (final f in g.fronts) {
+      final c = view.vertex(f.x + 0.5, f.y + 0.5);
+      _line(path, c.translate(-3, 0), c.translate(3, 0));
+      _line(path, c.translate(0, -1), c.translate(0, 1));
+    }
+    _stroke(canvas, path, Pal.gold);
   }
 
   void _outlineShifted(Path path, Cell at, int w, int h) {
@@ -379,9 +570,12 @@ class DinerPainter extends CustomPainter {
   bool shouldRepaint(covariant DinerPainter old) =>
       old.revision != revision ||
       old.fit != fit ||
+      old.gesturing != gesturing ||
       old.placing != placing ||
       old.hover != hover ||
       old.selected != selected ||
+      old.facing != facing ||
+      old.moving != moving ||
       old.grid != grid ||
       old.actors != actors ||
       old.sim != sim;
@@ -396,12 +590,15 @@ class _Drawn implements Comparable<_Drawn> {
   final bool fixture;
   final VoidCallback draw;
 
+  /// Where it was added, to settle ties.
+  int seq = 0;
+
   @override
   int compareTo(_Drawn o) {
     final r = depth.compareTo(o.depth);
     if (r != 0) return r;
-    if (fixture == o.fixture) return 0;
-    return fixture ? 1 : -1;
+    if (fixture != o.fixture) return fixture ? 1 : -1;
+    return seq.compareTo(o.seq);
   }
 }
 

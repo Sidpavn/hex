@@ -111,9 +111,6 @@ def lot_tile():
         if inside(DIAMOND_SCREEN, x, y):
             img.put(x, y, SAND.hi)
             img.put(x + 1, y, SAND.right)
-    # survey stake at the top corner
-    box(img, 6, 6, 8, 8, 0, 9, WOOD)
-    rect(img, P(6, 6, 9)[0] + 0, P(6, 6, 9)[1] - 1, 2, 1, RED.top)
     add('lot', img)
 
 
@@ -256,55 +253,6 @@ def wall_pieces():
 
 
 # -------------------------------------------------------------- fixtures
-def counter():
-    img = cell_img(30)
-    body = ramp('#b8743f')
-    box(img, 1, 1, 15, 15, 0, 13, body,
-        left=lambda u, z: (body.lo if z < 2 else
-                           (body.hi if z > 11 else
-                            (body.right if (3 <= u <= 12 and 3 <= z <= 9 and
-                                            (u in (3, 12) or z in (3, 9))) else body.left))),
-        right=lambda v, z: (body.lo if z < 2 else (body.right if z <= 11 else body.left)))
-    # marble top slab, slightly proud
-    box(img, 0, 0, 16, 16, 13, 15, MARBLE,
-        top=lambda u, v: MARBLE.top if (int(u + v * 0.7) % 7) else MARBLE.left)
-    # a mug and a little bell
-    box(img, 9, 8, 13, 12, 15, 19, RED)
-    face_top(img, 10, 12, 9, 11, 19, hexc('#5a3322'))
-    box(img, 3, 4, 6, 7, 15, 17, GOLD)
-    add('counter', img, 0.55)
-
-
-def grill():
-    img = cell_img(40)
-    # steel base cabinet
-    box(img, 1, 1, 15, 15, 0, 12, STEEL,
-        left=lambda u, z: (STEEL.lo if z < 2 else
-                           (STEEL.right if (u in (2, 14) or z == 11) else STEEL.left)))
-    # knobs on the front
-    for k, col in enumerate((GOLD.top, RED.top, GOLD.top)):
-        x, y = P(4 + k * 4, 15, 6)
-        rect(img, x, y, 2, 2, col)
-        img.put(x, y, lighter(col, 0.5))
-    # recessed hot plate
-    box(img, 2, 2, 14, 14, 12, 13, STEEL_D)
-    face_top(img, 3, 13, 3, 13, 13, hexc('#3b3445'))
-    # patties
-    for (u, v) in ((5, 5), (9, 8)):
-        ellipse(img, *P(u + 2, v + 2, 13), 4, 2, hexc('#8a4b2d'))
-        ellipse(img, P(u + 2, v + 2, 13)[0] - 1, P(u + 2, v + 2, 13)[1] - 1, 2, 1, hexc('#b86a3f'))
-    # glowing embers at the front
-    for k in range(5):
-        x, y = P(5 + k * 2, 13, 13)
-        img.put(x, y, hexc('#ff8a3d') if k % 2 else hexc('#ffc457'))
-    # back panel with vents and a hood
-    box(img, 1, 1, 15, 4, 13, 26, STEEL)
-    for k in range(3):
-        face_left(img, 4 + k * 3, 6 + k * 3, 4, 17, 22, STEEL.lo)
-    box(img, 0, 0, 16, 6, 26, 30, STEEL_D)
-    add('grill', img, 0.55)
-
-
 def table():
     img = cell_img(34)
     # pedestal and foot
@@ -439,15 +387,311 @@ def rug():
     add('rug', img)
 
 
-def bench():
+FACINGS = ('se', 'sw', 'nw', 'ne')
+
+
+def front_of(f):
+    """Which visible face is the front: 'v' (left), 'u' (right) or None."""
+    return {'sw': 'v', 'se': 'u'}.get(f)
+
+
+def on_face(img, f, a0, a1, z0, z1, color, plane=15):
+    """Paint a rectangle on the front face of a 1 cell box (does nothing when
+    the front is turned away from the viewer)."""
+    face = front_of(f)
+    if face == 'v':
+        face_left(img, a0, a1, plane, z0, z1, color)
+    elif face == 'u':
+        face_right(img, plane, a0, a1, z0, z1, color)
+
+
+def on_back(img, f, a0, a1, z0, z1, color, plane=15):
+    """The same on the face that shows when the front is turned away."""
+    if f == 'nw':
+        face_right(img, plane, a0, a1, z0, z1, color)
+    elif f == 'ne':
+        face_left(img, a0, a1, plane, z0, z1, color)
+
+
+def counter(f):
+    img = cell_img(32)
+    body = ramp('#b8743f')
+    box(img, 1, 1, 15, 15, 0, 13, body,
+        left=lambda u, z: (body.lo if z < 2 else
+                           (body.hi if z > 11 else
+                            (body.right if (3 <= u <= 12 and 3 <= z <= 9 and
+                                            (u in (3, 12) or z in (3, 9))) else body.left))),
+        right=lambda v, z: (body.lo if z < 2 else
+                            (body.hi if z > 11 else
+                             (body.left if (3 <= v <= 12 and 3 <= z <= 9 and
+                                            (v in (3, 12) or z in (3, 9))) else body.right))))
+    box(img, 0, 0, 16, 16, 13, 15, MARBLE,
+        top=lambda u, v: MARBLE.top if (int(u + v * 0.7) % 7) else MARBLE.left)
+    # cash register: its screen turns to the front
+    reg = ramp('#4a4f63')
+    box(img, 5, 5, 11, 11, 15, 18, reg)
+    if f == 'sw':
+        box(img, 6, 5, 10, 7, 18, 23, reg)
+        face_left(img, 7, 9, 7, 19, 22, hexc('#7fe0c0'))
+        img.put(*P(7, 7, 22), (255, 255, 255))
+    elif f == 'se':
+        box(img, 5, 6, 7, 10, 18, 23, reg)
+        face_right(img, 7, 7, 9, 19, 22, hexc('#7fe0c0'))
+        img.put(*P(7, 7, 22), (255, 255, 255))
+    else:
+        box(img, 6, 5, 10, 7, 18, 22, reg)
+    # a tip jar at the other end
+    box(img, 12, 11, 14, 13, 15, 19, ramp('#a8d8f0'))
+    add(f'counter_{f}', img, 0.55)
+
+
+def grill(f):
+    img = cell_img(40)
+    # the hood stands at the back, opposite the front
+    def hood():
+        if f == 'sw':
+            box(img, 1, 1, 15, 4, 13, 26, STEEL)
+            for k in range(3):
+                face_left(img, 4 + k * 3, 6 + k * 3, 4, 17, 22, STEEL.lo)
+            box(img, 0, 0, 16, 6, 26, 30, STEEL_D)
+        elif f == 'se':
+            box(img, 1, 1, 4, 15, 13, 26, STEEL)
+            for k in range(3):
+                face_right(img, 4, 4 + k * 3, 6 + k * 3, 17, 22, STEEL.lo)
+            box(img, 0, 0, 6, 16, 26, 30, STEEL_D)
+        elif f == 'nw':
+            box(img, 12, 1, 15, 15, 13, 26, STEEL)
+            for k in range(3):
+                face_right(img, 15, 4 + k * 3, 6 + k * 3, 17, 22, STEEL.lo)
+            box(img, 10, 0, 16, 16, 26, 30, STEEL_D)
+        else:
+            box(img, 1, 12, 15, 15, 13, 26, STEEL)
+            for k in range(3):
+                face_left(img, 4 + k * 3, 6 + k * 3, 15, 17, 22, STEEL.lo)
+            box(img, 0, 10, 16, 16, 26, 30, STEEL_D)
+
+    box(img, 1, 1, 15, 15, 0, 12, STEEL,
+        left=lambda u, z: (STEEL.lo if z < 2 else (STEEL.right if (u in (2, 14) or z == 11) else STEEL.left)),
+        right=lambda v, z: (STEEL_D.right if z < 2 else (STEEL.lo if (v in (2, 14) or z == 11) else STEEL.right)))
+    if f in ('sw', 'se'):
+        hood()
+    box(img, 2, 2, 14, 14, 12, 13, STEEL_D)
+    face_top(img, 3, 13, 3, 13, 13, hexc('#3b3445'))
+    for (u, v) in ((5, 5), (9, 8)):
+        cx, cy = P(u + 2, v + 2, 13)
+        ellipse(img, cx, cy, 4, 2, hexc('#8a4b2d'))
+        ellipse(img, cx - 1, cy - 1, 2, 1, hexc('#b86a3f'))
+    for k in range(5):
+        x, y = P(5 + k * 2, 13, 13)
+        img.put(x, y, hexc('#ff8a3d') if k % 2 else hexc('#ffc457'))
+    # knobs on the front face
+    for k, col in enumerate((GOLD.top, RED.top, GOLD.top)):
+        a = 4 + k * 4
+        if f == 'sw':
+            x, y = P(a, 15, 6)
+        elif f == 'se':
+            x, y = P(15, a, 6)
+        else:
+            continue
+        rect(img, x, y, 2, 2, col)
+        img.put(x, y, lighter(col, 0.5))
+    if f in ('nw', 'ne'):
+        hood()
+    add(f'grill_{f}', img, 0.55)
+
+
+def fryer(f):
+    img = cell_img(34)
+    body = ramp('#59607a')
+    accent = ramp('#e0a526')
+    box(img, 1, 1, 15, 15, 0, 13, body,
+        left=lambda u, z: (body.lo if z < 2 else (accent.base if z == 11 else body.left)),
+        right=lambda v, z: (body.lo if z < 2 else (accent.right if z == 11 else body.right)))
+    # two oil wells with wire baskets
+    box(img, 2, 2, 14, 14, 13, 14, body)
+    for (u0, v0) in ((3, 3), (3, 9)):
+        face_top(img, u0, u0 + 9, v0, v0 + 4, 14, hexc('#c88a1c'))
+        face_top(img, u0 + 1, u0 + 5, v0 + 1, v0 + 3, 14, hexc('#e8b43a'))
+        # basket: a little grid and a handle
+        for k in range(3):
+            x, y = P(u0 + 2 + k * 2, v0 + 2, 15)
+            img.put(x, y, (250, 240, 200))
+        box(img, u0 + 7, v0 + 1, u0 + 9, v0 + 3, 14, 19, ramp('#c04a3a'))
+    # control panel on the front
+    for k, col in enumerate((GREEN.top, RED.top)):
+        a = 5 + k * 5
+        if f == 'sw':
+            x, y = P(a, 15, 7)
+        elif f == 'se':
+            x, y = P(15, a, 7)
+        else:
+            continue
+        rect(img, x, y, 2, 2, col)
+    # a splash guard at the back
+    if f == 'sw':
+        box(img, 1, 1, 15, 3, 14, 22, body)
+    elif f == 'se':
+        box(img, 1, 1, 3, 15, 14, 22, body)
+    elif f == 'nw':
+        box(img, 13, 1, 15, 15, 14, 22, body)
+    else:
+        box(img, 1, 13, 15, 15, 14, 22, body)
+    add(f'fryer_{f}', img, 0.55)
+
+
+def soda(f):
+    img = cell_img(46)
+    body = ramp('#3f8fd0')
+    box(img, 2, 3, 14, 13, 0, 32, body, edge=False)
+    box(img, 1, 2, 15, 14, 0, 3, STEEL_D, edge=False)
+    box(img, 3, 4, 13, 12, 32, 35, ramp('#2f6fa8'))
+    # front: a glass panel of coloured syrup, three nozzles, a drip tray
+    def panel_v(u, z):
+        if u in (4, 11) or z in (14, 29):
+            return GOLD.top
+        k = int((u - 4) // 3) % 3
+        return [RED.top, GREEN.top, hexc('#ffb23f')][k]
+    if f == 'sw':
+        face_left(img, 4, 12, 13, 14, 30, panel_v)
+        for k in range(3):
+            face_left(img, 5 + k * 3, 6 + k * 3, 13, 9, 12, STEEL.top)
+        box(img, 4, 13, 12, 15, 5, 7, STEEL)
+    elif f == 'se':
+        face_right(img, 14, 4, 12, 14, 30, lambda v, z: panel_v(v + 0, z))
+        for k in range(3):
+            face_right(img, 14, 5 + k * 3, 6 + k * 3, 9, 12, STEEL.top)
+        box(img, 14, 4, 16, 12, 5, 7, STEEL)
+    elif f == 'nw':
+        face_right(img, 14, 4, 12, 20, 22, GOLD.top)
+    else:
+        face_left(img, 4, 12, 13, 20, 22, GOLD.top)
+    # a stack of cups on top
+    cx, cy = P(8, 8, 36)
+    ellipse(img, cx, cy, 3, 1.5, (250, 250, 246))
+    rect(img, cx - 2, cy, 4, 3, (240, 90, 90))
+    add(f'soda_{f}', img, 0.55)
+
+
+def espresso(f):
+    img = cell_img(36)
+    body = ramp('#6b4a3a')
+    chrome = ramp('#cfd6e4')
+    box(img, 1, 1, 15, 15, 0, 11, body,
+        left=lambda u, z: (body.lo if z < 2 else (GOLD.base if z == 10 else body.left)),
+        right=lambda v, z: (body.lo if z < 2 else (GOLD.right if z == 10 else body.right)))
+    # the machine itself: a polished steel block with two group heads
+    box(img, 3, 3, 13, 13, 11, 22, chrome)
+    box(img, 2, 2, 14, 14, 22, 24, ramp('#a7b0c4'))
+    # group heads and cups on the front side
+    for k in range(2):
+        a = 5 + k * 5
+        if f == 'sw':
+            box(img, a, 13, a + 2, 15, 12, 15, STEEL_D)
+            x, y = P(a, 15, 11)
+        elif f == 'se':
+            box(img, 13, a, 15, a + 2, 12, 15, STEEL_D)
+            x, y = P(15, a, 11)
+        else:
+            continue
+        rect(img, x - 1, y, 3, 2, (250, 250, 246))
+    # a pressure gauge
+    if f == 'sw':
+        x, y = P(8, 13, 19)
+    elif f == 'se':
+        x, y = P(13, 8, 19)
+    else:
+        x, y = P(8, 3, 19)
+    ellipse(img, x, y, 2, 2, (250, 250, 240))
+    img.put(x, y, RED.top)
+    add(f'espresso_{f}', img, 0.55)
+
+
+def oven(f):
+    img = cell_img(46)
+    brick = ramp('#c0583f')
+    box(img, 1, 1, 15, 15, 0, 14, brick,
+        left=lambda u, z: (brick.lo if z < 2 else (brick.right if (int(u) + int(z // 3)) % 4 == 0 else brick.left)),
+        right=lambda v, z: (brick.lo if z < 2 else (brick.lo if (int(v) + int(z // 3)) % 4 == 0 else brick.right)))
+    # a stepped dome on top
+    box(img, 2, 2, 14, 14, 14, 20, brick)
+    box(img, 4, 4, 12, 12, 20, 25, brick)
+    box(img, 6, 6, 10, 10, 25, 28, brick)
+    # the mouth, with a fire inside, on the front
+    def mouth_v(u, z):
+        if u < 5 or u > 11 or z < 14 or z > 21:
+            return None
+        if z > 19 and (u < 6 or u > 10):
+            return None
+        return hexc('#ff9a3d') if z < 17 and 6 <= u <= 10 else hexc('#4a2a22')
+    if f == 'sw':
+        face_left(img, 5, 11, 15, 14, 21,
+                  lambda u, z: mouth_v(u, z) or brick.left)
+    elif f == 'se':
+        face_right(img, 15, 5, 11, 14, 21,
+                   lambda v, z: mouth_v(v, z) or brick.right)
+    # a chimney at the back
+    if f == 'sw':
+        box(img, 7, 2, 10, 5, 28, 38, ramp('#8d6a58'))
+    elif f == 'se':
+        box(img, 2, 7, 5, 10, 28, 38, ramp('#8d6a58'))
+    elif f == 'nw':
+        box(img, 11, 7, 14, 10, 28, 38, ramp('#8d6a58'))
+    else:
+        box(img, 7, 11, 10, 14, 28, 38, ramp('#8d6a58'))
+    add(f'oven_{f}', img, 0.55)
+
+
+def freezer(f):
+    img = cell_img(30)
+    body = ramp('#e8f0f8')
+    box(img, 1, 1, 15, 15, 0, 13, body,
+        left=lambda u, z: (body.lo if z < 2 else (BLUE.base if z in (11, 12) else body.left)),
+        right=lambda v, z: (body.lo if z < 2 else (BLUE.right if z in (11, 12) else body.right)))
+    # a glass lid over rows of tubs in different flavours
+    face_top(img, 2, 14, 2, 14, 13, hexc('#bfe2f5'))
+    cols = [hexc('#f9d6e0'), hexc('#fff2b8'), hexc('#cfa27a'), hexc('#bfe7c8')]
+    for i in range(2):
+        for j in range(2):
+            u0 = 3 + i * 5
+            v0 = 3 + j * 5
+            face_top(img, u0, u0 + 4, v0, v0 + 4, 14, cols[(i * 2 + j) % 4])
+    # a label on the front
+    if f == 'sw':
+        face_left(img, 5, 11, 15, 4, 9, hexc('#3f8fd0'))
+        face_left(img, 6, 10, 15, 6, 7, (255, 255, 255))
+    elif f == 'se':
+        face_right(img, 15, 5, 11, 4, 9, hexc('#3f8fd0'))
+        face_right(img, 15, 6, 10, 6, 7, (255, 255, 255))
+    add(f'freezer_{f}', img, 0.55)
+
+
+def bench(f):
+    """A bench seats two. Facing se or nw it runs along the y axis."""
+    along_y = f in ('se', 'nw')
     img = cell_img(30, extra_w=32)
     img.ox = 16
+    if along_y:
+        img = Img(32 + 16, 30 + 36 + 16, 32, 30)
     seat = PINK
-    box(img, 1, 2, 31, 14, 0, 7, ramp('#b3576f'), edge=False)
-    box(img, 1, 3, 31, 14, 7, 10, seat)
-    box(img, 1, 2, 31, 5, 10, 22, seat,
-        left=lambda u, z: (seat.hi if z > 20 else (seat.left if int(u) % 6 else seat.right)))
-    add('bench', img, 0.55)
+    base = ramp('#b3576f')
+    L = 32
+    if not along_y:
+        box(img, 1, 2, L - 1, 14, 0, 7, base, edge=False)
+        box(img, 1, 3, L - 1, 14, 7, 10, seat)
+        if f == 'sw':
+            box(img, 1, 2, L - 1, 5, 10, 22, seat,
+                left=lambda u, z: (seat.hi if z > 20 else (seat.left if int(u) % 6 else seat.right)))
+        else:
+            box(img, 1, 11, L - 1, 14, 10, 15, seat)
+    else:
+        box(img, 2, 1, 14, L - 1, 0, 7, base, edge=False)
+        box(img, 3, 1, 14, L - 1, 7, 10, seat)
+        if f == 'se':
+            box(img, 2, 1, 5, L - 1, 10, 22, seat,
+                right=lambda v, z: (seat.hi if z > 20 else (seat.right if int(v) % 6 else seat.lo)))
+        else:
+            box(img, 11, 1, 14, L - 1, 10, 15, seat)
+    add(f'bench_{f}', img, 0.55)
 
 
 # ------------------------------------------------------------------ people
@@ -469,6 +713,8 @@ CAST = {
                           child=True, cap='#e2493f'),
     'cust_f': people.Spec('#d9742c', 'ponytail', top='tee', shirt='#3fb7b0',
                           pants='#2e3a5c', skin='tan', extra='stripe'),
+    'waiter': people.Spec('#3b2a1e', 'short', top='tee', shirt='#4a6fb5',
+                          pants='#2e3a5c', skin='tan', extra='apron'),
 }
 
 
@@ -520,29 +766,516 @@ def icons():
     rect(w, -1, 2, 2, 1, (255, 255, 255))
     w.outline(0.6)
     add('warn', w)
-    # plate with a burger
-    p = Img(16, 12, 8, 7)
-    ellipse(p, 0, 0, 7, 3.5, (250, 250, 246))
-    ellipse(p, 0, 0, 5, 2.4, (222, 226, 236))
-    ellipse(p, 0, -2, 4, 2, hexc('#e8a04a'))
-    rect(p, -4, -1, 8, 1, GREEN.top)
-    rect(p, -4, 0, 8, 1, hexc('#8a4b2d'))
-    ellipse(p, 0, 1, 4, 1.5, hexc('#d9904a'))
-    rect(p, -2, -4, 2, 1, hexc('#fff0c8'))
-    p.outline(0.55)
-    add('plate', p)
-    # order bubble with a burger
-    b = Img(20, 20, 10, 18)
-    ellipse(b, 0, -8, 9, 7.5, (255, 255, 255))
-    rect(b, -2, -2, 4, 2, (255, 255, 255))
-    rect(b, -1, 0, 2, 1, (255, 255, 255))
-    ellipse(b, 0, -11, 5, 2.5, hexc('#e8a04a'))
-    rect(b, -5, -10, 10, 1, GREEN.top)
-    rect(b, -5, -9, 10, 1, hexc('#8a4b2d'))
-    ellipse(b, 0, -7, 5, 2, hexc('#d9904a'))
-    rect(b, -2, -13, 2, 1, hexc('#fff0c8'))
+    def burger(img, cx, cy, w):
+        ellipse(img, cx, cy - 3, w, 2.4, hexc('#e8a04a'))
+        rect(img, cx - w, cy - 2, 2 * w, 1, GREEN.top)
+        rect(img, cx - w, cy - 1, 2 * w, 1, hexc('#8a4b2d'))
+        ellipse(img, cx, cy + 1, w, 1.8, hexc('#d9904a'))
+        rect(img, cx - 2, cy - 5, 2, 1, hexc('#fff0c8'))
+
+    def cheeseburger(img, cx, cy, w):
+        ellipse(img, cx, cy - 4, w, 2.4, hexc('#e8a04a'))
+        rect(img, cx - w, cy - 3, 2 * w, 1, GREEN.top)
+        rect(img, cx - w - 1, cy - 2, 2 * w + 2, 1, hexc('#ffd23f'))
+        rect(img, cx - w, cy - 1, 2 * w, 1, hexc('#8a4b2d'))
+        ellipse(img, cx, cy + 1, w, 1.8, hexc('#d9904a'))
+        rect(img, cx - 2, cy - 6, 2, 1, hexc('#fff0c8'))
+
+    def pizza(img, cx, cy, w):
+        ellipse(img, cx, cy, w + 2, w * 0.8, hexc('#e0a85a'))
+        ellipse(img, cx, cy, w + 0.5, w * 0.55, hexc('#e2493f'))
+        ellipse(img, cx, cy, w - 0.5, w * 0.4, hexc('#ffd86a'))
+        for dx, dy in ((-2, -1), (1, 0), (-1, 1), (2, -1)):
+            rect(img, cx + dx, cy + dy, 1, 1, hexc('#b32a2a'))
+        # a slice taken out
+        rect(img, cx + 2, cy + 1, 3, 1, (0, 0, 0, 0)) if False else None
+
+    def fries(img, cx, cy, w):
+        rect(img, cx - 3, cy - 1, 7, 5, RED.base)
+        rect(img, cx - 3, cy - 1, 7, 1, RED.hi)
+        for k in range(-3, 4, 2):
+            rect(img, cx + k, cy - 5 - (k % 3 == 0) - (abs(k) < 2), 1, 5, hexc('#f5d04a'))
+        rect(img, cx - 2, cy + 1, 5, 1, (255, 255, 255))
+
+    def drink(img, cx, cy, w):
+        rect(img, cx - 3, cy - 3, 7, 7, (250, 250, 246))
+        rect(img, cx - 3, cy - 1, 7, 4, hexc('#ff6f61'))
+        rect(img, cx + 2, cy - 6, 1, 4, hexc('#3fb7b0'))
+        rect(img, cx - 3, cy - 3, 7, 1, (255, 255, 255))
+
+    def coffee(img, cx, cy, w):
+        rect(img, cx - 3, cy - 2, 6, 5, (250, 250, 246))
+        rect(img, cx - 3, cy - 2, 6, 2, hexc('#5a3322'))
+        rect(img, cx + 3, cy - 1, 2, 3, (250, 250, 246))
+        rect(img, cx + 4, cy, 1, 1, hexc('#7b8aa0'))
+        rect(img, cx - 1, cy - 5, 1, 2, (220, 224, 232))
+        rect(img, cx + 1, cy - 6, 1, 2, (220, 224, 232))
+
+    def icecream(img, cx, cy, w):
+        # a cone and two scoops
+        for r in range(5):
+            rect(img, cx - 2 + r // 2, cy + r, 5 - r, 1, hexc('#e0a050'))
+        ellipse(img, cx, cy - 1, 3.2, 2.6, hexc('#f9d6e0'))
+        ellipse(img, cx, cy - 4, 2.8, 2.4, hexc('#cfa27a'))
+        rect(img, cx - 1, cy - 6, 1, 1, RED.top)
+
+    dishes = (
+        ('burger', burger),
+        ('cheeseburger', cheeseburger),
+        ('pizza', pizza),
+        ('fries', fries),
+        ('soda', drink),
+        ('coffee', coffee),
+        ('iceCream', icecream),
+    )
+    for name, draw_dish in dishes:
+        # a plate to set down on a table
+        p = Img(16, 14, 8, 8)
+        ellipse(p, 0, 1, 7, 3.5, (250, 250, 246))
+        ellipse(p, 0, 1, 5, 2.4, (222, 226, 236))
+        draw_dish(p, 0, 0, 4)
+        p.outline(0.55)
+        add(f'plate_{name}', p)
+        # a small icon for order bubbles
+        ic = Img(13, 13, 6, 6)
+        draw_dish(ic, 0, 0, 4)
+        ic.outline(0.5)
+        add(f'ico_{name}', ic)
+
+
+# ------------------------------------------------------------------ the city
+STONE = ramp('#cfcac2')
+ASPHALT = ramp('#575c6b')
+
+
+def flat_tile(name, base, seed, speckle=0.08, seams=False):
+    img = cell_img(0)
+    n = noise(seed)
+
+    def f(x, y):
+        u = y + x / 2.0
+        v = y - x / 2.0
+        c = base.top
+        if n() < speckle:
+            c = mix(c, base.left, 0.6)
+        if seams and (int(u) % 8 == 0 or int(v) % 8 == 0):
+            c = mix(c, base.right, 0.35)
+        return c
+    fill(img, DIAMOND_SCREEN, f)
+    line(img, P(0, 0), P(16, 0), base.hi)
+    line(img, P(0, 0), P(0, 16), base.hi)
+    add(name, img)
+
+
+def curb_tile():
+    img = cell_img(0)
+    # the pavement's raised edge: a stone lip along the road side
+    fill(img, DIAMOND_SCREEN, lambda x, y: STONE.top)
+    face_left(img, 0, 16, 16, -3, 0, STONE.right)
+    line(img, P(0, 16, 0), P(16, 16, 0), STONE.hi)
+    line(img, P(0, 0), P(16, 0), STONE.hi)
+    add('curb', img)
+
+
+def road_tile(name, dashed):
+    img = cell_img(0)
+    n = noise(21 if dashed else 22)
+    fill(img, DIAMOND_SCREEN, lambda x, y: ASPHALT.top if n() > 0.1 else ASPHALT.left)
+    if dashed:
+        # a broken yellow line along the far edge of this lane
+        for u0 in (1, 9):
+            pts = [P(u0, 14), P(u0 + 5, 14), P(u0 + 5, 16), P(u0, 16)]
+            fill(img, pts, hexc('#f2c338'))
+    add(name, img)
+
+
+def road_v_tile():
+    """A lane of the side street, which runs the other way: the broken line
+    is along its +u edge."""
+    img = cell_img(0)
+    n = noise(24)
+    fill(img, DIAMOND_SCREEN, lambda x, y: ASPHALT.top if n() > 0.1 else ASPHALT.left)
+    for v0 in (1, 9):
+        pts = [P(14, v0), P(16, v0), P(16, v0 + 5), P(14, v0 + 5)]
+        fill(img, pts, hexc('#f2c338'))
+    add('road_v', img)
+
+
+def crosswalk_h_tile():
+    """A crossing over the side street: the bars run along the street."""
+    img = cell_img(0)
+    n = noise(25)
+    fill(img, DIAMOND_SCREEN, lambda x, y: ASPHALT.top if n() > 0.1 else ASPHALT.left)
+    for v0 in (2, 6, 10, 14):
+        pts = [P(1, v0), P(15, v0), P(15, v0 + 2), P(1, v0 + 2)]
+        fill(img, pts, (240, 238, 232))
+    add('crosswalk_h', img)
+
+
+def crosswalk_tile():
+    img = cell_img(0)
+    n = noise(23)
+    fill(img, DIAMOND_SCREEN, lambda x, y: ASPHALT.top if n() > 0.1 else ASPHALT.left)
+    for u0 in (2, 6, 10, 14):
+        pts = [P(u0, 1), P(u0 + 2, 1), P(u0 + 2, 15), P(u0, 15)]
+        fill(img, pts, (240, 238, 232))
+    add('crosswalk', img)
+
+
+def block_building(name, w, d, H, wall_hex, roof_hex, awning=None,
+                   trim_hex='#fff3d6'):
+    """A whole building as one sprite, [w] by [d] cells and [H] tall. Its two
+    visible walls are single unbroken faces, with windows set out along them
+    in rows, not a row of separate blocks. A street-facing building gets a
+    shopfront and an awning along its whole front. The sprite's origin is the
+    top vertex of its first cell."""
+    wall = ramp(wall_hex)
+    roof = ramp(roof_hex)
+    trim = ramp(trim_hex)
+    glass = hexc('#8cc4e6')
+    glass_hi = hexc('#d4eefb')
+    U, V = 16 * w, 16 * d
+    img = Img(16 * (w + d) + 8, 8 * (w + d) + H + 14, 16 * d + 4, H + 10)
+    storey = 16
+
+    def windows(a, z, base, dark):
+        c = base
+        if int(z) % 4 == 0:
+            c = mix(c, dark, 0.14)
+        if z < 2:
+            return wall.lo
+        if z >= H - 4:
+            return trim.top  # cornice
+        k = int(a) % 12
+        zz = (int(z) - 20) % storey if z >= 20 else -1
+        if zz >= 0 and 4 <= zz <= 12 and 3 <= k <= 8:
+            if zz in (4, 12) or k in (3, 8) or k == 5 and zz > 4:
+                return trim.top
+            return glass_hi if zz > 9 and k < 6 else glass
+        return c
+
+    def south(u, z):
+        if awning and z < 18:
+            k = int(u) % 28
+            if 3 <= k <= 24 and 3 <= z <= 13:
+                if k in (3, 24) or z in (3, 13) or k == 14:
+                    return trim.right
+                return glass_hi if z > 9 and k < 12 else glass
+            if z < 2:
+                return wall.lo
+            return wall.right if z >= 14 else wall.left
+        return windows(u, z, wall.left, wall.lo)
+
+    def east(v, z):
+        return windows(v, z, wall.right, wall.lo)
+
+    box(img, 0, 0, U, V, 0, H, wall, left=south, right=east, top=roof.top)
+    # a parapet round the roof and a few things standing on it
+    box(img, 0, 0, U, 3, H, H + 3, trim, edge=False)
+    box(img, 0, V - 3, U, V, H, H + 3, trim, edge=False)
+    box(img, 0, 3, 3, V - 3, H, H + 3, trim, edge=False)
+    box(img, U - 3, 3, U, V - 3, H, H + 3, trim, edge=False)
+    unit = ramp('#9aa3b2')
+    for i in range(max(1, w // 3)):
+        box(img, 16 + i * 40, 20, 34 + i * 40, 34, H + 3, H + 10, unit)
+    if awning:
+        aw = ramp(awning)
+        box(img, 4, V, U - 4, V + 5, 14, 19, aw,
+            top=lambda u, v: aw.top if int(u) % 6 < 3 else (250, 246, 238))
+    add(name, img, 0.5)
+
+
+def street_lamp():
+    img = cell_img(54)
+    pole = ramp('#3d4252')
+    box(img, 7, 7, 9, 9, 0, 3, pole, edge=False)
+    box(img, 7, 7, 9, 9, 3, 44, pole, edge=False)
+    box(img, 5, 5, 11, 11, 44, 48, pole)
+    cx, cy = P(8, 8, 48)
+    ellipse(img, cx, cy - 1, 4, 2, hexc('#fff3b0'))
+    add('lamp', img, 0.5)
+
+
+def street_tree():
+    img = cell_img(54)
+    planter = ramp('#8d6a4a')
+    box(img, 3, 3, 13, 13, 0, 6, planter)
+    face_top(img, 4, 12, 4, 12, 6, hexc('#5a3f2a'))
+    trunk = ramp('#7b4b2c')
+    box(img, 7, 7, 9, 9, 6, 22, trunk, edge=False)
+    cx, cy = P(8, 8, 22)
+    for dx, dy, rx, ry in ((-7, -3, 7, 5), (7, -3, 7, 5), (0, -9, 8, 6),
+                           (-4, -14, 6, 5), (4, -14, 6, 5), (0, -18, 5, 4)):
+        ellipse(img, cx + dx, cy + dy, rx, ry,
+                lambda x, y, dx=dx, dy=dy: (GREEN.hi if (x - dx - cx) + (y - dy - cy) < -5
+                                            else (GREEN.top if (x - dx - cx) + (y - dy - cy) < 0
+                                                  else (GREEN_D.top if (x - dx - cx) + (y - dy - cy) > 5
+                                                        else GREEN.left))))
+    add('tree', img, 0.5)
+
+
+def front_walls():
+    """Low walls along the front and the right, so the room has an edge you
+    can see over, and the only way in is the doorway."""
+    plaster = ramp('#f1e4c4')
+    cap = WOOD
+    FH = 11
+
+    def slats(a, z):
+        if z >= FH - 2:
+            return cap.top
+        if z < 2:
+            return plaster.lo
+        return plaster.left if int(z) % 4 else plaster.right
+
+    img = cell_img(FH + 4)
+    box(img, 0, 13, 16, 16, 0, FH, plaster, left=slats,
+        right=lambda v, z: plaster.right, top=cap.top)
+    add('front_l', img, 0.5)
+
+    # The same wall on the far side of a cell: between the dining room and
+    # the yard, low enough to see over.
+    img = cell_img(FH + 4)
+    box(img, 0, 0, 16, 3, 0, FH, plaster, left=slats,
+        right=lambda v, z: plaster.right, top=cap.top)
+    add('low_back', img, 0.5)
+
+    img = cell_img(FH + 4)
+    box(img, 13, 0, 16, 16, 0, FH, plaster, left=plaster.left,
+        right=lambda v, z: (cap.right if z >= FH - 2 else
+                            (plaster.lo if z < 2 else
+                             (plaster.right if int(z) % 4 else plaster.lo))),
+        top=cap.top)
+    add('front_r', img, 0.5)
+
+
+def doorway(name, open_):
+    img = cell_img(40)
+    frame = ramp('#6b3f26')
+    box(img, 0, 12, 3, 16, 0, 30, frame)
+    box(img, 13, 12, 16, 16, 0, 30, frame)
+    box(img, 0, 12, 16, 16, 28, 33, frame)
+    # a hanging sign, green when the doors are open and red when they are shut
+    plate = ramp('#4cae5a' if open_ else '#d9453d')
+    face_left(img, 4, 12, 15, 17, 26, hexc('#2a2036'))
+    face_left(img, 5, 11, 15, 18, 25, plate.left)
+    face_left(img, 5, 11, 15, 22, 25, plate.top)
+    if open_:
+        for k in range(3):
+            x, y = P(6 + k * 2, 15, 21)
+            img.put(x, y, (255, 255, 255))
+    else:
+        for k in range(4):
+            x, y = P(6 + k, 15, 21)
+            img.put(x, y, (255, 255, 255))
+    add(name, img, 0.5)
+
+
+def city():
+    flat_tile('sidewalk_a', STONE, 31, seams=True)
+    flat_tile('sidewalk_b', ramp('#c6c1b9'), 32, seams=True)
+    curb_tile()
+    road_tile('road_a', False)
+    road_tile('road_b', True)
+    crosswalk_tile()
+    road_v_tile()
+    crosswalk_h_tile()
+    # under the buildings, where nobody sees it, and the plain pavement
+    flat_tile('concrete_a', ramp('#b9b8b2'), 33, speckle=0.12, seams=True)
+    flat_tile('concrete_b', ramp('#aeada8'), 34, speckle=0.12, seams=True)
+    # the neighbours, each one sprite: sizes match `buildings` in city.dart
+    block_building('block_lf', 8, 7, 56, '#c25b45', '#6b6a78', awning='#e2493f')
+    block_building('block_lb', 8, 7, 44, '#8fa8c8', '#6b6a78')
+    block_building('block_rf', 4, 7, 40, '#e8c9a0', '#9a6a52', awning='#f2c338')
+    block_building('block_rb', 4, 7, 52, '#e8d3a3', '#7a7f8c')
+    street_lamp()
+    street_tree()
+    emotes()
+    moods()
+    front_walls()
+    doorway('door_open', True)
+    doorway('door_closed', False)
+
+
+# ----------------------------------------------------------------- emotes
+def emotes():
+    """Little pictures over someone's head when something happens to them."""
+    def bubble():
+        b = Img(18, 20, 9, 18)
+        ellipse(b, 0, -9, 8, 7.5, (255, 255, 255))
+        rect(b, -2, -2, 4, 2, (255, 255, 255))
+        rect(b, -1, 0, 2, 1, (255, 255, 255))
+        return b
+
+    # oops: a sweat drop
+    b = bubble()
+    cx, cy = 0, -9
+    for dy, w in ((-4, 1), (-3, 2), (-2, 3), (-1, 4), (0, 4), (1, 4), (2, 3)):
+        rect(b, cx - w // 2 - (w % 2 == 0 and 0), cy + dy, w, 1, hexc('#4aa8e8'))
+    rect(b, cx - 2, cy - 1, 1, 1, hexc('#d4f0ff'))
     b.outline(0.5)
-    add('bubble', b)
+    add('emote_oops', b)
+
+    # heart
+    b = bubble()
+    for x, y in ((-4, -12), (-3, -12), (1, -12), (2, -12)):
+        rect(b, x, y, 2, 1, RED.top)
+    rect(b, -5, -11, 10, 3, RED.top)
+    rect(b, -4, -8, 8, 1, RED.top)
+    rect(b, -3, -7, 6, 1, RED.top)
+    rect(b, -2, -6, 4, 1, RED.top)
+    rect(b, -1, -5, 2, 1, RED.top)
+    rect(b, -4, -11, 2, 1, (255, 210, 205))
+    b.outline(0.5)
+    add('emote_heart', b)
+
+    # star
+    b = bubble()
+    gold = GOLD.top
+    rect(b, -1, -14, 2, 2, gold)
+    rect(b, -2, -12, 4, 2, gold)
+    rect(b, -5, -11, 10, 2, gold)
+    rect(b, -3, -9, 6, 2, gold)
+    rect(b, -4, -7, 3, 2, gold)
+    rect(b, 1, -7, 3, 2, gold)
+    rect(b, -1, -13, 1, 1, (255, 250, 220))
+    b.outline(0.5)
+    add('emote_star', b)
+
+
+# ------------------------------------------------------------------- moods
+def moods():
+    """Four faces for how someone feels about working here."""
+    palette = {
+        3: hexc('#5cc46a'),  # happy
+        2: hexc('#f2c338'),  # content
+        1: hexc('#f08a3c'),  # fed up
+        0: hexc('#e2493f'),  # about to go
+    }
+    for m, col in palette.items():
+        img = Img(14, 14, 7, 7)
+        ellipse(img, 0, 0, 6.2, 6.2, col)
+        ellipse(img, -1.5, -1.8, 3.5, 3, lighter(col, 0.35))
+        ink = INK
+        # eyes
+        if m == 0:
+            for sx in (-3, 1):
+                rect(img, sx, -2, 3, 1, ink)           # angry brows
+                rect(img, sx + (1 if sx < 0 else 0), -1, 2, 2, ink)
+        else:
+            rect(img, -3, -2, 2, 2, ink)
+            rect(img, 1, -2, 2, 2, ink)
+        # mouth
+        if m == 3:
+            rect(img, -3, 2, 1, 1, ink)
+            rect(img, 2, 2, 1, 1, ink)
+            rect(img, -2, 3, 4, 1, ink)
+        elif m == 2:
+            rect(img, -2, 3, 4, 1, ink)
+        elif m == 1:
+            rect(img, -2, 2, 4, 1, ink)
+            rect(img, -3, 3, 1, 1, ink)
+            rect(img, 2, 3, 1, 1, ink)
+        else:
+            rect(img, -2, 2, 4, 1, ink)
+            rect(img, -3, 3, 1, 1, ink)
+            rect(img, 2, 3, 1, 1, ink)
+        img.outline(0.55)
+        add(f'mood_{m}', img)
+
+
+CAR_COLORS = {
+    'red': '#d9473d',
+    'blue': '#4a86d6',
+    'sun': '#e8b83a',
+}
+GLASS = ramp('#9fd8ee')
+TYRE = ramp('#2f3040')
+
+
+def car(color, f):
+    """A car, two cells long and as wide as a lane, so it stands up against
+    the people around it. The canvas origin is the middle of the cell it
+    stands in; its front is the end that points along [f]."""
+    body = ramp(CAR_COLORS[color])
+    img = Img(62, 58, 31, 40)
+
+    def B(a0, b0, a1, b1, z0, z1, r, **kw):
+        # (a, b) run along and across the car; the front is at +a.
+        if f == 'se':
+            u0, v0, u1, v1 = a0, b0, a1, b1
+        elif f == 'nw':
+            u0, v0, u1, v1 = -a1, -b1, -a0, -b0
+        elif f == 'sw':
+            u0, v0, u1, v1 = b0, a0, b1, a1
+        else:
+            u0, v0, u1, v1 = -b1, -a1, -b0, -a0
+        box(img, u0, v0, u1, v1, z0, z1, r, **kw)
+
+    shadow(img, 0, 4, 23, 10)
+    for a in (-11, 11):
+        for b in (-7, 7):
+            B(a - 4, b - 1, a + 4, b + 1, 0, 7, TYRE, edge=False)
+    B(-17, -7, 17, 7, 3, 12, body)
+    # a lower bonnet and boot, a cabin between them
+    B(-10, -6, 7, 6, 12, 20, GLASS)
+    B(-10, -6, 7, 6, 19, 22, body)
+    B(8, -5, 17, 5, 12, 13, ramp('#c9ccd8'), edge=False)
+    # lights: yellow at the front, red at the back
+    B(17, -6, 19, -3, 6, 9, ramp('#fbe38a'), edge=False)
+    B(17, 3, 19, 6, 6, 9, ramp('#fbe38a'), edge=False)
+    B(-19, -6, -17, -3, 6, 9, ramp('#d83a3a'), edge=False)
+    B(-19, 3, -17, 6, 6, 9, ramp('#d83a3a'), edge=False)
+    add(f'car_{color}_{f}', img, 0.5)
+
+
+def window_ledge():
+    """The serving ledge behind the takeaway window, two cells wide, in the
+    right-hand wall: a counter top with a paper bag and a bell."""
+    img = Img(48, 82, 32, 30)
+    body = ramp('#b8743f')
+    box(img, 3, 1, 13, 31, 0, 10, body)
+    box(img, 2, 0, 16, 32, 10, 12, MARBLE)
+    box(img, 8, 6, 13, 12, 12, 19, ramp('#d9b98a'))
+    face_right(img, 13, 7, 11, 13, 17, hexc('#a97c4f'))
+    box(img, 9, 21, 12, 24, 12, 15, GOLD, edge=False)
+    box(img, 5, 14, 8, 18, 12, 14, ramp('#4a4f63'))
+    add('window_se', img, 0.55)
+
+
+def window_front():
+    """The right-hand wall where the takeaway window is: an opening two cells
+    wide to hand things out of, under a striped awning. Two pieces, one for
+    each cell."""
+    plaster = ramp('#f1e4c4')
+    cap = WOOD
+    FH = 11
+    stripe_a, stripe_b = ramp('#e2493f'), ramp('#fbf3e0')
+
+    def piece(name, pillar, offset):
+        img = cell_img(FH + 10, extra_w=16)
+        right = lambda v, z: (cap.right if z >= FH - 2 else
+                              (plaster.lo if z < 2 else
+                               (plaster.right if int(z) % 4 else plaster.lo)))
+        lo, hi = pillar
+        box(img, 13, lo, 16, hi, 0, FH, plaster, left=plaster.left,
+            right=right, top=cap.top)
+        rest = (hi, 16) if lo == 0 else (0, lo)
+        box(img, 13, rest[0], 16, rest[1], 0, 2, plaster, left=plaster.left,
+            right=right, top=cap.top)
+        box(img, 13, rest[0], 16, rest[1], 9, FH, plaster, left=plaster.left,
+            right=right, top=cap.top)
+
+        def tint(v):
+            return stripe_a if int(v + offset) % 4 < 2 else stripe_b
+        box(img, 13, 0, 24, 16, FH + 1, FH + 3, stripe_a,
+            left=lambda u, z: stripe_a.left,
+            right=lambda v, z: tint(v).right,
+            top=lambda u, v: tint(v).top)
+        add(name, img, 0.5)
+
+    piece('front_win_r0', (0, 3), 0)
+    piece('front_win_r1', (13, 16), 16)
 
 
 def build():
@@ -554,8 +1287,20 @@ def build():
     mat_tile()
     edge_tiles()
     wall_pieces()
-    counter()
-    grill()
+    for f in FACINGS:
+        counter(f)
+        grill(f)
+        fryer(f)
+        soda(f)
+        espresso(f)
+        oven(f)
+        freezer(f)
+        bench(f)
+    for c in CAR_COLORS:
+        for f in FACINGS:
+            car(c, f)
+    window_ledge()
+    window_front()
     table()
     chair('chair_se', 'su')
     chair('chair_sw', 'sv')
@@ -564,9 +1309,9 @@ def build():
     plant()
     jukebox()
     rug()
-    bench()
     people_sprites()
     icons()
+    city()
 
 
 def sheet(path, scale=3):

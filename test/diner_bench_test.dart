@@ -53,7 +53,7 @@ void main() {
       // ignore: avoid_print
       print(
         'painter: ${ms.toStringAsFixed(3)} ms per frame '
-        '(${diner.items.length} fixtures, ${sim.customers.length} guests), '
+        '(${diner.items.length} fixtures, ${sim.guests.length} guests), '
         '$perFrame images drawn per frame',
       );
     });
