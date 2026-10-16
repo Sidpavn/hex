@@ -303,6 +303,26 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('upgrades')));
       await tester.pumpAndSettle();
     }
+    if (Platform.environment['SELECT'] != null) {
+      final b = find.byKey(const ValueKey('diner-board'));
+      final f = (tester.widget<CustomPaint>(b).painter! as DinerPainter).fit;
+      Offset at(Cell c) =>
+          tester.getTopLeft(b) + f.view.vertex(c.x + 0.5, c.y + 0.5) * f.s;
+      await tester.tapAt(at(const Cell(2, 5)));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('select-more')));
+      await tester.pump();
+      await tester.tapAt(at(const Cell(1, 5)));
+      await tester.pump();
+      if (Platform.environment['SELECT'] == 'move') {
+        await tester.tap(find.byKey(const ValueKey('group-move')));
+        await tester.pump();
+        await tester.tap(find.byKey(const ValueKey('nudge-se')));
+        await tester.pump();
+        await tester.tap(find.byKey(const ValueKey('nudge-se')));
+        await tester.pump();
+      }
+    }
     if (Platform.environment['PLACE'] != null) {
       final k = ValueKey('fixture-${Platform.environment['PLACE']}');
       await tester.ensureVisible(find.byKey(k));

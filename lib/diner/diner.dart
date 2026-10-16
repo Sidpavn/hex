@@ -4,8 +4,12 @@
 /// driven by the service sim.
 library;
 
+import 'dart:math' as math;
+
 import 'recipes.dart';
 import 'staff.dart';
+
+part 'layout_group.dart';
 
 /// Size of one cell in art pixels.
 const cellPx = 16;
@@ -436,6 +440,16 @@ enum PlaceResult {
   };
 }
 
+/// What the room looked like before a change, so the change can be undone.
+class LayoutStep {
+  const LayoutStep(this.label, this.coins, this.items);
+
+  /// What was done, in a few words: "Placed grill".
+  final String label;
+  final int coins;
+  final List<({int id, Kind kind, Cell at, Dir facing})> items;
+}
+
 class Diner {
   Diner({this.coins = 200, Set<int>? owned, Progress? progress, Roster? roster})
     : owned = owned ?? {0},
@@ -509,6 +523,43 @@ class Diner {
   /// gets the forecast.
   final Map<Dish, int> plan = {};
   int _nextId = 1;
+
+  /// Changes to the layout, newest last, that can be undone. Cleared when the
+  /// day starts or the plot grows.
+  final List<LayoutStep> _undo = [];
+  static const undoLimit = 20;
+
+  /// Notes the layout as it is now, before a change called [label].
+  void remember(String label) {
+    _undo.add(
+      LayoutStep(label, coins, [
+        for (final p in items)
+          (id: p.id, kind: p.kind, at: p.at, facing: p.facing),
+      ]),
+    );
+    if (_undo.length > undoLimit) _undo.removeAt(0);
+  }
+
+  bool get canUndo => _undo.isNotEmpty;
+
+  /// What the next undo would take back, or null if there is nothing.
+  String? get undoLabel => _undo.lastOrNull?.label;
+
+  void clearUndo() => _undo.clear();
+
+  /// Takes back the last change: the fixtures go back where they were, and so
+  /// do the coins. Returns what was undone, or null if there was nothing.
+  String? undo() {
+    if (_undo.isEmpty) return null;
+    final step = _undo.removeLast();
+    items
+      ..clear()
+      ..addAll([
+        for (final i in step.items) Placed(i.id, i.kind, i.at, i.facing),
+      ]);
+    coins = step.coins;
+    return step.label;
+  }
 
   /// The front row of the restaurant, at the street, and its right-hand end:
   /// the front widens when the section beside it is bought.
@@ -959,27 +1010,37 @@ class Diner {
     final f = kind == Kind.window ? Dir.se : facing ?? defaultFacing(kind, at);
     final r = check(kind, at, facing: f);
     if (r != PlaceResult.ok) return r;
+    remember('Placed ${fixtureDefs[kind]!.name.toLowerCase()}');
     coins -= fixtureDefs[kind]!.cost;
     _put(kind, at, f);
     return r;
   }
 
-  void _put(Kind kind, Cell at, [Dir facing = Dir.sw]) =>
-      items.add(Placed(_nextId++, kind, at, facing));
+  Placed _put(Kind kind, Cell at, [Dir facing = Dir.sw]) {
+    final p = Placed(_nextId++, kind, at, facing);
+    items.add(p);
+    return p;
+  }
 
   /// Turns [p] a quarter turn clockwise, if it still fits.
   PlaceResult rotate(Placed p) {
     if (p.kind == Kind.window) return PlaceResult.ok;
     final next = p.facing.cw;
     final r = check(p.kind, p.at, facing: next, ignore: p, free: true);
-    if (r == PlaceResult.ok) p.facing = next;
+    if (r == PlaceResult.ok) {
+      remember('Turned ${p.def.name.toLowerCase()}');
+      p.facing = next;
+    }
     return r;
   }
 
   /// Moves [p] so its top-left cell is [to], keeping its facing. Free.
   PlaceResult moveTo(Placed p, Cell to) {
     final r = check(p.kind, to, facing: p.facing, ignore: p, free: true);
-    if (r == PlaceResult.ok) p.at = to;
+    if (r == PlaceResult.ok) {
+      remember('Moved ${p.def.name.toLowerCase()}');
+      p.at = to;
+    }
     return r;
   }
 
@@ -989,6 +1050,7 @@ class Diner {
     if (p.kind == Kind.window) facing = Dir.se;
     final r = check(p.kind, to, facing: facing, ignore: p, free: true);
     if (r == PlaceResult.ok) {
+      remember('Moved ${p.def.name.toLowerCase()}');
       p.at = to;
       p.facing = facing;
     }
@@ -997,7 +1059,10 @@ class Diner {
 
   /// Sells [p] back for half its price.
   void sell(Placed p) {
-    if (items.remove(p)) coins += p.def.refund;
+    if (!items.contains(p)) return;
+    remember('Sold ${p.def.name.toLowerCase()}');
+    items.remove(p);
+    coins += p.def.refund;
   }
 
   /// What section [i] costs now. The more of the plot is yours, the more each
@@ -1030,6 +1095,7 @@ class Diner {
     if (!canUnlock(i)) return false;
     coins -= unlockCost(i);
     owned.add(i);
+    clearUndo();
     final w = window;
     if (i == 1 && w != null) w.at = Cell(right, w.at.y);
     return true;

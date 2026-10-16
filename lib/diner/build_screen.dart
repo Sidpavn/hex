@@ -24,6 +24,9 @@ import 'upgrade_screen.dart';
 /// once the doors open, you live with it.
 enum Phase { build, service, summary }
 
+/// What is being done to the selected group of fixtures.
+enum _GroupOp { none, move, copy }
+
 /// What a fixture does, for the player: its description plus numbers that
 /// depend on what has been upgraded.
 String describeFixture(FixtureDef d, Progress p) {
@@ -105,6 +108,18 @@ class _BuildScreenState extends State<BuildScreen>
   bool _multi = false;
 
   bool get _building => _phase == Phase.build;
+
+  /// Choosing several fixtures to move, turn, copy or sell together, and the
+  /// ones chosen. [_op] says what is being aimed: a move or a copy. The ghost
+  /// is where the group's middle would go, and [_gturns] how far it is turned.
+  bool _selecting = false;
+  final List<Placed> _group = [];
+  _GroupOp _op = _GroupOp.none;
+  int _gturns = 0;
+
+  /// Something is being aimed with the ghost: a new fixture, one being moved,
+  /// or a group being moved or copied.
+  bool get _aiming => _placing != null || _op != _GroupOp.none;
 
   /// Looking at the plot to choose a section to buy, and the one chosen.
   bool _expanding = false;
@@ -194,6 +209,7 @@ class _BuildScreenState extends State<BuildScreen>
     setState(() {
       _clearEdit();
       _levelBefore = diner.progress.level;
+      diner.clearUndo();
       sim = DinerSim(diner);
       _toasts.clear();
       _phase = Phase.service;
@@ -268,6 +284,10 @@ class _BuildScreenState extends State<BuildScreen>
     _placing = null;
     _selected = null;
     _moving = null;
+    _selecting = false;
+    _group.clear();
+    _op = _GroupOp.none;
+    _gturns = 0;
     _hover = null;
     _facing = Dir.sw;
     _facingAuto = true;
@@ -293,10 +313,79 @@ class _BuildScreenState extends State<BuildScreen>
       _facing = Dir.sw;
       _facingAuto = true;
       _note = '';
+      _hover = _defaultSpot(kind);
+    });
+  }
+
+  /// What would happen if the fixture being placed or moved were put down
+  /// where the ghost is now. Null when there is no ghost.
+  PlaceResult? get _placeResult {
+    final kind = _placing;
+    final at = _hover;
+    if (kind == null || at == null) return null;
+    return diner.check(
+      kind,
+      at,
+      facing: kind == Kind.window ? Dir.se : _facing,
+      ignore: _moving,
+      free: _moving != null,
+    );
+  }
+
+  /// Where to put the ghost to begin with: the free spot nearest the middle of
+  /// what is on screen, so it is always in view and never on top of something.
+  Cell? _defaultSpot(Kind kind) {
+    final fit = _fit;
+    final centre = fit == null
+        ? const Cell(Diner.left + 3, Diner.top + 2)
+        : fit.view.cellAt(Offset(_canvas.width, _canvas.height) / 2 / fit.s);
+    if (kind == Kind.window) {
+      final y = diner.windowRow(centre.y);
+      return y == null ? null : Cell(diner.right, y);
+    }
+    Cell? best;
+    var bestD = 1 << 30;
+    for (final c in diner.insideCells()) {
+      final d = (c.x - centre.x).abs() + (c.y - centre.y).abs();
+      if (d >= bestD) continue;
+      if (diner.check(kind, c, facing: _facing) == PlaceResult.ok) {
+        best = c;
+        bestD = d;
+      }
+    }
+    return best;
+  }
+
+  /// Moves the ghost one tile in [d], so it can be put exactly where it
+  /// belongs without dragging.
+  void _nudge(Dir d) {
+    if (_op != _GroupOp.none) {
+      setState(() {
+        _hover = (_hover ?? diner.groupPivot(_group)).step(d);
+        _note = '';
+      });
+      return;
+    }
+    final kind = _placing;
+    if (kind == null) return;
+    setState(() {
+      var at =
+          (_hover ?? _defaultSpot(kind) ?? const Cell(Diner.left, Diner.top))
+              .step(d);
+      if (kind == Kind.window) {
+        final y = diner.windowRow(at.y, ignore: _moving);
+        if (y != null) at = Cell(diner.right, y);
+      }
+      _hover = at;
+      _note = '';
     });
   }
 
   void _rotate() {
+    if (_op != _GroupOp.none) {
+      setState(() => _gturns = (_gturns + 1) % 4);
+      return;
+    }
     setState(() {
       final sel = _selected;
       if (sel != null && _moving == null) {
@@ -325,15 +414,24 @@ class _BuildScreenState extends State<BuildScreen>
   }
 
   void _cancel() => setState(() {
-    _clearEdit();
+    if (_op != _GroupOp.none) {
+      // Back to choosing, with the same fixtures still chosen.
+      _op = _GroupOp.none;
+      _hover = null;
+      _gturns = 0;
+    } else {
+      _clearEdit();
+    }
     _note = '';
   });
 
+  /// Puts the ghost down. A new fixture stays selected, with the ghost where
+  /// it was, so the next one can be nudged along and placed; one being moved
+  /// is done.
   void _commit() {
     final at = _hover;
     final kind = _placing;
     setState(() {
-      _hover = null;
       if (kind == null || at == null) return;
       final moving = _moving;
       final result = moving != null
@@ -350,6 +448,163 @@ class _BuildScreenState extends State<BuildScreen>
       } else {
         _note = result.message;
       }
+    });
+  }
+
+  // ----------------------------------------------------- several at once
+
+  /// The middle of the chosen fixtures, which a turn is about and the ghost's
+  /// position stands for.
+  Cell get _pivot => diner.groupPivot(_group);
+
+  /// How the group would be moved with the ghost where it is.
+  GroupMove get _gm {
+    final at = _hover ?? _pivot;
+    return GroupMove(
+      dx: at.x - _pivot.x,
+      dy: at.y - _pivot.y,
+      turns: _gturns,
+      pivot: _pivot,
+    );
+  }
+
+  /// Whether the group could be put down where the ghost is.
+  PlaceResult? get _groupResult {
+    if (_op == _GroupOp.none || _group.isEmpty || _hover == null) return null;
+    return diner.checkGroup(_group, _gm, copy: _op == _GroupOp.copy);
+  }
+
+  /// The group as the ghost shows it.
+  List<Placed> get _ghosts => _op == _GroupOp.none || _hover == null
+      ? const []
+      : diner.ghostsOf(_group, _gm);
+
+  void _startSelecting() {
+    final sel = _selected;
+    if (sel == null) return;
+    setState(() {
+      _selecting = true;
+      _group
+        ..clear()
+        ..add(sel);
+      _selected = null;
+      _note = '';
+    });
+  }
+
+  /// A tap while choosing: add the fixture there, or take it out.
+  void _toggleGroup(Cell at) {
+    final p = diner.isInside(at) ? diner.pickAt(at) : null;
+    if (p == null) return;
+    setState(() {
+      if (p.kind == Kind.window) {
+        _note = 'The window is moved on its own';
+        return;
+      }
+      _note = '';
+      if (!_group.remove(p)) _group.add(p);
+    });
+  }
+
+  /// Adds every fixture of the kinds already chosen.
+  void _selectSameKind() {
+    setState(() {
+      final kinds = {for (final p in _group) p.kind};
+      for (final p in diner.items) {
+        if (kinds.contains(p.kind) && !_group.contains(p)) _group.add(p);
+      }
+      _note = '';
+    });
+  }
+
+  void _stopSelecting() => setState(() {
+    _clearEdit();
+    _note = '';
+  });
+
+  void _beginOp(_GroupOp op) {
+    if (_group.isEmpty) return;
+    setState(() {
+      _op = op;
+      _gturns = 0;
+      _note = '';
+      _hover = op == _GroupOp.move ? _pivot : _copySpot();
+    });
+  }
+
+  /// Where a copy could go to begin with: the nearest place it fits.
+  Cell _copySpot() {
+    final p = _pivot;
+    for (var r = 1; r <= 10; r++) {
+      for (var dy = -r; dy <= r; dy++) {
+        for (var dx = -r; dx <= r; dx++) {
+          if (dx.abs() != r && dy.abs() != r) continue;
+          final m = GroupMove(dx: dx, dy: dy, pivot: p);
+          if (diner.checkGroup(_group, m, copy: true) == PlaceResult.ok) {
+            return Cell(p.x + dx, p.y + dy);
+          }
+        }
+      }
+    }
+    return Cell(p.x, p.y + 2);
+  }
+
+  /// A quarter turn for the whole group, where it stands.
+  void _turnGroup() {
+    if (_group.isEmpty) return;
+    setState(() {
+      final r = diner.moveGroup(_group, GroupMove(turns: 1, pivot: _pivot));
+      _note = r == PlaceResult.ok ? '' : "They won't turn here";
+      if (r == PlaceResult.ok) _changed();
+    });
+  }
+
+  /// Puts the ghost group down: a move is done; a copy leaves the ghost
+  /// where it was, so another can be placed beside it.
+  void _putDownGroup() {
+    final op = _op;
+    if (op == _GroupOp.none) return;
+    setState(() {
+      if (op == _GroupOp.move) {
+        final r = diner.moveGroup(_group, _gm);
+        if (r != PlaceResult.ok) {
+          _note = r.message;
+          return;
+        }
+        _note = _group.length == 1 ? 'Moved' : 'Moved ${_group.length}';
+        _op = _GroupOp.none;
+        _hover = null;
+        _gturns = 0;
+      } else {
+        final made = diner.copyGroup(_group, _gm);
+        _note = made.isEmpty ? 'Nothing placed' : 'Copied ${made.length}';
+      }
+      _coins = diner.coins;
+      _changed();
+    });
+  }
+
+  void _sellGroup() {
+    if (_group.isEmpty) return;
+    setState(() {
+      final n = _group.length;
+      final back = diner.groupRefund(_group);
+      diner.sellGroup(_group);
+      _clearEdit();
+      _note = 'Sold $n for $back';
+      _coins = diner.coins;
+      _changed();
+    });
+  }
+
+  void _undo() {
+    setState(() {
+      final what = diner.undo();
+      if (what == null) return;
+      _clearEdit();
+      _note = 'Undid: ${what.toLowerCase()}';
+      _coins = diner.coins;
+      _changed();
     });
   }
 
@@ -567,6 +822,19 @@ class _BuildScreenState extends State<BuildScreen>
       final text = describeFixture(sel.def, progress);
       return problem != null ? '${problem.text}. $text' : text;
     }
+    if (_selecting) {
+      final n = _group.length;
+      if (_op == _GroupOp.none) {
+        return n == 0
+            ? 'Nothing chosen. Tap a fixture to add it.'
+            : '$n chosen. Tap fixtures to add or remove them.';
+      }
+      final r = _groupResult;
+      if (r != null && r != PlaceResult.ok) return r.message;
+      return _op == _GroupOp.copy
+          ? 'Copy costs ${diner.groupCost(_group)}. Aim, then Place.'
+          : 'Aim, then Put down. Rotate turns the group.';
+    }
     final kind = _placing;
     if (kind == Kind.window) {
       return 'Tap the right-hand wall where the window goes. Cars pull up in '
@@ -574,8 +842,11 @@ class _BuildScreenState extends State<BuildScreen>
     }
     if (kind != null) {
       final def = fixtureDefs[kind]!;
-      return '${describeFixture(def, progress)}'
-          '${_moving == null ? ' Drag it onto the floor.' : ''}';
+      final r = _placeResult;
+      if (r == null) return 'Tap the floor to aim, then Place.';
+      if (r != PlaceResult.ok) return r.message;
+      return '${describeFixture(def, progress)} '
+          '${_moving == null ? 'Tap Place to put it down.' : 'Tap Put down.'}';
     }
     return '';
   }
@@ -587,6 +858,12 @@ class _BuildScreenState extends State<BuildScreen>
       );
       return bad || _note.startsWith('It won') ? Pal.red : Pal.text;
     }
+    final g = _groupResult;
+    if (_op != _GroupOp.none && g != null && g != PlaceResult.ok) {
+      return Pal.red;
+    }
+    final r = _placeResult;
+    if (_placing != null && r != null && r != PlaceResult.ok) return Pal.red;
     final sel = _selected;
     if (sel != null && sim.report.problemFor(sel) != null) return Pal.red;
     return Pal.dim;
@@ -657,146 +934,283 @@ class _BuildScreenState extends State<BuildScreen>
   }
 
   Widget _buildPanel() {
-    final editing = _placing != null;
+    final editing = _aiming;
     final sel = _selected;
+    final result = _op != _GroupOp.none ? _groupResult : _placeResult;
+    final cost = _op == _GroupOp.copy
+        ? diner.groupCost(_group)
+        : _placing == null
+        ? 0
+        : fixtureDefs[_placing!]!.cost;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              for (final def in fixtureDefs.values)
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: _FixtureTile(
-                    key: ValueKey('fixture-${def.kind.name}'),
-                    def: def,
-                    selected: _placing == def.kind,
-                    affordable: diner.coins >= def.cost,
-                    locked: def.unlock > diner.progress.level,
-                    onTap: () => _pick(def.kind),
-                  ),
-                ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            if (editing) ...[
-              Expanded(
-                child: GoldButton(
-                  key: const ValueKey('rotate'),
-                  label: 'Rotate',
-                  filled: false,
-                  color: Pal.text,
-                  onTap: _rotate,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: GoldButton(
-                  label: 'Cancel',
-                  filled: false,
-                  color: Pal.dim,
-                  onTap: _cancel,
-                ),
-              ),
-            ] else if (sel != null) ...[
-              if (sel.def.turns) ...[
-                Expanded(
-                  child: GoldButton(
-                    key: const ValueKey('rotate'),
-                    label: 'Rotate',
-                    filled: false,
-                    color: Pal.text,
-                    onTap: _rotate,
-                  ),
-                ),
-                const SizedBox(width: 8),
-              ],
-              Expanded(
-                child: GoldButton(
-                  key: const ValueKey('move'),
-                  label: 'Move',
-                  filled: false,
-                  color: Pal.text,
-                  onTap: _startMove,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: GoldButton(
-                  key: const ValueKey('sell'),
-                  label: 'Sell +${sel.def.refund}',
-                  filled: false,
-                  color: Pal.dim,
-                  onTap: _sell,
-                ),
-              ),
-            ] else ...[
-              Expanded(
-                child: GoldButton(
-                  key: const ValueKey('expand'),
-                  label: 'Expand',
-                  filled: false,
-                  color: Pal.text,
-                  onTap: _startExpanding,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: GoldButton(
-                  key: const ValueKey('upgrades'),
-                  label: 'Upgrades',
-                  filled: false,
-                  color: Pal.text,
-                  onTap: _openUpgrades,
-                ),
-              ),
-            ],
-          ],
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: GoldButton(
-                key: const ValueKey('staff'),
-                // A red flag when tonight's wages are more than is in the
-                // till: the takings may still cover it, but it is worth a look.
-                label: diner.coins < diner.roster.wages ? 'Staff !' : 'Staff',
-                filled: false,
-                color: diner.coins < diner.roster.wages ? Pal.red : Pal.text,
-                onTap: _openStaff,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: GoldButton(
-                key: const ValueKey('menu'),
-                label: 'Menu',
-                filled: false,
-                color: Pal.text,
-                onTap: _openMenu,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              flex: 2,
-              child: GoldButton(
-                key: const ValueKey('start-day'),
-                label: 'Start day ${diner.progress.day}',
-                onTap: sim.report.ready ? _startDay : null,
-              ),
-            ),
-          ],
-        ),
+        if (!_selecting) ...[_shelf(), const SizedBox(height: 12)],
+        if (editing)
+          ..._placingRows(result, cost)
+        else if (_selecting)
+          ..._groupRows()
+        else ...[
+          if (sel != null) _selectedRow(sel) else _idleRow(),
+          const SizedBox(height: 8),
+          _bottomRow(),
+        ],
       ],
     );
   }
+
+  /// The fixtures that can be bought, to pick one to place.
+  Widget _shelf() => SingleChildScrollView(
+    scrollDirection: Axis.horizontal,
+    child: Row(
+      children: [
+        for (final def in fixtureDefs.values)
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: _FixtureTile(
+              key: ValueKey('fixture-${def.kind.name}'),
+              def: def,
+              selected: _placing == def.kind,
+              affordable: diner.coins >= def.cost,
+              locked: def.unlock > diner.progress.level,
+              onTap: () => _pick(def.kind),
+            ),
+          ),
+      ],
+    ),
+  );
+
+  /// The controls while something is being aimed with the ghost: nudge it a
+  /// tile, turn it, then put it down or be done.
+  List<Widget> _placingRows(PlaceResult? result, int cost) {
+    final group = _op != _GroupOp.none;
+    final label = group
+        ? (_op == _GroupOp.move ? 'Put down' : 'Place  :coin: $cost')
+        : _moving != null
+        ? 'Put down'
+        : 'Place  :coin: $cost';
+    return [
+      Row(
+        children: [
+          for (final d in const [Dir.nw, Dir.ne, Dir.sw, Dir.se]) ...[
+            _NudgeButton(
+              key: ValueKey('nudge-${d.name}'),
+              dir: d,
+              onTap: () => _nudge(d),
+            ),
+            const SizedBox(width: 8),
+          ],
+          Expanded(
+            child: GoldButton(
+              key: const ValueKey('rotate'),
+              label: 'Rotate',
+              filled: false,
+              color: Pal.text,
+              onTap: _rotate,
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 8),
+      Row(
+        children: [
+          Expanded(
+            child: GoldButton(
+              key: const ValueKey('cancel-edit'),
+              label: 'Done',
+              filled: false,
+              color: Pal.dim,
+              onTap: _cancel,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            flex: 2,
+            child: GoldButton(
+              key: const ValueKey('place'),
+              label: label,
+              onTap: result == PlaceResult.ok
+                  ? (group ? _putDownGroup : _commit)
+                  : null,
+            ),
+          ),
+        ],
+      ),
+    ];
+  }
+
+  /// The controls while choosing several fixtures: what to do with them.
+  List<Widget> _groupRows() {
+    final some = _group.isNotEmpty;
+    GoldButton button(
+      String key,
+      String label,
+      VoidCallback? onTap, {
+      Color color = Pal.text,
+    }) => GoldButton(
+      key: ValueKey(key),
+      label: label,
+      filled: false,
+      color: color,
+      onTap: some ? onTap : null,
+    );
+    return [
+      Row(
+        children: [
+          Expanded(
+            child: button('group-move', 'Move', () => _beginOp(_GroupOp.move)),
+          ),
+          const SizedBox(width: 8),
+          Expanded(child: button('group-turn', 'Turn', _turnGroup)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: button('group-copy', 'Copy', () => _beginOp(_GroupOp.copy)),
+          ),
+        ],
+      ),
+      const SizedBox(height: 8),
+      Row(
+        children: [
+          Expanded(child: button('group-same', 'Same kind', _selectSameKind)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: button(
+              'group-sell',
+              'Sell +${diner.groupRefund(_group)}',
+              _sellGroup,
+              color: Pal.dim,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: GoldButton(
+              key: const ValueKey('group-done'),
+              label: 'Done',
+              onTap: _stopSelecting,
+            ),
+          ),
+        ],
+      ),
+    ];
+  }
+
+  Widget _selectedRow(Placed sel) => Row(
+    children: [
+      if (sel.def.turns) ...[
+        Expanded(
+          child: GoldButton(
+            key: const ValueKey('rotate'),
+            label: 'Rotate',
+            filled: false,
+            color: Pal.text,
+            onTap: _rotate,
+          ),
+        ),
+        const SizedBox(width: 8),
+      ],
+      Expanded(
+        child: GoldButton(
+          key: const ValueKey('move'),
+          label: 'Move',
+          filled: false,
+          color: Pal.text,
+          onTap: _startMove,
+        ),
+      ),
+      if (sel.kind != Kind.window) ...[
+        const SizedBox(width: 8),
+        Expanded(
+          child: GoldButton(
+            key: const ValueKey('select-more'),
+            label: 'Select',
+            filled: false,
+            color: Pal.text,
+            onTap: _startSelecting,
+          ),
+        ),
+      ],
+      const SizedBox(width: 8),
+      Expanded(
+        child: GoldButton(
+          key: const ValueKey('sell'),
+          label: 'Sell +${sel.def.refund}',
+          filled: false,
+          color: Pal.dim,
+          onTap: _sell,
+        ),
+      ),
+    ],
+  );
+
+  Widget _idleRow() => Row(
+    children: [
+      Expanded(
+        child: GoldButton(
+          key: const ValueKey('undo'),
+          label: 'Undo',
+          filled: false,
+          color: diner.canUndo ? Pal.text : Pal.dim,
+          onTap: diner.canUndo ? _undo : null,
+        ),
+      ),
+      const SizedBox(width: 8),
+      Expanded(
+        child: GoldButton(
+          key: const ValueKey('expand'),
+          label: 'Expand',
+          filled: false,
+          color: Pal.text,
+          onTap: _startExpanding,
+        ),
+      ),
+      const SizedBox(width: 8),
+      Expanded(
+        child: GoldButton(
+          key: const ValueKey('upgrades'),
+          label: 'Upgrades',
+          filled: false,
+          color: Pal.text,
+          onTap: _openUpgrades,
+        ),
+      ),
+    ],
+  );
+
+  Widget _bottomRow() => Row(
+    children: [
+      Expanded(
+        child: GoldButton(
+          key: const ValueKey('staff'),
+          // A red flag when tonight's wages are more than is in the till:
+          // the takings may still cover it, but it is worth a look.
+          label: diner.coins < diner.roster.wages ? 'Staff !' : 'Staff',
+          filled: false,
+          color: diner.coins < diner.roster.wages ? Pal.red : Pal.text,
+          onTap: _openStaff,
+        ),
+      ),
+      const SizedBox(width: 8),
+      Expanded(
+        child: GoldButton(
+          key: const ValueKey('menu'),
+          label: 'Menu',
+          filled: false,
+          color: Pal.text,
+          onTap: _openMenu,
+        ),
+      ),
+      const SizedBox(width: 8),
+      Expanded(
+        flex: 2,
+        child: GoldButton(
+          key: const ValueKey('start-day'),
+          label: 'Start day ${diner.progress.day}',
+          onTap: sim.report.ready ? _startDay : null,
+        ),
+      ),
+    ],
+  );
 
   Widget _servicePanel() {
     return ListenableBuilder(
@@ -1117,7 +1531,7 @@ class _BuildScreenState extends State<BuildScreen>
     }
 
     void aim(Offset p) {
-      if (_placing == null || !_building) return;
+      if (!_aiming || !_building) return;
       var c = cellAt(p);
       if (_placing == Kind.window) {
         // The window only goes in the right-hand wall: wherever it is aimed,
@@ -1128,7 +1542,7 @@ class _BuildScreenState extends State<BuildScreen>
       if (c == _hover) return;
       setState(() {
         _hover = c;
-        if (_facingAuto && _moving == null) {
+        if (_op == _GroupOp.none && _facingAuto && _moving == null) {
           _facing = diner.defaultFacing(_placing!, c);
         }
       });
@@ -1143,20 +1557,18 @@ class _BuildScreenState extends State<BuildScreen>
               if (!_building) return;
               if (_expanding) {
                 _pickPlot(cellAt(d.localPosition));
-              } else if (_placing == null) {
+              } else if (_selecting && _op == _GroupOp.none) {
+                _toggleGroup(pickCell(d.localPosition));
+              } else if (!_aiming) {
                 _tapSelect(pickCell(d.localPosition));
               } else {
                 aim(d.localPosition);
               }
             },
-            onTapUp: (_) {
-              if (_building) _commit();
-            },
-            onTapCancel: () => setState(() => _hover = null),
             onScaleStart: (d) {
               _rebase(d.localFocalPoint, 1, d.pointerCount);
               _multi = d.pointerCount > 1;
-              if (_placing != null && !_multi) aim(d.localFocalPoint);
+              if (_aiming && !_multi) aim(d.localFocalPoint);
             },
             onScaleUpdate: (d) {
               if (d.pointerCount != _count) {
@@ -1168,17 +1580,15 @@ class _BuildScreenState extends State<BuildScreen>
               }
               // One finger moves the fixture being placed; otherwise it moves
               // the view. Two fingers always move and zoom the view.
-              if (_placing != null && !_multi && _building) {
+              if (_aiming && !_multi && _building) {
                 aim(d.localFocalPoint);
               } else {
                 _moveView(d, dpr);
               }
             },
             onScaleEnd: (_) {
-              final placed = _placing != null && !_multi && _building;
               _multi = false;
               setState(() => _gesturing = false);
-              if (placed) _commit();
             },
             child: CustomPaint(
               key: const ValueKey('diner-board'),
@@ -1190,13 +1600,18 @@ class _BuildScreenState extends State<BuildScreen>
                 layer: _layer,
                 gesturing: _gesturing,
                 doorOpen: () => _phase == Phase.service && sim.open,
-                grid: _placing != null && _building,
+                grid: _aiming && _building,
+                group: _selecting ? _group : const [],
+                ghostGroup: _ghosts,
                 expanding: _expanding && _building,
                 plotSel: _plotSel,
                 flashPlot: _flashPlot,
                 flash: _flashStep,
                 placing: _building ? _placing : null,
                 hover: _hover,
+                placeOk: _op != _GroupOp.none
+                    ? _groupResult == PlaceResult.ok
+                    : _placeResult == PlaceResult.ok,
                 selected: _building ? _selected : null,
                 facing: _facing,
                 moving: _moving,
@@ -1422,4 +1837,65 @@ class _SpritePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _SpritePainter old) => old.spr != spr;
+}
+
+/// A small square button with an arrow pointing one way along the grid, which
+/// on the isometric board is a diagonal.
+class _NudgeButton extends StatelessWidget {
+  const _NudgeButton({super.key, required this.dir, required this.onTap});
+
+  final Dir dir;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: 44,
+    child: Panel(
+      onTap: onTap,
+      padding: const EdgeInsets.all(8),
+      child: SizedBox(
+        height: 24,
+        child: CustomPaint(painter: _ArrowPainter(dir)),
+      ),
+    ),
+  );
+}
+
+class _ArrowPainter extends CustomPainter {
+  _ArrowPainter(this.dir);
+
+  final Dir dir;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Screen direction of a step along the grid: x runs down-right, y runs
+    // down-left.
+    final sx = (dir.dx - dir.dy).toDouble();
+    final sy = (dir.dx + dir.dy).toDouble();
+    final c = size.center(Offset.zero);
+    final n = Offset(sx, sy) / 1.4142;
+    final side = Offset(-n.dy, n.dx);
+    const r = 8.0;
+    final path = Path()
+      ..moveTo(c.dx + n.dx * r, c.dy + n.dy * r)
+      ..lineTo(
+        c.dx - n.dx * r + side.dx * r * 0.8,
+        c.dy - n.dy * r + side.dy * r * 0.8,
+      )
+      ..lineTo(c.dx - n.dx * r * 0.2, c.dy - n.dy * r * 0.2)
+      ..lineTo(
+        c.dx - n.dx * r - side.dx * r * 0.8,
+        c.dy - n.dy * r - side.dy * r * 0.8,
+      )
+      ..close();
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = Pal.text
+        ..isAntiAlias = false,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_ArrowPainter old) => old.dir != dir;
 }

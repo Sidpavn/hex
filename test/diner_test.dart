@@ -328,7 +328,9 @@ void main() {
     });
   });
 
-  testWidgets('build screen places a fixture by dragging', (tester) async {
+  testWidgets('build screen aims a fixture, then places it on Place', (
+    tester,
+  ) async {
     await tester.runAsync(() async {
       await PixelAssets.load();
       await DinerArt.load();
@@ -350,6 +352,10 @@ void main() {
     final fit = BoardFit.of(diner, tester.getSize(board), 3);
     final target = tester.getTopLeft(board) + fit.view.vertex(3.5, 5.5) * fit.s;
     await tester.tapAt(target);
+    await tester.pump();
+    expect(diner.objectAt(const Cell(3, 5)), isNull, reason: 'aiming only');
+    expect(diner.coins, 100);
+    await tester.tap(find.byKey(const ValueKey('place')));
     await tester.pump();
     expect(diner.objectAt(const Cell(3, 5))?.kind, Kind.table);
     expect(diner.coins, 70);

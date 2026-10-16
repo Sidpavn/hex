@@ -44,6 +44,9 @@ class DinerPainter extends CustomPainter {
     this.facing = Dir.sw,
     this.moving,
     this.grid = false,
+    this.placeOk,
+    this.group = const [],
+    this.ghostGroup = const [],
     this.expanding = false,
     this.plotSel,
     this.flashPlot,
@@ -88,6 +91,17 @@ class DinerPainter extends CustomPainter {
   /// ground, gold if it could be bought now, grey if not, and [plotSel] is the
   /// one the player has picked.
   final bool expanding;
+
+  /// Whether the ghost can be put down where it is, if the screen has worked
+  /// that out (it knows the facing and what is being moved).
+  final bool? placeOk;
+
+  /// The fixtures chosen to be moved, turned, copied or sold together.
+  final List<Placed> group;
+
+  /// Where a group being moved or copied would stand, as ghosts. They show
+  /// whole when [placeOk], and in red when not.
+  final List<Placed> ghostGroup;
   final int? plotSel;
 
   /// A section that has just been picked or bought lights up for a moment: the
@@ -116,9 +130,10 @@ class DinerPainter extends CustomPainter {
 
   late final Report _report = sim?.report ?? diner.report();
   late final bool _ghostOk =
-      placing != null &&
-      hover != null &&
-      diner.check(placing!, hover!) == PlaceResult.ok;
+      placeOk ??
+      (placing != null &&
+          hover != null &&
+          diner.check(placing!, hover!) == PlaceResult.ok);
 
   /// The ground colour, dimmed like everything beyond the plot, so the
   /// restaurant is what the eye goes to. It is also used behind the board so
@@ -566,6 +581,23 @@ class DinerPainter extends CustomPainter {
     }
   }
 
+  /// A group being moved or copied, drawn where it would stand.
+  void _groupGhost(Canvas canvas) {
+    final ok = _ghostOk;
+    final path = Path();
+    for (final g in ghostGroup) {
+      if (ok) _cell(canvas, spriteName(g.kind, g.facing), g.at);
+      _outline(path, g.at, g.w, g.h);
+      _outlineShifted(path, g.at, g.w, g.h);
+      if (!ok) {
+        final c = view.vertex(g.at.x + g.w / 2, g.at.y + g.h / 2);
+        _line(path, c.translate(-6, 0), c.translate(6, 0));
+        _line(path, c.translate(0, -3), c.translate(0, 3));
+      }
+    }
+    _stroke(canvas, path, ok ? _ok : _bad);
+  }
+
   void _cursor(Canvas canvas) {
     final sel = selected ?? moving;
     if (sel != null) {
@@ -575,6 +607,13 @@ class DinerPainter extends CustomPainter {
       _outlineShifted(path, sel.at, sel.w, sel.h);
       _stroke(canvas, path, Pal.gold);
     }
+    for (final p in group) {
+      final path = Path();
+      _outline(path, p.at, p.w, p.h);
+      _outlineShifted(path, p.at, p.w, p.h);
+      _stroke(canvas, path, Pal.gold);
+    }
+    if (ghostGroup.isNotEmpty) _groupGhost(canvas);
     final kind = placing;
     final at = hover;
     if (kind == Kind.window) _windowSpots(canvas, at);
@@ -656,6 +695,9 @@ class DinerPainter extends CustomPainter {
       old.moving != moving ||
       old.grid != grid ||
       old.expanding != expanding ||
+      old.placeOk != placeOk ||
+      old.group != group ||
+      old.ghostGroup != ghostGroup ||
       old.plotSel != plotSel ||
       old.flashPlot != flashPlot ||
       old.flash != flash ||

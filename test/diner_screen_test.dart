@@ -118,6 +118,9 @@ void main() {
     await tester.pump();
     await tester.tapAt(onCell(tester, const Cell(4, 6)));
     await tester.pump();
+    expect(grill.at, isNot(const Cell(4, 6)), reason: 'only aimed so far');
+    await tester.tap(find.byKey(const ValueKey('place')));
+    await tester.pump();
     expect(grill.at, const Cell(4, 6));
 
     final coins = d.coins;
