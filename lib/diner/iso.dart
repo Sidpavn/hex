@@ -7,13 +7,18 @@ import 'diner.dart';
 /// `x` runs down-right and `y` runs down-left. All numbers are art pixels
 /// from the board's top-left corner.
 class IsoView {
-  IsoView(Diner d, {this.shift = Offset.zero}) {
+  IsoView(Diner d, {this.shift = Offset.zero, bool whole = false}) {
+    // What to keep in frame: what is owned and what could be bought next, or
+    // the whole plot while the player is looking at what to buy.
+    final plots = whole ? Diner.plots : d.framed.toList();
+    final topRow = plots.map((p) => p.y0).reduce((a, b) => a < b ? a : b);
+    final rightCol = plots.map((p) => p.x1).reduce((a, b) => a > b ? a : b);
     // Frame the room itself: its diamond, the tall back walls above it, the
     // front edge below it, and a little ground all round.
     final minX = (Diner.left - (d.bottom + 1)) * halfW - pad;
-    final maxX = ((d.rightCol + 1) - d.topRow) * halfW + pad;
-    final minY = ((Diner.left - 1) + (d.topRow - 1)) * halfH - headroom;
-    final maxY = ((d.rightCol + 1) + (d.bottom + 1)) * halfH + 20;
+    final maxX = ((rightCol + 1) - topRow) * halfW + pad;
+    final minY = ((Diner.left - 1) + (topRow - 1)) * halfH - headroom;
+    final maxY = ((rightCol + 1) + (d.bottom + 1)) * halfH + 20;
     _ox = -minX + shift.dx;
     _oy = -minY + shift.dy;
     width = (maxX - minX).toDouble();
@@ -87,8 +92,9 @@ class BoardFit {
     double dpr, {
     int? k,
     Offset? focus,
+    bool whole = false,
   }) {
-    final room = IsoView(d);
+    final room = IsoView(d, whole: whole);
     final kFit = math.max(
       1,
       (math.min(canvas.width / room.width, canvas.height / room.height) * dpr)
@@ -117,7 +123,7 @@ class BoardFit {
       (h / 2 - fy).floorToDouble(),
     );
     return BoardFit._(
-      view: IsoView(d, shift: shift),
+      view: IsoView(d, shift: shift, whole: whole),
       k: kk,
       kFit: kFit,
       kMax: kMax,

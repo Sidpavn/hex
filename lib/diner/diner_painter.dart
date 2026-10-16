@@ -44,6 +44,10 @@ class DinerPainter extends CustomPainter {
     this.facing = Dir.sw,
     this.moving,
     this.grid = false,
+    this.expanding = false,
+    this.plotSel,
+    this.flashPlot,
+    this.flash = 0,
     this.showProblems = true,
     this.revision = 0,
     this.gesturing = false,
@@ -79,6 +83,17 @@ class DinerPainter extends CustomPainter {
 
   /// Outline every cell while building.
   final bool grid;
+
+  /// Looking at what to buy: every section not yet owned is outlined on the
+  /// ground, gold if it could be bought now, grey if not, and [plotSel] is the
+  /// one the player has picked.
+  final bool expanding;
+  final int? plotSel;
+
+  /// A section that has just been picked or bought lights up for a moment: the
+  /// step it is at, 3 down to 0 where it is gone.
+  final int? flashPlot;
+  final int flash;
 
   /// Mark fixtures that don't work.
   final bool showProblems;
@@ -194,7 +209,7 @@ class DinerPainter extends CustomPainter {
       layer.paint(
         canvas,
         size,
-        (revision, fit.key, size, grid),
+        (revision, fit.key, size, grid, expanding, plotSel),
         fit.dpr,
         (c) => _still(c, size),
       );
@@ -228,6 +243,8 @@ class DinerPainter extends CustomPainter {
     }
 
     _warnings(canvas);
+    if (expanding) _plotOutlines(canvas);
+    if (flash > 0 && flashPlot != null) _flashOn(canvas, flashPlot!);
     _cursor(canvas);
     canvas.restore();
   }
@@ -242,6 +259,7 @@ class DinerPainter extends CustomPainter {
     for (final c in view.ground(diner, size.width / s, size.height / s)) {
       _cell(canvas, groundTile(diner, c), c, dim: !onPlot(c));
     }
+    if (expanding) _plotTints(canvas);
     // The neighbours, each a single sprite, dimmed with the rest.
     final towers = [...buildings]
       ..sort(
@@ -488,6 +506,66 @@ class DinerPainter extends CustomPainter {
     _stroke(canvas, path, _gridLine);
   }
 
+  /// The ground of [p] as a flat shape, for tinting.
+  Path _ground(Plot p) {
+    final path = Path()
+      ..moveTo(view.vertex(p.x0, p.y0).dx * s, view.vertex(p.x0, p.y0).dy * s);
+    for (final c in [
+      (p.x1 + 1, p.y0),
+      (p.x1 + 1, p.y1 + 1),
+      (p.x0, p.y1 + 1),
+    ]) {
+      final v = view.vertex(c.$1, c.$2);
+      path.lineTo(v.dx * s, v.dy * s);
+    }
+    return path..close();
+  }
+
+  /// A flat tint over each section that is not yet owned: gold on those that
+  /// could be bought now, and a stronger gold on the one picked. Sections
+  /// further back are left plain.
+  void _plotTints(Canvas canvas) {
+    for (var i = 0; i < Diner.plots.length; i++) {
+      if (diner.owned.contains(i)) continue;
+      final picked = plotSel == i;
+      final next = diner.nextPlots.contains(i);
+      if (!picked && !next) continue;
+      canvas.drawPath(
+        _ground(Diner.plots[i]),
+        Paint()
+          ..color = Pal.gold.withAlpha(picked ? 0x70 : 0x30)
+          ..isAntiAlias = false,
+      );
+    }
+  }
+
+  /// The brief brightening of a section just picked or bought, in steps.
+  void _flashOn(Canvas canvas, int i) {
+    canvas.drawPath(
+      _ground(Diner.plots[i]),
+      Paint()
+        ..color = Pal.goldLight.withAlpha(flash * 0x30)
+        ..isAntiAlias = false,
+    );
+  }
+
+  /// The sections of the plot still to buy, drawn on the ground.
+  void _plotOutlines(Canvas canvas) {
+    for (var i = 0; i < Diner.plots.length; i++) {
+      if (diner.owned.contains(i)) continue;
+      final p = Diner.plots[i];
+      final path = Path();
+      _outline(path, Cell(p.x0, p.y0), p.width, p.height);
+      final picked = plotSel == i;
+      if (picked) _outlineShifted(path, Cell(p.x0, p.y0), p.width, p.height);
+      _stroke(
+        canvas,
+        path,
+        picked || diner.nextPlots.contains(i) ? Pal.gold : Pal.dimmer,
+      );
+    }
+  }
+
   void _cursor(Canvas canvas) {
     final sel = selected ?? moving;
     if (sel != null) {
@@ -577,6 +655,10 @@ class DinerPainter extends CustomPainter {
       old.facing != facing ||
       old.moving != moving ||
       old.grid != grid ||
+      old.expanding != expanding ||
+      old.plotSel != plotSel ||
+      old.flashPlot != flashPlot ||
+      old.flash != flash ||
       old.actors != actors ||
       old.sim != sim;
 }

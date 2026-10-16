@@ -297,7 +297,7 @@ void main() {
     }
     if (Platform.environment['EXPAND'] != null) {
       await tester.tap(find.byKey(const ValueKey('expand')));
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 100));
     }
     if (Platform.environment['UPGRADES'] != null) {
       await tester.tap(find.byKey(const ValueKey('upgrades')));

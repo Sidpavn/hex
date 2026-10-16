@@ -8,7 +8,6 @@ import '../ui/pixel_dialog.dart';
 import '../ui/widgets.dart';
 import 'clock.dart';
 import 'diner.dart';
-import 'expand_screen.dart';
 import 'diner_art.dart';
 import 'diner_painter.dart';
 import 'iso.dart';
@@ -107,12 +106,40 @@ class _BuildScreenState extends State<BuildScreen>
 
   bool get _building => _phase == Phase.build;
 
+  /// Looking at the plot to choose a section to buy, and the one chosen.
+  bool _expanding = false;
+  int? _plotSel;
+
+  /// The section that just lit up, and how far its flash has faded: 3 down to
+  /// 0, a step every tenth of a second.
+  int? _flashPlot;
+  int _flashStep = 0;
+  Duration _flashAt = Duration.zero;
+  Duration _now = Duration.zero;
+
+  void _flash(int plot) {
+    _flashPlot = plot;
+    _flashStep = 3;
+    _flashAt = _now;
+  }
+
   @override
   void initState() {
     super.initState();
     _coins = diner.coins;
     WidgetsBinding.instance.addObserver(this);
     _ticker = createTicker((elapsed) {
+      _now = elapsed;
+      if (_flashStep > 0) {
+        final step = (3 - (elapsed - _flashAt).inMilliseconds ~/ 100).clamp(
+          0,
+          3,
+        );
+        if (step != _flashStep) {
+          _flashStep = step;
+          if (mounted) setState(() {});
+        }
+      }
       final dt = (elapsed - _last).inMicroseconds / 1e6;
       _last = elapsed;
       if (_phase == Phase.service) {
@@ -343,20 +370,55 @@ class _BuildScreenState extends State<BuildScreen>
     });
   }
 
-  Future<void> _openExpand() async {
-    final before = diner.owned.length;
-    await Navigator.of(
-      context,
-    ).push(MaterialPageRoute<void>(builder: (_) => ExpandScreen(diner: diner)));
-    if (!mounted) return;
+  void _startExpanding() {
     setState(() {
+      _clearEdit();
+      _expanding = true;
+      _plotSel = diner.nextPlots.firstOrNull;
+      if (_plotSel != null) _flash(_plotSel!);
+      _note = '';
+      _k = null;
+      _focus = null;
+      _revision++;
+    });
+  }
+
+  void _stopExpanding() {
+    setState(() {
+      _expanding = false;
+      _plotSel = null;
+      _note = '';
+      _k = null;
+      _focus = null;
+      _revision++;
+    });
+  }
+
+  /// A tap on the board while expanding: pick the section under it.
+  void _pickPlot(Cell at) {
+    final i = [
+      for (var i = 0; i < Diner.plots.length; i++)
+        if (!diner.owned.contains(i) && Diner.plots[i].contains(at)) i,
+    ].firstOrNull;
+    if (i == null) return;
+    setState(() {
+      _plotSel = i;
+      _flash(i);
+      _note = '';
+    });
+  }
+
+  void _buyPlot() {
+    final i = _plotSel;
+    if (i == null || !diner.unlock(i)) return;
+    setState(() {
+      _note = '${Diner.plots[i].name} is yours.';
+      _flash(i);
+      _plotSel = diner.nextPlots.firstOrNull;
       _coins = diner.coins;
-      if (before != diner.owned.length) {
-        // The room is a different size: show all of it again.
-        _k = null;
-        _focus = null;
-        _changed();
-      }
+      _k = null;
+      _focus = null;
+      _changed();
     });
   }
 
@@ -412,7 +474,7 @@ class _BuildScreenState extends State<BuildScreen>
                 child: PixelBox(
                   padding: const EdgeInsets.all(12),
                   child: switch (_phase) {
-                    Phase.build => _buildPanel(),
+                    Phase.build => _expanding ? _expandPanel() : _buildPanel(),
                     Phase.service => _servicePanel(),
                     Phase.summary => _summaryPanel(),
                   },
@@ -530,6 +592,70 @@ class _BuildScreenState extends State<BuildScreen>
     return Pal.dim;
   }
 
+  /// The panel while choosing a section of the plot to buy: what the chosen
+  /// one adds, one button to buy it, and one to finish.
+  Widget _expandPanel() {
+    final i = _plotSel;
+    final p = i == null ? null : Diner.plots[i];
+    final why = i == null ? null : diner.whyLocked(i);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (p == null)
+          const PxText(
+            'All of the plot is yours.',
+            key: ValueKey('plot-detail'),
+            style: TextStyle(color: Pal.green, fontSize: 17),
+          )
+        else ...[
+          PxText(
+            p.name,
+            key: const ValueKey('plot-detail'),
+            style: const TextStyle(color: Pal.text, fontSize: 17),
+          ),
+          PxText(
+            '${p.tiles} more tiles of floor, ${p.width} by ${p.height}.',
+            style: const TextStyle(color: Pal.dim, fontSize: 14),
+          ),
+          if (why != null)
+            PxText(
+              why,
+              key: const ValueKey('plot-why'),
+              style: const TextStyle(color: Pal.red, fontSize: 14),
+            ),
+        ],
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              flex: 2,
+              child: GoldButton(
+                key: const ValueKey('done-expanding'),
+                label: 'Done',
+                filled: false,
+                color: Pal.text,
+                onTap: _stopExpanding,
+              ),
+            ),
+            if (i != null) ...[
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 3,
+                child: GoldButton(
+                  key: const ValueKey('buy-plot'),
+                  label: 'Buy  :coin: ${diner.unlockCost(i)}',
+                  filled: why == null,
+                  onTap: why == null ? _buyPlot : null,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+
   Widget _buildPanel() {
     final editing = _placing != null;
     final sel = _selected;
@@ -617,7 +743,7 @@ class _BuildScreenState extends State<BuildScreen>
                   label: 'Expand',
                   filled: false,
                   color: Pal.text,
-                  onTap: _openExpand,
+                  onTap: _startExpanding,
                 ),
               ),
               const SizedBox(width: 8),
@@ -968,7 +1094,14 @@ class _BuildScreenState extends State<BuildScreen>
   Widget _board(DinerArt art, BoxConstraints box) {
     final canvas = Size(box.maxWidth, box.maxHeight);
     final dpr = MediaQuery.of(context).devicePixelRatio;
-    final fit = BoardFit.of(diner, canvas, dpr, k: _k, focus: _focus);
+    final fit = BoardFit.of(
+      diner,
+      canvas,
+      dpr,
+      k: _k,
+      focus: _focus,
+      whole: _expanding,
+    );
     _fit = fit;
     _canvas = canvas;
     final s = fit.s;
@@ -1008,7 +1141,9 @@ class _BuildScreenState extends State<BuildScreen>
             behavior: HitTestBehavior.opaque,
             onTapDown: (d) {
               if (!_building) return;
-              if (_placing == null) {
+              if (_expanding) {
+                _pickPlot(cellAt(d.localPosition));
+              } else if (_placing == null) {
                 _tapSelect(pickCell(d.localPosition));
               } else {
                 aim(d.localPosition);
@@ -1056,6 +1191,10 @@ class _BuildScreenState extends State<BuildScreen>
                 gesturing: _gesturing,
                 doorOpen: () => _phase == Phase.service && sim.open,
                 grid: _placing != null && _building,
+                expanding: _expanding && _building,
+                plotSel: _plotSel,
+                flashPlot: _flashPlot,
+                flash: _flashStep,
                 placing: _building ? _placing : null,
                 hover: _hover,
                 selected: _building ? _selected : null,

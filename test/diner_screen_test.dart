@@ -201,33 +201,85 @@ void main() {
     expect(d.items.contains(grill), isTrue);
   });
 
-  testWidgets('the plot is bought from its own page, section by section', (
+  /// Pumps for a moment: the build screen never settles, as its ticker runs.
+  Future<void> beat(WidgetTester tester) =>
+      tester.pump(const Duration(milliseconds: 100));
+
+  Future<void> expand(WidgetTester tester) async {
+    await tester.tap(find.byKey(const ValueKey('expand')));
+    await beat(tester);
+  }
+
+  testWidgets('expanding happens on the board, not on another page', (
     tester,
   ) async {
     final d = await open(tester);
     d.coins = 5000;
     d.progress.level = 9;
     await tester.pump();
-    expect(d.width, 6);
-    // The build panel has one Expand button, not a row of growth buttons.
-    expect(find.byKey(const ValueKey('buy-plot')), findsNothing);
-    await tester.tap(find.byKey(const ValueKey('expand')));
-    await tester.pumpAndSettle();
-    for (var i = 0; i < Diner.plots.length; i++) {
-      expect(find.byKey(ValueKey('plot-$i')), findsOneWidget);
-    }
-    // The first section that can be bought is already chosen.
+    final before = fit(tester);
+    await expand(tester);
+    // Still the same screen, with the board, and a panel about the plot.
+    expect(board, findsOneWidget);
     expect(find.byKey(const ValueKey('plot-detail')), findsOneWidget);
-    final cost = d.unlockCost(1);
-    await tester.tap(find.byKey(const ValueKey('plot-1')));
+    expect(find.byKey(const ValueKey('done-expanding')), findsOneWidget);
+    expect(find.byKey(const ValueKey('start-day')), findsNothing);
+    // The view pulls back to take in the whole plot.
+    final painter = tester.widget<CustomPaint>(board).painter! as DinerPainter;
+    expect(painter.expanding, isTrue);
+    expect(fit(tester).view.height, greaterThan(before.view.height));
+    await tester.tap(find.byKey(const ValueKey('done-expanding')));
+    await beat(tester);
+    expect(find.byKey(const ValueKey('start-day')), findsOneWidget);
+    expect(fit(tester).view.height, before.view.height);
+  });
+
+  testWidgets('tapping a section on the board picks it, and Buy buys it', (
+    tester,
+  ) async {
+    final d = await open(tester);
+    d.coins = 5000;
+    d.progress.level = 9;
     await tester.pump();
+    await expand(tester);
+    // Pick the room behind, by tapping the ground where it will be.
+    await tester.tapAt(onCell(tester, const Cell(3, 0)));
+    await beat(tester);
+    final painter = tester.widget<CustomPaint>(board).painter! as DinerPainter;
+    expect(painter.plotSel, 2);
+    expect(find.text('Room behind'), findsOneWidget);
+    expect(find.textContaining('24 more tiles'), findsOneWidget);
+    final cost = d.unlockCost(2);
     await tester.tap(find.byKey(const ValueKey('buy-plot')));
-    await tester.pump();
-    expect(d.owned, {0, 1});
-    expect(d.width, 10);
+    await beat(tester);
+    expect(d.owned, {0, 2});
     expect(d.coins, 5000 - cost);
     expect(find.textContaining('is yours'), findsOneWidget);
+    // Still choosing, and the view takes in the new room.
+    expect(find.byKey(const ValueKey('done-expanding')), findsOneWidget);
   });
+
+  testWidgets(
+    'the sections that can be bought now are the ones outlined gold',
+    (tester) async {
+      final d = await open(tester);
+      d.progress.level = 9;
+      await tester.pump();
+      await expand(tester);
+      final painter =
+          tester.widget<CustomPaint>(board).painter! as DinerPainter;
+      expect(painter.expanding, isTrue);
+      expect(d.nextPlots, [1, 2]);
+      // A section that is already yours cannot be picked.
+      await tester.tapAt(onCell(tester, const Cell(3, 5)));
+      await beat(tester);
+      expect(
+        (tester.widget<CustomPaint>(board).painter! as DinerPainter).plotSel,
+        1,
+        reason: 'the first one to buy stays chosen',
+      );
+    },
+  );
 
   testWidgets('a section behind cannot be bought before the one in front', (
     tester,
@@ -235,16 +287,15 @@ void main() {
     final d = await open(tester);
     d.coins = 50000;
     d.progress.level = 9;
-    await tester.tap(find.byKey(const ValueKey('expand')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('plot-5')));
-    await tester.pump();
+    await expand(tester);
+    await tester.tapAt(onCell(tester, const Cell(9, -4)));
+    await beat(tester);
     expect(find.textContaining('first'), findsWidgets);
     await tester.tap(
       find.byKey(const ValueKey('buy-plot')),
       warnIfMissed: false,
     );
-    await tester.pump();
+    await beat(tester);
     expect(d.owned, {0});
     expect(d.coins, 50000);
   });
@@ -252,27 +303,45 @@ void main() {
   testWidgets('a section needing a higher level says which', (tester) async {
     final d = await open(tester);
     d.coins = 50000;
-    await tester.tap(find.byKey(const ValueKey('expand')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('plot-2')));
-    await tester.pump();
+    await expand(tester);
+    await tester.tapAt(onCell(tester, const Cell(3, 0)));
+    await beat(tester);
     expect(find.text('Needs restaurant level 3'), findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey('buy-plot')),
+      warnIfMissed: false,
+    );
+    await beat(tester);
+    expect(d.owned, {0});
   });
 
-  testWidgets('no word on the expand page says yard, lot, max or owned', (
+  testWidgets(
+    'with everything bought, it says so and no word is a bare label',
+    (tester) async {
+      final d = await open(tester);
+      d.coins = 500000;
+      d.progress.level = 9;
+      for (var i = 1; i < Diner.plots.length; i++) {
+        d.owned.add(i);
+      }
+      await expand(tester);
+      expect(find.text('All of the plot is yours.'), findsOneWidget);
+      expect(find.byKey(const ValueKey('buy-plot')), findsNothing);
+      final banned = RegExp(r'\b(yard|lot|max|owned)\b', caseSensitive: false);
+      expect(find.textContaining(banned), findsNothing);
+    },
+  );
+
+  testWidgets('building tools are put away while choosing what to buy', (
     tester,
   ) async {
-    final d = await open(tester);
-    d.coins = 500000;
-    d.progress.level = 9;
-    for (var i = 1; i < Diner.plots.length; i++) {
-      d.owned.add(i);
-    }
-    await tester.tap(find.byKey(const ValueKey('expand')));
-    await tester.pumpAndSettle();
-    final banned = RegExp(r'\b(yard|lot|max|owned)\b', caseSensitive: false);
-    expect(find.textContaining(banned), findsNothing);
-    expect(find.text('All of the plot is yours.'), findsOneWidget);
+    await open(tester);
+    expect(find.byKey(const ValueKey('fixture-grill')), findsOneWidget);
+    await expand(tester);
+    final painter = tester.widget<CustomPaint>(board).painter! as DinerPainter;
+    expect(painter.placing, isNull);
+    expect(find.byKey(const ValueKey('fixture-grill')), findsNothing);
+    expect(find.byKey(const ValueKey('rotate')), findsNothing);
   });
 
   testWidgets('reset wipes the saved restaurant, after asking', (tester) async {

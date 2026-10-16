@@ -200,13 +200,10 @@ void main() {
       await tester.pump();
       expect(fit(tester).zoomed, isTrue);
       await tester.tap(find.byKey(const ValueKey('expand')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('plot-1')));
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(fit(tester).zoomed, isFalse, reason: 'the whole plot is shown');
       await tester.tap(find.byKey(const ValueKey('buy-plot')));
-      await tester.pump();
-      tester.state<NavigatorState>(find.byType(Navigator)).pop();
-      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump(const Duration(milliseconds: 100));
       expect(fit(tester).zoomed, isFalse);
     });
 
