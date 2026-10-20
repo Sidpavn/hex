@@ -15,13 +15,25 @@ import 'package:hex/diner/staff.dart';
 import 'package:hex/main.dart';
 import 'package:hex/ui/pixel/pixel_assets.dart';
 
+/// The newer fast-food dishes, kept off the menu in tests that are about the
+/// original seven.
+const newDishes = [
+  Dish.hotDog,
+  Dish.onionRings,
+  Dish.chickenSandwich,
+  Dish.nuggets,
+  Dish.milkshake,
+  Dish.baconBurger,
+  Dish.sundae,
+];
+
 Diner kitchen({int rep = 70, int staff = 3, Tier tier = Tier.standard}) {
   final d = Diner(
     coins: 100000,
     owned: {0, 1},
     progress: Progress(level: 4, reputation: rep),
   );
-  d.declined.add(Dish.cheeseburger);
+  d.declined.addAll([Dish.cheeseburger, ...newDishes]);
   d.roster.employees.clear();
   d.progress.upgrades[Upgrade.staff] = staff - 1;
   for (var i = 0; i < staff; i++) {

@@ -28,13 +28,15 @@ class Building {
       c.x >= x0 && c.x < x0 + w && c.y >= y0 && c.y < y0 + d;
 }
 
-/// The buildings either side of the plot: two on the left, two across the
+/// The buildings either side of the plot: three on the left, three across the
 /// side street. Their sizes match the sprites made by `gen_diner_art.py`.
 const buildings = [
   Building('block_lf', -9, 1, 8, 7),
   Building('block_lb', -9, -6, 8, 7),
+  Building('block_lb', -9, -13, 8, 7),
   Building('block_rf', 15, 1, 4, 7),
   Building('block_rb', 15, -6, 4, 7),
+  Building('block_rb', 15, -13, 4, 7),
 ];
 
 /// What the ground at [c] is made of. The restaurant is floor; the rest of
@@ -98,7 +100,10 @@ List<(String, Cell)> streetProps(Diner d) {
     ('tree', Cell(Diner.plotRight + 5, kerb)),
     // Vending machines, along the kerb to the right of the door.
     for (var i = 0; i < d.vendingMachines; i++)
-      (d.vendingOn ? 'vending' : 'vending_off', Cell(door + 2 + 2 * i, kerb)),
+      (
+        'vending${d.vendingOn ? '' : '_off'}${d.vendCash > 0 ? '_cash' : ''}',
+        Cell(door + 2 + 2 * i, kerb),
+      ),
     // The day's special, chalked up beside the door.
     if (d.specialActive) ('special_board', Cell(door - 1, kerb)),
   ];

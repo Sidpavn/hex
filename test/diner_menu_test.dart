@@ -15,6 +15,18 @@ import 'package:hex/main.dart';
 import 'package:hex/ui/pixel/pixel_assets.dart';
 import 'package:hex/ui/widgets.dart' show GoldButton;
 
+/// The newer fast-food dishes, kept off the menu in tests that are about the
+/// original seven.
+const newDishes = [
+  Dish.hotDog,
+  Dish.onionRings,
+  Dish.chickenSandwich,
+  Dish.nuggets,
+  Dish.milkshake,
+  Dish.baconBurger,
+  Dish.sundae,
+];
+
 Staff person({
   int id = 70,
   String name = 'Test',
@@ -58,7 +70,7 @@ Diner kitchen({
     owned: {0, 1},
     progress: Progress(level: level, reputation: rep),
   );
-  d.declined.add(Dish.cheeseburger);
+  d.declined.addAll([Dish.cheeseburger, ...newDishes]);
   d.roster.employees.clear();
   d.progress.upgrades[Upgrade.staff] = staff - 1;
   for (var i = 0; i < staff; i++) {
@@ -112,7 +124,7 @@ void main() {
 
     test('a full menu does not take more, and the player chooses', () {
       final d = kitchen(level: 3);
-      d.declined.clear();
+      d.declined.remove(Dish.cheeseburger);
       final menu = d.menu();
       expect(menu.length, 3);
       expect(menu, [Dish.burger, Dish.cheeseburger, Dish.fries]);
@@ -363,9 +375,9 @@ void main() {
   });
 
   group('new dishes', () {
-    test('there are seven, in four courses, each with a home machine', () {
-      expect(Dish.values.length, 7);
-      expect(recipes.length, 7);
+    test('there are fourteen, in four courses, each with a home machine', () {
+      expect(Dish.values.length, 14);
+      expect(recipes.length, 14);
       expect(
         recipes.values.map((r) => r.course).toSet(),
         Course.values.toSet(),
@@ -408,7 +420,7 @@ void main() {
         oven: true,
         staff: 4,
       );
-      d.declined.addAll([Dish.cheeseburger, Dish.pizza]);
+      d.declined.addAll([Dish.cheeseburger, Dish.pizza, ...newDishes]);
       d.roster.employees.first.teach(Dish.coffee);
       final menu = d.menu();
       expect(menu, contains(Dish.coffee));
@@ -522,7 +534,7 @@ void main() {
 
     test('pizza is not on the menu until someone can make it', () {
       final d = kitchen(level: 6, oven: true);
-      d.declined.addAll([Dish.cheeseburger, Dish.soda]);
+      d.declined.addAll([Dish.cheeseburger, Dish.soda, ...newDishes]);
       expect(d.whyNot(Dish.pizza), 'Needs someone who knows how');
       expect(d.menu(), isNot(contains(Dish.pizza)));
       d.roster.employees.first.teach(Dish.pizza);
@@ -532,7 +544,12 @@ void main() {
 
     test('only the person who knows pizza ever puts one in the oven', () {
       final d = kitchen(level: 6, oven: true, staff: 3);
-      d.declined.addAll([Dish.cheeseburger, Dish.soda, Dish.fries]);
+      d.declined.addAll([
+        Dish.cheeseburger,
+        Dish.soda,
+        Dish.fries,
+        ...newDishes,
+      ]);
       final chef = d.roster.employees.last..teach(Dish.pizza);
       final sim = DinerSim(d, seed: 3);
       while (!sim.finished) {
@@ -905,7 +922,14 @@ void main() {
     });
 
     Future<void> openDish(WidgetTester tester, Dish d) async {
-      await tester.tap(find.byKey(ValueKey('dish-${d.name}')));
+      final row = find.byKey(ValueKey('dish-${d.name}'));
+      if (row.evaluate().isEmpty) {
+        // The list is long: it may have been scrolled past this dish.
+        await tester.scrollUntilVisible(row, -200);
+      }
+      await tester.ensureVisible(row);
+      await tester.pump();
+      await tester.tap(row);
       await tester.pumpAndSettle();
     }
 
@@ -978,6 +1002,10 @@ void main() {
       // A dearer dish has a longer bar, and a better margin a bigger green.
       final burger = tester.getSize(
         find.byKey(const ValueKey('price-bar-burger')),
+      );
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('price-bar-fries')),
+        200,
       );
       final fries = tester.getSize(
         find.byKey(const ValueKey('price-bar-fries')),

@@ -1457,6 +1457,14 @@ class _BuildScreenState extends State<BuildScreen>
               key: const ValueKey('guest-kind'),
               style: const TextStyle(color: Pal.dim, fontSize: 14),
             ),
+            if (g.regular != null)
+              PxText(
+                'Regular, ${g.regular!.hearts} '
+                '${g.regular!.hearts == 1 ? 'heart' : 'hearts'}. Likes '
+                '${recipes[g.regular!.favourite]!.name.toLowerCase()}.',
+                key: const ValueKey('guest-regular'),
+                style: const TextStyle(color: Pal.gold, fontSize: 14),
+              ),
             PxText(
               status,
               style: const TextStyle(color: Pal.dim, fontSize: 14),

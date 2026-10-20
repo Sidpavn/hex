@@ -286,7 +286,7 @@ void main() {
       expect(two[0].$2.y, d.bottom + 2, reason: 'on the kerb, not the queue');
     });
 
-    test('switched off they are drawn grey', () {
+    test('switched off they are drawn with the lights out', () {
       final d = cafe(machines: 2)..vendingOn = false;
       final names = streetProps(
         d,
@@ -303,7 +303,9 @@ void main() {
       TestWidgetsFlutterBinding.ensureInitialized();
       final art = await DinerArt.load();
       expect(art.sprite('vending').blank, isFalse);
-      expect(art.sprite('vending_off').blank, isFalse);
+      for (final n in ['vending_off', 'vending_cash', 'vending_off_cash']) {
+        expect(art.sprite(n).blank, isFalse, reason: n);
+      }
     });
   });
 
@@ -313,21 +315,117 @@ void main() {
       expect(r.vending, isNull);
     });
 
-    test('the takings go in the till, less the stock', () {
+    test(
+      'the stock comes out of the till, and the takings wait in the box',
+      () {
+        final n = workingDay();
+        final d = cafe(machines: 1, day: n);
+        final base = cafe(day: n);
+        final sim = play(d, seed: 2);
+        final plain = play(base, seed: 2);
+        final v = sim.result!.vending!;
+        expect(v.sold, greaterThan(0));
+        // Everything else is the same day: the till is only short the stock.
+        expect(base.coins - d.coins, v.restock + v.repair);
+        expect(d.vendCash, v.stored);
+        expect(v.stored, v.income);
+        expect(v.lost, 0);
+        // And it is not counted in the restaurant's own takings.
+        expect(sim.result!.earned, plain.result!.earned);
+        expect(sim.result!.ingredients, plain.result!.ingredients);
+      },
+    );
+
+    test('the box fills up over the days until someone collects', () {
+      final d = cafe(machines: 1);
+      var total = 0;
+      for (var n = 2; n < 8; n++) {
+        d.progress.day = n;
+        final v = Vending.run(
+          day: n,
+          machines: 1,
+          product: d.vend,
+          rating: d.progress.rating,
+          event: DayEvent.forDay(n, 5),
+        );
+        if (!v.broken) total += v.income;
+      }
+      d.vendCash = 0;
+      for (var n = 2; n < 6; n++) {
+        d.progress.day = n;
+        play(d, seed: n);
+      }
+      expect(d.vendCash, greaterThan(0));
+      expect(d.vendCash, lessThanOrEqualTo(total));
+    });
+
+    test('a full box takes no more, and says so', () {
       final n = workingDay();
       final d = cafe(machines: 1, day: n);
-      final base = cafe(day: n);
+      d.vendCash = d.vendCashLimit - 5;
       final sim = play(d, seed: 2);
-      final plain = play(base, seed: 2);
       final v = sim.result!.vending!;
-      expect(v.sold, greaterThan(0));
-      // Everything else is the same day: what the machine made is the
-      // difference in the till.
-      expect(d.coins - base.coins, v.net);
-      expect(sim.result!.earned - plain.result!.earned, v.income);
+      expect(d.vendCash, d.vendCashLimit);
+      expect(v.stored, 5);
+      expect(v.lost, v.income - 5);
+      expect(v.lost, greaterThan(0));
+      expect(sim.story.any((l) => l.text.contains('the box was full')), isTrue);
+    });
+
+    test('collecting empties the box into the till', () {
+      final d = cafe(machines: 1)..vendCash = 87;
+      final before = d.coins;
+      expect(d.collectVending(), 87);
+      expect(d.coins, before + 87);
+      expect(d.vendCash, 0);
+      expect(d.collectVending(), 0);
+      expect(d.coins, before + 87);
+    });
+
+    test('the box holds a hundred and fifty a machine', () {
+      expect(cafe(machines: 1).vendCashLimit, 150);
+      expect(cafe(machines: 2).vendCashLimit, 300);
       expect(
-        sim.result!.ingredients - plain.result!.ingredients,
-        v.restock + v.repair,
+        Diner.fromJson((cafe(machines: 1)..vendCash = 40).toJson()).vendCash,
+        40,
+      );
+      expect(Diner.fromJson(cafe().toJson()).vendCash, 0);
+    });
+
+    test('a switched-off machine keeps what is in its box', () {
+      final d = cafe(machines: 1)
+        ..vendCash = 60
+        ..vendingOn = false;
+      play(d, seed: 2);
+      expect(d.vendCash, 60);
+      expect(d.collectVending(), 60);
+    });
+
+    test('the machine shows when there is money to collect', () {
+      final d = cafe(machines: 2);
+      String first() =>
+          streetProps(d).firstWhere((p) => p.$1.startsWith('vending')).$1;
+      expect(first(), 'vending');
+      d.vendCash = 10;
+      expect(first(), 'vending_cash');
+      d.vendingOn = false;
+      expect(first(), 'vending_off_cash');
+      d.vendCash = 0;
+      expect(first(), 'vending_off');
+    });
+
+    test('no money for the stock: it stands empty, and nothing is lost', () {
+      final n = workingDay();
+      final d = cafe(machines: 1, day: n, coins: 0);
+      final sim = DinerSim(d, seed: 2);
+      sim.finishDay();
+      final v = sim.result!.vending!;
+      expect(v.unstocked, isTrue);
+      expect(v.sold, 0);
+      expect(d.vendCash, 0);
+      expect(
+        sim.story.any((l) => l.text.contains('no money to stock')),
+        isTrue,
       );
     });
 
@@ -338,6 +436,7 @@ void main() {
         (l) => l.text.startsWith('The vending machine sold'),
       );
       expect(line.text, contains('cold drinks'));
+      expect(line.text, contains('in the box'));
     });
 
     test('a breakdown costs the repair, and says so', () {
@@ -389,16 +488,6 @@ void main() {
       expect(r.vending!.sold, greaterThan(0));
     });
 
-    test('what it makes helps pay the wages', () {
-      final n = workingDay();
-      final d = cafe(machines: 2, day: n, coins: 0);
-      final sim = DinerSim(d, seed: 2);
-      // No customers and no money: only the machines have anything.
-      sim.finishDay();
-      expect(sim.result!.vending!.income, greaterThan(0));
-      expect(sim.result!.wages, greaterThan(0));
-    });
-
     test('the same machines on the same day give the same result', () {
       int net() =>
           play(cafe(machines: 1, day: 9), seed: 3).result!.vending!.net;
@@ -433,7 +522,7 @@ void main() {
       );
       expect(find.text('Vending machine'), findsOneWidget);
       expect(
-        find.textContaining('Tap it to choose what it sells'),
+        find.textContaining('tap the machine to collect them'),
         findsOneWidget,
       );
       expect(find.byKey(const ValueKey('vending-panel')), findsNothing);
@@ -503,6 +592,44 @@ void main() {
       await open(tester, d, BuildScreen(diner: d));
       await tapMachine(tester, d);
       expect(find.text('Vending machines'), findsOneWidget);
+    });
+
+    testWidgets('the dialog shows the box, and collecting takes it', (
+      tester,
+    ) async {
+      final d = cafe(machines: 1)..vendCash = 64;
+      final before = d.coins;
+      await open(tester, d, BuildScreen(diner: d));
+      await tapMachine(tester, d);
+      expect(find.text('In the coin box: 64 of 150'), findsOneWidget);
+      expect(find.text('Collect 64'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('vend-collect')));
+      await tester.pump();
+      expect(d.coins, before + 64);
+      expect(d.vendCash, 0);
+      expect(find.text('In the coin box: 0 of 150'), findsOneWidget);
+      expect(find.text('Nothing to collect'), findsOneWidget);
+    });
+
+    testWidgets('a full box says so', (tester) async {
+      final d = cafe(machines: 1)..vendCash = 150;
+      await open(tester, d, BuildScreen(diner: d));
+      await tapMachine(tester, d);
+      expect(find.textContaining('The box is full'), findsOneWidget);
+    });
+
+    testWidgets('the money comes out even with the machine switched off', (
+      tester,
+    ) async {
+      final d = cafe(machines: 1)
+        ..vendCash = 40
+        ..vendingOn = false;
+      final before = d.coins;
+      await open(tester, d, BuildScreen(diner: d));
+      await tapMachine(tester, d);
+      await tester.tap(find.byKey(const ValueKey('vend-collect')));
+      await tester.pump();
+      expect(d.coins, before + 40);
     });
 
     testWidgets('choosing what to sell changes the forecast', (tester) async {

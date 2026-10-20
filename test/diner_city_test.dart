@@ -33,9 +33,10 @@ void main() {
       expect(d.isLocked(const Cell(3, 1)), isTrue);
     });
 
-    test('the sections add up to a plot ten wide and thirteen deep', () {
+    test('the sections add up to a plot ten wide and twenty-one deep', () {
       final tiles = Diner.plots.fold(0, (a, p) => a + p.tiles);
-      expect(tiles, 10 * 13);
+      expect(tiles, 10 * 21);
+      expect(Diner.plots.length, 10);
       final seen = <Cell>{};
       for (final p in Diner.plots) {
         for (var y = p.y0; y <= p.y1; y++) {
@@ -131,15 +132,19 @@ void main() {
       d.owned.addAll({2, 3});
       expect(d.nextPlots, [4, 5]);
       d.owned.addAll({4, 5});
+      expect(d.nextPlots, [6, 7]);
+      d.owned.addAll({6, 7});
+      expect(d.nextPlots, [8, 9]);
+      d.owned.addAll({8, 9});
       expect(d.nextPlots, isEmpty);
     });
 
     test('bought sections join into one room, with no gaps', () {
       final d = wholePlot();
       final reach = d.reachable();
-      expect(reach.length, 130);
-      expect(d.insideCells().length, 130);
-      expect(reach, contains(const Cell(10, -5)));
+      expect(reach.length, 210);
+      expect(d.insideCells().length, 210);
+      expect(reach, contains(const Cell(10, -13)));
     });
 
     test('a section behind is reached through the room in front', () {
@@ -172,8 +177,10 @@ void main() {
       // The start, the room beside it and the one behind it.
       expect(d.topRow, -1);
       expect(d.rightCol, 10);
-      d.owned.addAll({2, 4});
-      expect(d.topRow, -5);
+      d.owned.addAll({2});
+      expect(d.topRow, -5, reason: 'and the one behind that');
+      d.owned.addAll({4});
+      expect(d.topRow, -9);
       final small = IsoView(Diner(coins: 0));
       final big = IsoView(d);
       expect(big.height, greaterThan(small.height));
@@ -329,11 +336,11 @@ void main() {
   });
 
   group('the neighbouring buildings', () {
-    test('there are four, each one sprite, two a side', () {
-      expect(buildings.length, 4);
+    test('there are six, each one sprite, three a side', () {
+      expect(buildings.length, 6);
       expect(buildings.map((b) => b.sprite).toSet().length, 4);
-      expect(buildings.where((b) => b.x0 < 0).length, 2);
-      expect(buildings.where((b) => b.x0 > 10).length, 2);
+      expect(buildings.where((b) => b.x0 < 0).length, 3);
+      expect(buildings.where((b) => b.x0 > 10).length, 3);
     });
 
     test('they stand clear of the plot, the street and each other', () {

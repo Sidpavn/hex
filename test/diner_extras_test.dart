@@ -18,6 +18,18 @@ import 'package:hex/diner/suppliers.dart';
 import 'package:hex/main.dart';
 import 'package:hex/ui/pixel/pixel_assets.dart';
 
+/// The newer fast-food dishes, kept off the menu in tests that are about the
+/// original seven.
+const newDishes = [
+  Dish.hotDog,
+  Dish.onionRings,
+  Dish.chickenSandwich,
+  Dish.nuggets,
+  Dish.milkshake,
+  Dish.baconBurger,
+  Dish.sundae,
+];
+
 int dayWith(DayEvent event, {int level = 5}) {
   for (var d = 2; d < 600; d++) {
     if (DayEvent.forDay(d, level) == event) return d;
@@ -33,7 +45,7 @@ Diner cafe({int day = 1, int level = 5, int rep = 60, int cooks = 3}) {
     owned: {0, 1},
     progress: Progress(level: level, reputation: rep, day: day),
   );
-  d.declined.add(Dish.cheeseburger);
+  d.declined.addAll([Dish.cheeseburger, ...newDishes]);
   d.roster.employees.clear();
   d.progress.upgrades[Upgrade.staff] = cooks - 1;
   for (var i = 0; i < cooks; i++) {

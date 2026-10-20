@@ -868,6 +868,69 @@ def icons():
         ellipse(img, cx, cy - 4, 2.8, 2.4, hexc('#cfa27a'))
         rect(img, cx - 1, cy - 6, 1, 1, RED.top)
 
+    def hotdog(img, cx, cy, w):
+        # a long bun, the sausage poking out of both ends, a line of mustard
+        rect(img, cx - 4, cy - 1, 9, 4, hexc('#e8a04a'))
+        rect(img, cx - 3, cy - 2, 7, 1, hexc('#f0b765'))
+        rect(img, cx - 5, cy, 11, 2, hexc('#b8452f'))
+        rect(img, cx - 5, cy, 11, 1, hexc('#d65f43'))
+        for k in range(-3, 4, 2):
+            rect(img, cx + k, cy - 1, 1, 1, hexc('#f5d04a'))
+            rect(img, cx + k + 1, cy, 1, 1, hexc('#f5d04a'))
+
+    def onionrings(img, cx, cy, w):
+        # a stack of three golden rings
+        for dx, dy in ((-2, 1), (2, 1), (0, -2)):
+            ellipse(img, cx + dx, cy + dy, 3.2, 2.6, hexc('#c98a2e'))
+            ellipse(img, cx + dx, cy + dy, 2.4, 1.9, hexc('#e8b04a'))
+            ellipse(img, cx + dx, cy + dy, 1.2, 0.9, hexc('#7a5a14'))
+
+    def chicken(img, cx, cy, w):
+        # a bun with a crisp fillet hanging out, lettuce and a pickle
+        ellipse(img, cx, cy - 3, w, 2.4, hexc('#e8a04a'))
+        rect(img, cx - w, cy - 2, 2 * w, 1, GREEN.top)
+        ellipse(img, cx, cy - 1, w + 1.5, 1.8, hexc('#c98a2e'))
+        ellipse(img, cx, cy - 1, w + 0.5, 1.2, hexc('#e0a850'))
+        ellipse(img, cx, cy + 1, w, 1.8, hexc('#d9904a'))
+        rect(img, cx - 2, cy - 5, 2, 1, hexc('#fff0c8'))
+
+    def nuggets(img, cx, cy, w):
+        for dx, dy in ((-3, 1), (1, 2), (-1, -2), (3, -1)):
+            ellipse(img, cx + dx, cy + dy, 2.4, 2.0, hexc('#c98a2e'))
+            ellipse(img, cx + dx - 0.5, cy + dy - 0.5, 1.6, 1.3, hexc('#e8b04a'))
+        rect(img, cx + 4, cy + 2, 2, 2, hexc('#e2493f'))
+
+    def milkshake(img, cx, cy, w):
+        # a tall cup of pink shake with cream, a cherry and a straw
+        rect(img, cx - 3, cy - 2, 7, 7, (250, 250, 246))
+        rect(img, cx - 3, cy - 1, 7, 5, hexc('#f4a6c0'))
+        rect(img, cx - 3, cy - 1, 7, 1, hexc('#f9c4d6'))
+        ellipse(img, cx, cy - 3, 3.4, 1.8, (255, 255, 255))
+        rect(img, cx, cy - 6, 1, 2, RED.base)
+        rect(img, cx + 2, cy - 7, 1, 5, hexc('#3fb7b0'))
+
+    def baconburger(img, cx, cy, w):
+        # a tall one: two patties, cheese and bacon between the buns
+        ellipse(img, cx, cy - 6, w, 2.4, hexc('#e8a04a'))
+        rect(img, cx - w, cy - 5, 2 * w, 1, hexc('#ffd23f'))
+        rect(img, cx - w, cy - 4, 2 * w, 1, hexc('#8a4b2d'))
+        for k in range(-w, w, 2):
+            rect(img, cx + k, cy - 3, 1, 1, hexc('#c0392b'))
+            rect(img, cx + k + 1, cy - 3, 1, 1, hexc('#f0b0a0'))
+        rect(img, cx - w, cy - 2, 2 * w, 1, hexc('#ffd23f'))
+        rect(img, cx - w, cy - 1, 2 * w, 1, hexc('#8a4b2d'))
+        ellipse(img, cx, cy + 1, w, 1.8, hexc('#d9904a'))
+        rect(img, cx - 2, cy - 8, 2, 1, hexc('#fff0c8'))
+
+    def sundae(img, cx, cy, w):
+        # a glass dish, two scoops, chocolate sauce and a cherry
+        rect(img, cx - 3, cy + 1, 7, 3, (230, 238, 246))
+        rect(img, cx - 1, cy + 4, 3, 1, (210, 220, 232))
+        ellipse(img, cx - 1, cy - 1, 2.8, 2.4, hexc('#f9d6e0'))
+        ellipse(img, cx + 2, cy - 2, 2.4, 2.2, hexc('#fff2b8'))
+        rect(img, cx - 2, cy - 1, 5, 1, hexc('#5a3322'))
+        rect(img, cx, cy - 5, 1, 2, RED.top)
+
     dishes = (
         ('burger', burger),
         ('cheeseburger', cheeseburger),
@@ -876,6 +939,13 @@ def icons():
         ('soda', drink),
         ('coffee', coffee),
         ('iceCream', icecream),
+        ('hotDog', hotdog),
+        ('onionRings', onionrings),
+        ('chickenSandwich', chicken),
+        ('nuggets', nuggets),
+        ('milkshake', milkshake),
+        ('baconBurger', baconburger),
+        ('sundae', sundae),
     )
     for name, draw_dish in dishes:
         # a plate to set down on a table
@@ -1074,12 +1144,14 @@ def special_board():
     add('special_board', img, 0.55)
 
 
-def vending(on=True):
+def vending(on=True, cash=False):
     """A vending machine on the pavement outside: a red cabinet with a glass
     front of drinks, a lit sign on top and a coin slot, facing the street.
-    Switched off it is the same machine gone grey, its glass dark."""
-    img = cell_img(40)
-    body = ramp('#c9473b' if on else '#8a8f9c')
+    Switched off it is the same red machine with its lights out: the glass and
+    the sign dark, the coin slot unlit. With
+    takings waiting a gold coin floats above it."""
+    img = cell_img(54)
+    body = ramp('#c9473b')
     dark = ramp('#2c3040')
     box(img, 3, 4, 13, 12, 0, 36, body)
 
@@ -1109,7 +1181,13 @@ def vending(on=True):
         return body.left
 
     face_left(img, 3, 13, 12, 0, 36, front)
-    add('vending' if on else 'vending_off', img, 0.55)
+    if cash:
+        cx, cy = P(8, 8, 46)
+        ellipse(img, cx, cy, 5, 5, hexc('#7a5a14'))
+        ellipse(img, cx, cy, 4, 4, hexc('#f2c338'))
+        ellipse(img, cx - 1, cy - 1, 2, 2, hexc('#ffe58a'))
+        rect(img, cx, cy - 3, 1, 6, hexc('#b8841a'))
+    add(('vending' if on else 'vending_off') + ('_cash' if cash else ''), img, 0.55)
 
 
 def street_tree():
@@ -1208,6 +1286,8 @@ def city():
     special_board()
     vending()
     vending(on=False)
+    vending(cash=True)
+    vending(on=False, cash=True)
     street_tree()
     emotes()
     moods()

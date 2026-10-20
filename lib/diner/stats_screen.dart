@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../ui/pixel_hearts.dart';
 import '../ui/pixel_pie.dart';
 import '../ui/widgets.dart';
 import 'build_screen.dart' show DinerSprite;
@@ -11,6 +12,7 @@ import 'diner.dart';
 import 'events.dart';
 import 'guests.dart';
 import 'recipes.dart';
+import 'regulars.dart';
 
 /// The one thing worth saying about who comes, or null if there is not
 /// enough to go on. Looks at who spends and who walks out.
@@ -134,6 +136,7 @@ String cateringLine(double rating) {
 enum _Tab {
   guests('Guests'),
   dishes('Dishes'),
+  regulars('Regulars'),
   days('Days');
 
   const _Tab(this.label);
@@ -165,6 +168,9 @@ class _StatsScreenState extends State<StatsScreen> {
     return ScreenFrame(
       title: 'Stats',
       subtitle: switch (_tab) {
+        _Tab.regulars =>
+          '${diner.regulars.people.length} of '
+              '${RegularBook.cap(diner.progress.level)} regulars',
         _Tab.days =>
           diner.history.isEmpty
               ? 'No days yet'
@@ -195,7 +201,7 @@ class _StatsScreenState extends State<StatsScreen> {
                 ),
             ],
           ),
-          if (_tab != _Tab.days) ...[
+          if (_tab != _Tab.days && _tab != _Tab.regulars) ...[
             const SizedBox(height: 8),
             Wrap(
               spacing: 6,
@@ -219,6 +225,7 @@ class _StatsScreenState extends State<StatsScreen> {
           ...switch (_tab) {
             _Tab.guests => _guests(c),
             _Tab.dishes => _dishes(c),
+            _Tab.regulars => _regulars(),
             _Tab.days => _daysTab(),
           },
         ],
@@ -501,6 +508,82 @@ class _StatsScreenState extends State<StatsScreen> {
       ),
     );
   }
+
+  // --------------------------------------------------------- regulars
+
+  List<Widget> _regulars() {
+    final list = [...diner.regulars.people]
+      ..sort((a, b) {
+        final h = b.points.compareTo(a.points);
+        return h != 0 ? h : a.name.compareTo(b.name);
+      });
+    final cap = RegularBook.cap(diner.progress.level);
+    if (list.isEmpty) {
+      return [
+        _empty(
+          'regulars-empty',
+          'No regulars yet. A guest who leaves happy may come back for good. '
+              'There is room for $cap.',
+        ),
+      ];
+    }
+    return [
+      _note(
+        '${list.length} of $cap regulars. Each heart brings someone in a '
+        'little more often, tipping a little more and waiting a little '
+        'longer. Fail them and they drift away.',
+      ),
+      Panel(
+        key: const ValueKey('regulars-list'),
+        child: Column(children: [for (final r in list) _regularRow(r)]),
+      ),
+    ];
+  }
+
+  Widget _regularRow(Regular r) {
+    final today = r.lastDay == diner.progress.day;
+    return Padding(
+      key: ValueKey('regular-${r.id}'),
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 32,
+            child: DinerSprite('ico_${r.favourite.name}', mult: 3),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                PxText(
+                  r.name,
+                  style: const TextStyle(color: Pal.text, fontSize: 15),
+                ),
+                PxText(
+                  'Likes ${recipes[r.favourite]!.name.toLowerCase()}. '
+                  '${r.visits} ${r.visits == 1 ? 'visit' : 'visits'}'
+                  '${r.lastDay == 0
+                      ? ''
+                      : today
+                      ? ', here today'
+                      : ', last day ${r.lastDay}'}.',
+                  key: ValueKey('regular-${r.id}-detail'),
+                  style: const TextStyle(color: Pal.dim, fontSize: 13),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          _hearts(r),
+        ],
+      ),
+    );
+  }
+
+  /// Five hearts, red for each they have.
+  Widget _hearts(Regular r) =>
+      PixelHearts(key: ValueKey('hearts-${r.id}'), filled: r.hearts);
 
   // ------------------------------------------------------------- days
 

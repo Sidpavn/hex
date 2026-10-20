@@ -111,7 +111,7 @@ class StaffRow extends StatelessWidget {
           ),
           if (applicant)
             PxText(
-              'fee ${s.fee}',
+              s.walkIn ? 'walked in, fee ${s.fee}' : 'fee ${s.fee}',
               style: const TextStyle(color: Pal.dim, fontSize: 14),
             )
           else

@@ -76,14 +76,33 @@ class DayReportScreen extends StatelessWidget {
                 if (r.leftover > 0)
                   _row('Ingredients thrown away', '${r.leftover}'),
                 _row('Expected tomorrow', 'about ${r.tomorrow}'),
+                if (r.regularsSeen > 0 ||
+                    r.regularsJoined.isNotEmpty ||
+                    r.regularsGone.isNotEmpty)
+                  _row(
+                    'Regulars',
+                    [
+                      if (r.regularsSeen > 0) '${r.regularsSeen} came',
+                      if (r.regularsJoined.isNotEmpty)
+                        '${r.regularsJoined.join(', ')} joined',
+                      if (r.regularsGone.isNotEmpty)
+                        '${r.regularsGone.join(', ')} left',
+                    ].join(', '),
+                    r.regularsGone.isNotEmpty ? Pal.red : Pal.green,
+                    const ValueKey('regulars-row'),
+                  ),
                 if (r.vending != null)
                   _row(
                     'Vending machine',
-                    r.vending!.broken
+                    r.vending!.unstocked
+                        ? 'no money for stock'
+                        : r.vending!.broken
                         ? 'broke down, -${r.vending!.repair}'
-                        : '${r.vending!.sold} sold, '
-                              '${r.vending!.net >= 0 ? '+' : ''}${r.vending!.net}',
-                    r.vending!.broken || r.vending!.net < 0
+                        : '${r.vending!.sold} sold, ${r.vending!.stored} in '
+                              'the box',
+                    r.vending!.broken ||
+                            r.vending!.unstocked ||
+                            r.vending!.lost > 0
                         ? Pal.red
                         : Pal.green,
                     const ValueKey('vending-row'),
@@ -204,9 +223,13 @@ class DayReportScreen extends StatelessWidget {
             style: const TextStyle(color: Pal.dim, fontSize: 14),
           ),
         ),
-        PxText(
-          value,
-          style: TextStyle(color: colour ?? Pal.text, fontSize: 17),
+        // A long value wraps, up to half the row, instead of overflowing.
+        Flexible(
+          child: PxText(
+            value,
+            textAlign: TextAlign.right,
+            style: TextStyle(color: colour ?? Pal.text, fontSize: 17),
+          ),
         ),
       ],
     ),

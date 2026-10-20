@@ -25,6 +25,11 @@ class _VendingDialogState extends State<VendingDialog> {
     Storage.saveDiner(diner);
   }
 
+  void _collect() {
+    setState(diner.collectVending);
+    Storage.saveDiner(diner);
+  }
+
   void _power() {
     setState(() => diner.vendingOn = !diner.vendingOn);
     Storage.saveDiner(diner);
@@ -70,6 +75,44 @@ class _VendingDialogState extends State<VendingDialog> {
                 ],
               ),
               const SizedBox(height: 12),
+              Panel(
+                key: const ValueKey('vend-box'),
+                padding: const EdgeInsets.all(8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    PxText(
+                      'In the coin box: ${diner.vendCash} of '
+                      '${diner.vendCashLimit}',
+                      key: const ValueKey('vend-cash'),
+                      style: TextStyle(
+                        color: diner.vendCash >= diner.vendCashLimit
+                            ? Pal.red
+                            : Pal.text,
+                        fontSize: 16,
+                      ),
+                    ),
+                    PxText(
+                      diner.vendCash >= diner.vendCashLimit
+                          ? 'The box is full. Anything more is lost until you '
+                                'collect.'
+                          : 'The takings stay in the machine until you come '
+                                'for them.',
+                      key: const ValueKey('vend-box-note'),
+                      style: const TextStyle(color: Pal.dim, fontSize: 14),
+                    ),
+                    const SizedBox(height: 8),
+                    GoldButton(
+                      key: const ValueKey('vend-collect'),
+                      label: diner.vendCash > 0
+                          ? 'Collect ${diner.vendCash}'
+                          : 'Nothing to collect',
+                      onTap: diner.vendCash > 0 ? _collect : null,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
               const PxText(
                 'What they sell',
                 style: TextStyle(color: Pal.text, fontSize: 16),
@@ -112,7 +155,7 @@ class _VendingDialogState extends State<VendingDialog> {
                 key: const ValueKey('vend-power'),
                 label: on ? 'Switch off' : 'Switch on',
                 filled: !on,
-                color: on ? Pal.red : Pal.gold,
+                color: on ? Pal.text : Pal.gold,
                 onTap: _power,
               ),
               const SizedBox(height: 8),

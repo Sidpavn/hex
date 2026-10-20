@@ -224,7 +224,11 @@ void main() {
 
     test('the whole plot means every section', () {
       expect(meets('plot', (d) => d.owned.addAll({1, 2, 3, 4})), isFalse);
-      expect(meets('plot', (d) => d.owned.addAll({1, 2, 3, 4, 5})), isTrue);
+      expect(meets('plot', (d) => d.owned.addAll({1, 2, 3, 4, 5})), isFalse);
+      expect(
+        meets('plot', (d) => d.owned.addAll({1, 2, 3, 4, 5, 6, 7, 8, 9})),
+        isTrue,
+      );
     });
 
     test('a goal about a day only counts when a day has ended', () {

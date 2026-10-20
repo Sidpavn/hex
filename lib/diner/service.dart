@@ -6,8 +6,10 @@ import 'crowd.dart';
 import 'diner.dart';
 import 'events.dart';
 import 'guests.dart';
+import 'luck.dart';
 import 'nav.dart';
 import 'recipes.dart';
+import 'regulars.dart';
 import 'staff.dart';
 import 'vending.dart';
 import 'traits.dart';
@@ -184,6 +186,11 @@ class Guest extends Person {
 
   /// Whether they have been counted among those fed or those missed.
   bool tallied = false;
+
+  /// Who they are, if they keep coming back, and whether what they came for
+  /// was not to be had.
+  Regular? regular;
+  bool favMissed = false;
 
   /// The tick they turned up.
   int arrived = 0;
@@ -374,6 +381,9 @@ class DayReport {
     this.cateringReward = 0,
     this.closed = false,
     this.vending,
+    this.regularsSeen = 0,
+    this.regularsJoined = const [],
+    this.regularsGone = const [],
     this.cars = 0,
     this.items = 0,
   });
@@ -448,6 +458,11 @@ class DayReport {
 
   /// How the machines out front did, if there are any.
   final VendingDay? vending;
+
+  /// How many regulars came, and who joined or left.
+  final int regularsSeen;
+  final List<String> regularsJoined;
+  final List<String> regularsGone;
 
   /// How many of those served came by car, to the window.
   final int cars;
@@ -672,6 +687,115 @@ class DinerSim {
   late final math.Random _traitRng = math.Random(progress.day * 211 + 5);
 
   /// Gives [g] their wallet and temper.
+  // ---------------------------------------------------------- walk-ins
+
+  /// Now and then somebody walks in asking for work. Whether, and when, is
+  /// fixed by the day. They are only about when there is a place for them.
+  late final int? _walkInTick = _planWalkIn();
+  Staff? _applicant;
+
+  /// The person who came by today, if anyone did, and when one is due.
+  Staff? get walkIn => _applicant;
+  int? get walkInDue => _walkInTick;
+
+  static const walkInChance = 0.14;
+
+  int? _planWalkIn() {
+    if (closedDay || progress.level < 2) return null;
+    if (diner.roster.employees.length >= progress.staffLimit) return null;
+    if (diner.roster.candidates.any((s) => s.walkIn)) return null;
+    if (dayLuck(progress.day, 71) >= walkInChance) return null;
+    return (Pace.dayTicks * (0.15 + 0.6 * dayLuck(progress.day, 72))).round();
+  }
+
+  /// Someone comes in off the street, stands at the counter for a moment, and
+  /// leaves: they left a CV, and are in the hiring list from tomorrow.
+  void _applicantArrives() {
+    final person = diner.roster.walkInApplicant(
+      progress.day,
+      progress.level,
+      progress.rating,
+    );
+    _applicant = person;
+    final fromLeft = _regRng.nextBool();
+    final start = fromLeft ? diner.arrivalLeft : diner.arrivalRight;
+    final out = fromLeft ? diner.arrivalRight : diner.arrivalLeft;
+    final inside = route(diner, start, diner.entrance);
+    final back = route(diner, diner.entrance, out);
+    if (inside != null && back != null) {
+      final g = Guest(
+        _nextId++,
+        Gender.values[_regRng.nextInt(Gender.values.length)].looks.first,
+        1 << 20,
+        start,
+        name: person.name,
+      )..state = GuestState.leaving;
+      g.path = [...inside, for (var i = 0; i < 8; i++) diner.entrance, ...back];
+      guests.add(g);
+    }
+    _tell(
+      '${person.name} walked in asking for work, and left a CV. See Hiring '
+      'tomorrow.',
+      Tone.good,
+      key: 'walk-in',
+    );
+  }
+
+  // ----------------------------------------------------------- regulars
+
+  /// Who keeps coming back decides on a stream of its own, so ordinary guests
+  /// are the same whether or not there are regulars.
+  late final math.Random _regRng = math.Random(progress.day * 307 + 19);
+
+  /// Which of the restaurant's regulars come today, and when.
+  late final List<(int, Regular)> _regularPlan = _planRegulars();
+  int _nextRegular = 0;
+
+  /// What happened with regulars today.
+  final Set<int> regularsSeen = {};
+  final List<String> regularsJoined = [];
+  final List<String> regularsGone = [];
+
+  List<(int, Regular)> _planRegulars() {
+    if (closedDay) return const [];
+    final last = Pace.dayTicks - 5;
+    return [
+      for (final r in diner.regulars.people)
+        if (dayLuck(progress.day, 200 + r.id) < r.chance)
+          (
+            (Pace.dayTicks * (0.08 + 0.75 * dayLuck(progress.day, 300 + r.id)))
+                .round()
+                .clamp(2, last),
+            r,
+          ),
+    ]..sort((a, b) => a.$1.compareTo(b.$1));
+  }
+
+  /// A regular walks in: who they are is fixed, and so is what they want.
+  void _arriveRegular(Regular r) {
+    regularsSeen.add(r.id);
+    r.visits++;
+    r.lastDay = progress.day;
+    _arrive(regular: r);
+    final g = guests.lastWhere((g) => g.regular == r);
+    _tell(
+      _say(
+        ['{a} is in for the usual.', '{a} came in. {b} again.'],
+        a: r.name,
+        b: recipes[r.favourite]!.name,
+      ),
+      Tone.good,
+      key: 'regular-in',
+      limit: 2,
+    );
+    // The fonder they are, the likelier they bring someone.
+    if (g.state != GuestState.leaving &&
+        _regRng.nextDouble() < r.friendChance) {
+      _arrive();
+      _tell('${r.name} brought a friend.', Tone.good, key: 'friend');
+    }
+  }
+
   /// Genders come from a stream of their own, so who turns up is the same
   /// whatever else changes about the day.
   late final math.Random _genderRng = math.Random(progress.day * 257 + 11);
@@ -689,6 +813,17 @@ class DinerSim {
     if (g.tallied) return;
     g.tallied = true;
     crowd.missed(g.gender, g.wallet, hour: _hourOf(g));
+    // A regular who goes without is not pleased.
+    final r = g.regular;
+    if (r != null) {
+      r.give(g.angry ? -3 : -2);
+      _tell(
+        '${r.name} left without a meal.',
+        Tone.bad,
+        key: 'regular-out',
+        limit: 2,
+      );
+    }
   }
 
   void _rollGuest(Guest g) {
@@ -1090,6 +1225,12 @@ class DinerSim {
       _nextCar++;
       _arriveCar();
     }
+    final w = _walkInTick;
+    if (w != null && _applicant == null && ticks >= w) _applicantArrives();
+    while (_nextRegular < _regularPlan.length &&
+        _regularPlan[_nextRegular].$1 <= ticks) {
+      _arriveRegular(_regularPlan[_nextRegular++].$2);
+    }
     if (event.reviewed && !_reviewSent && ticks >= _reviewTick) {
       _reviewSent = true;
       _arrive(who: event);
@@ -1295,13 +1436,13 @@ class DinerSim {
     }
   }
 
-  void _arrive({DayEvent? who}) {
+  void _arrive({DayEvent? who, Regular? regular}) {
     final critic = who == DayEvent.critic;
     final blogger = who == DayEvent.blogger;
     // They come in from either end of the pavement, from off the screen.
-    final fromLeft = rng.nextBool();
+    final fromLeft = regular != null ? _regRng.nextBool() : rng.nextBool();
     final start = fromLeft ? diner.arrivalLeft : diner.arrivalRight;
-    final gender = Gender.roll(_genderRng.nextDouble());
+    final gender = regular?.gender ?? Gender.roll(_genderRng.nextDouble());
     final unused = [
       for (final l in gender.looks)
         if (!guests.any((g) => g.sprite == l)) l,
@@ -1309,18 +1450,22 @@ class DinerSim {
     final pool = unused.isEmpty ? gender.looks : unused;
     final names = [
       for (final n in gender.names)
-        if (!guests.any((g) => g.name == n)) n,
+        if (!guests.any((g) => g.name == n) && !diner.regulars.has(n)) n,
     ];
     final g = Guest(
       _nextId++,
-      critic
+      regular != null
+          ? regular.look
+          : critic
           ? 'cust_d'
           : blogger
           ? 'cust_c'
           : pool[rng.nextInt(pool.length)],
       progress.patience,
       start,
-      name: critic
+      name: regular != null
+          ? regular.name
+          : critic
           ? 'The critic'
           : blogger
           ? 'The blogger'
@@ -1331,6 +1476,22 @@ class DinerSim {
     g.gender = gender;
     g.arrived = ticks;
     _rollGuest(g);
+    if (regular != null) {
+      g
+        ..regular = regular
+        ..wallet = regular.wallet
+        ..temper = regular.temper
+        ..patienceMax =
+            (progress.patience *
+                    regular.temper.patienceMul *
+                    regular.patienceMul)
+                .round()
+        ..patience =
+            (progress.patience *
+                    regular.temper.patienceMul *
+                    regular.patienceMul)
+                .round();
+    }
     if (critic || blogger) {
       g
         ..critic = critic
@@ -1599,6 +1760,93 @@ class DinerSim {
     }
   }
 
+  /// At the end of the day, regulars not seen for a long while cool off, and
+  /// any who have lost all fondness stop coming.
+  void _regularsDrift() {
+    final day = progress.day;
+    for (final r in diner.regulars.people.toList()) {
+      if (!regularsSeen.contains(r.id) &&
+          day - r.lastDay > Regular.driftAfter) {
+        r.give(-1);
+      }
+      if (r.points <= 0) {
+        diner.regulars.people.remove(r);
+        regularsGone.add(r.name);
+        _tell(
+          '${r.name} has stopped coming.',
+          Tone.bad,
+          key: 'regular-gone',
+          limit: 2,
+        );
+      }
+    }
+  }
+
+  /// What a meal does to a regular's fondness, and whether a happy guest
+  /// starts to come back.
+  void _regularMeal(Guest g) {
+    final r = g.regular;
+    final happy = g.mood >= 0.5;
+    if (r != null) {
+      final fav = g.items.any(
+        (i) => i.dish == r.favourite && i.state == ItemState.delivered,
+      );
+      if (happy) r.give(fav ? 2 : 1);
+      if (g.favMissed) r.give(-1);
+      if (happy && fav) {
+        _tell(
+          '${r.name} had the usual and left happy.',
+          Tone.good,
+          key: 'regular-happy',
+          limit: 2,
+        );
+      } else if (g.favMissed) {
+        _tell(
+          '${r.name} wanted ${recipes[r.favourite]!.name.toLowerCase()} and '
+          'could not have it.',
+          Tone.bad,
+          key: 'regular-miss',
+          limit: 2,
+        );
+      }
+      return;
+    }
+    if (g.reviewer || g.mood < 0.6) return;
+    final cap = RegularBook.cap(progress.level);
+    final named = g.name != 'A guest' && g.name != 'A driver';
+    final dish = g.items
+        .where((i) => i.state == ItemState.delivered)
+        .map((i) => i.dish)
+        .firstOrNull;
+    if (!named ||
+        dish == null ||
+        diner.regulars.has(g.name) ||
+        diner.regulars.people.length >= cap) {
+      return;
+    }
+    if (_regRng.nextDouble() >= RegularBook.joinChance) return;
+    diner.regulars.people.add(
+      Regular(
+        id: diner.regulars.nextId++,
+        name: g.name,
+        gender: g.gender,
+        look: g.sprite,
+        wallet: g.wallet,
+        temper: g.temper,
+        favourite: dish,
+        firstDay: progress.day,
+        lastDay: progress.day,
+      ),
+    );
+    regularsJoined.add(g.name);
+    _tell(
+      '${g.name} liked it here, and is now a regular.',
+      Tone.good,
+      key: 'regular-new',
+      limit: 2,
+    );
+  }
+
   void _pay(Guest g) {
     var exact = 0.0;
     var count = 0;
@@ -1632,6 +1880,7 @@ class DinerSim {
       },
       hour: _hourOf(g),
     );
+    _regularMeal(g);
     if (g.car) carsServed++;
     itemsServed += count;
     _waitTotal += g.waited;
@@ -1741,6 +1990,15 @@ class DinerSim {
                   diner.tierOf(d) == Tier.premium))
             d,
       ];
+      // A regular always has what they came for, if it can be had.
+      final fav = g.regular?.favourite;
+      if (fav != null && recipes[fav]!.course == c) {
+        if (options.contains(fav)) {
+          picks.add(fav);
+          continue;
+        }
+        g.favMissed = true;
+      }
       if (options.isEmpty) continue;
       if (c != Course.main && rng.nextDouble() >= c.appetite) continue;
       // Whatever is on the board outside is asked for more often.
@@ -2028,6 +2286,7 @@ class DinerSim {
         : price *
               (base + w.staff.tipBonus).clamp(0.0, 1.0) *
               g.wallet.tipMul *
+              (g.regular?.tipMul ?? 1) *
               diner.supplier.tipMul *
               (g.grumpy ? messTip : 1) *
               (g.seat == null ? 1 : (_tipAt[g.seat!.cell] ?? 1));
@@ -2596,6 +2855,7 @@ class DinerSim {
         key: 'catering',
       );
     }
+    _regularsDrift();
     final total = served + walkouts;
     final share = total == 0 ? 0.0 : served / total;
     final stars = closedDay
@@ -2648,7 +2908,9 @@ class DinerSim {
       progress.reputation = (progress.reputation + reviewDelta).clamp(0, 100);
     }
     // The machines out front earn whether or not the doors were open.
-    final vending = Vending.run(
+    // The stock and any repair come out of the till. The takings go into the
+    // coin box, to be collected from the machine.
+    var vending = Vending.run(
       day: progress.day,
       machines: diner.vendingActive,
       product: diner.vend,
@@ -2656,17 +2918,44 @@ class DinerSim {
       event: event,
     );
     if (diner.vendingActive > 0) {
-      diner.coins += vending.income - vending.restock - vending.repair;
-      earned += vending.income;
-      ingredientCost += vending.restock + vending.repair;
+      final spend = vending.restock + vending.repair;
+      if (diner.coins < spend) {
+        vending = const VendingDay(
+          sold: 0,
+          income: 0,
+          restock: 0,
+          repair: 0,
+          broken: false,
+          unstocked: true,
+        );
+      } else {
+        diner.coins -= spend;
+        final room = math.max(0, diner.vendCashLimit - diner.vendCash);
+        final stored = math.min(vending.income, room);
+        diner.vendCash += stored;
+        vending = VendingDay(
+          sold: vending.sold,
+          income: vending.income,
+          restock: vending.restock,
+          repair: vending.repair,
+          broken: vending.broken,
+          stored: stored,
+          lost: vending.income - stored,
+        );
+      }
       _tell(
-        vending.broken
+        vending.unstocked
+            ? 'There was no money to stock the vending machine, so it stood '
+                  'empty.'
+            : vending.broken
             ? 'The vending machine broke down. The repair cost '
                   '${vending.repair}.'
             : 'The vending machine sold ${vending.sold} '
-                  '${diner.vend.label.toLowerCase()}: '
-                  '${vending.net >= 0 ? '+' : ''}${vending.net}.',
-        vending.broken || vending.net < 0 ? Tone.bad : Tone.mixed,
+                  '${diner.vend.label.toLowerCase()}: ${vending.stored} in '
+                  'the box${vending.lost > 0 ? ', and the box was full' : ''}.',
+        vending.broken || vending.unstocked || vending.lost > 0
+            ? Tone.bad
+            : Tone.mixed,
         key: 'vending',
       );
     }
@@ -2795,6 +3084,15 @@ class DinerSim {
     }
     final gained = progress.gain(xp);
     progress.day++;
+    // Whoever walked in is among tomorrow's applicants.
+    final applicant = _applicant;
+    if (applicant != null) {
+      diner.roster.candidates = [
+        ...diner.roster.candidates.where((s) => !s.walkIn),
+        applicant,
+      ];
+      diner.roster.candidateDay = progress.day;
+    }
     diner.history
       ..add(
         DayLog(
@@ -2842,6 +3140,9 @@ class DinerSim {
       cateringReward: cateringPaid,
       closed: closedDay,
       vending: diner.vendingActive > 0 ? vending : null,
+      regularsSeen: regularsSeen.length,
+      regularsJoined: List.of(regularsJoined),
+      regularsGone: List.of(regularsGone),
       cars: carsServed,
       items: itemsServed,
     );

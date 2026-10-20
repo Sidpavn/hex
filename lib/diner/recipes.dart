@@ -4,7 +4,22 @@ library;
 
 import 'diner.dart' show Kind;
 
-enum Dish { burger, cheeseburger, pizza, fries, soda, coffee, iceCream }
+enum Dish {
+  burger,
+  cheeseburger,
+  pizza,
+  fries,
+  soda,
+  coffee,
+  iceCream,
+  hotDog,
+  onionRings,
+  chickenSandwich,
+  nuggets,
+  milkshake,
+  baconBurger,
+  sundae,
+}
 
 /// What part of the meal a dish is. A guest orders one main and, if the menu
 /// has them, perhaps a side, a drink and a dessert.
@@ -106,6 +121,70 @@ const Map<Dish, Recipe> recipes = {
     6,
     6,
   ),
+  Dish.hotDog: Recipe(
+    Dish.hotDog,
+    'Hot dog',
+    Kind.grill,
+    Course.main,
+    8,
+    10,
+    2,
+  ),
+  Dish.onionRings: Recipe(
+    Dish.onionRings,
+    'Onion rings',
+    Kind.fryer,
+    Course.side,
+    6,
+    7,
+    4,
+  ),
+  Dish.chickenSandwich: Recipe(
+    Dish.chickenSandwich,
+    'Chicken sandwich',
+    Kind.fryer,
+    Course.main,
+    11,
+    15,
+    5,
+  ),
+  Dish.nuggets: Recipe(
+    Dish.nuggets,
+    'Nuggets',
+    Kind.fryer,
+    Course.side,
+    7,
+    8,
+    6,
+  ),
+  Dish.milkshake: Recipe(
+    Dish.milkshake,
+    'Milkshake',
+    Kind.freezer,
+    Course.drink,
+    5,
+    8,
+    7,
+  ),
+  Dish.baconBurger: Recipe(
+    Dish.baconBurger,
+    'Bacon double',
+    Kind.grill,
+    Course.main,
+    13,
+    20,
+    8,
+    skilled: true,
+  ),
+  Dish.sundae: Recipe(
+    Dish.sundae,
+    'Sundae',
+    Kind.freezer,
+    Course.dessert,
+    4,
+    9,
+    9,
+  ),
 };
 
 /// How good the ingredients are. Better ingredients cost more, sell for more,
@@ -177,8 +256,8 @@ const Map<Upgrade, UpgradeDef> upgradeDefs = {
   Upgrade.vending: UpgradeDef(
     'Vending machine',
     'A machine on the pavement out front. It earns from people walking by, '
-        'less what it costs to stock. Tap it to choose what it sells, or '
-        'switch it off.',
+        'less what it costs to stock. The takings wait in a coin box: tap the '
+        'machine to collect them, choose what it sells, or switch it off.',
     2,
     150,
   ),

@@ -134,6 +134,14 @@ class _PersonScreenState extends State<PersonScreen> {
             _work(),
           ],
           const SizedBox(height: 16),
+          if (applicant && s.walkIn) ...[
+            PxText(
+              'Walked in off the street with a CV, so the fee is half.',
+              key: ValueKey('walk-in-${s.id}'),
+              style: const TextStyle(color: Pal.gold, fontSize: 14),
+            ),
+            const SizedBox(height: 8),
+          ],
           if (applicant)
             GoldButton(
               key: ValueKey('hire-${s.id}'),

@@ -216,15 +216,6 @@ void main() {
   });
 
   group('expanding and saving', () {
-    test('the room never gets near the edge of the grid', () {
-      final d = Diner(
-        coins: 100000,
-        owned: {for (var i = 0; i < Diner.plots.length; i++) i},
-      );
-      expect(d.rightCol, lessThan(Diner.cols - 1));
-      expect(d.bottom, lessThan(Diner.rows - 1));
-    });
-
     test('the pavement runs both ways from the door, past the screen', () {
       final d = Diner(coins: 0);
       expect(d.queueSlot(0), d.street);

@@ -64,6 +64,7 @@ class Staff {
     Map<Dish, int>? mastery,
     this.specialty,
     this.duty,
+    this.walkIn = false,
   }) : mastery = mastery ?? {},
        traits = traits ?? [],
        known = known ?? {},
@@ -211,8 +212,12 @@ class Staff {
     return pay.round();
   }
 
+  /// They came in off the street asking for work, so they ask for less: two
+  /// days' wages instead of four.
+  final bool walkIn;
+
   /// What it costs to take them on: four days' wages.
-  int get fee => salary * 4;
+  int get fee => salary * (walkIn ? 2 : 4);
 
   /// Paid to let them go: a day's wages.
   int get severance => salary;
@@ -279,6 +284,7 @@ class Staff {
     'mastery': {for (final e in mastery.entries) e.key.name: e.value},
     'specialty': specialty?.name,
     'duty': duty?.name,
+    if (walkIn) 'walkIn': true,
   };
 
   static List<Trait> readTraits(Object? raw) => [
@@ -332,6 +338,7 @@ class Staff {
           .where((d) => d.name == raw['specialty'])
           .firstOrNull,
       duty: Kind.values.where((k) => k.name == raw['duty']).firstOrNull,
+      walkIn: raw['walkIn'] == true,
     );
   }
 }
@@ -525,8 +532,36 @@ class Roster {
         ),
       );
     }
-    candidates = out;
+    // Anyone who walked in off the street today is still here.
+    final walkIns = candidateDay == day
+        ? [
+            for (final s in candidates)
+              if (s.walkIn) s,
+          ]
+        : <Staff>[];
+    candidates = [...walkIns, ...out];
     candidateDay = day;
+  }
+
+  /// Someone who walks in asking for work on [day]: a person like any who
+  /// might answer a small advert, but they came without being asked.
+  Staff walkInApplicant(int day, int level, double rating) {
+    final pool = Roster(employees: employees)
+      ..nextId = nextId
+      ..refreshes = 41;
+    pool.rollCandidates(day, level, rating, Ad.values.first);
+    final s = pool.candidates.first;
+    nextId = pool.nextId;
+    return Staff(
+      id: s.id,
+      name: s.name,
+      stats: s.stats,
+      potential: s.potential,
+      traits: s.traits,
+      known: s.known,
+      specialty: s.specialty,
+      walkIn: true,
+    );
   }
 
   /// Zero, one or two quirks. Good ones are the more common, and a good one

@@ -47,6 +47,9 @@ class VendingDay {
     required this.restock,
     required this.repair,
     required this.broken,
+    this.stored = 0,
+    this.lost = 0,
+    this.unstocked = false,
   });
 
   final int sold;
@@ -56,6 +59,13 @@ class VendingDay {
   final int restock;
   final int repair;
   final bool broken;
+
+  /// How much of the takings went into the coin box, and how much did not fit.
+  final int stored;
+  final int lost;
+
+  /// There was no money for stock, so the machine stood empty.
+  final bool unstocked;
 
   int get net => income - restock - repair;
 }
@@ -67,6 +77,10 @@ class Vending {
 
   /// How many each machine holds.
   static const stockPerMachine = 18;
+
+  /// How many coins each machine's box holds before the rest is lost. The
+  /// takings stay in it until someone comes to collect them.
+  static const boxLimit = 150;
 
   /// How likely a machine is to break down on a given day, and what it costs
   /// to put right.

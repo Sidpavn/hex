@@ -170,6 +170,15 @@ final List<Goal> goals = [
         'from people walking by.',
   ),
   Goal(
+    'regular',
+    'Win a regular',
+    100,
+    (f) => f.diner.regulars.people.isNotEmpty,
+    hint:
+        'A guest who leaves happy may come back for good. Keep them fed '
+        'quickly, with what they like.',
+  ),
+  Goal(
     'plot',
     'Own the whole plot',
     300,

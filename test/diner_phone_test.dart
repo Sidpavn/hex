@@ -23,6 +23,7 @@ import 'package:hex/diner/staff_screen.dart';
 import 'package:hex/diner/stats_screen.dart';
 import 'package:hex/diner/training_screen.dart';
 import 'package:hex/diner/upgrade_screen.dart';
+import 'package:hex/diner/vending_dialog.dart';
 import 'package:hex/main.dart';
 import 'package:hex/ui/pixel/pixel_assets.dart';
 
@@ -142,6 +143,17 @@ void main() {
         await show(tester, OrderScreen(diner: d));
       });
 
+      testWidgets('the vending machine dialog, empty and full', (tester) async {
+        final d = played()
+          ..progress.upgrades[Upgrade.vending] = 2
+          ..vendCash = 280;
+        await show(tester, Scaffold(body: VendingDialog(diner: d)));
+        d
+          ..vendCash = 0
+          ..vendingOn = false;
+        await show(tester, Scaffold(body: VendingDialog(diner: d)));
+      });
+
       testWidgets('upgrades and goals', (tester) async {
         final d = played();
         await show(tester, UpgradeScreen(diner: d));
@@ -151,7 +163,7 @@ void main() {
       testWidgets('the stats, on each tab', (tester) async {
         final d = played();
         await show(tester, StatsScreen(diner: d));
-        for (final t in ['dishes', 'days', 'guests']) {
+        for (final t in ['dishes', 'regulars', 'days', 'guests']) {
           await tester.tap(find.byKey(ValueKey('tab-$t')));
           await tester.pump(const Duration(milliseconds: 300));
           expect(tester.takeException(), isNull, reason: t);

@@ -12,6 +12,7 @@ import 'events.dart';
 import 'suppliers.dart';
 import 'vending.dart';
 import 'recipes.dart';
+import 'regulars.dart';
 import 'staff.dart';
 
 part 'layout_group.dart';
@@ -537,17 +538,15 @@ class Diner {
     return d;
   }
 
-  /// The grid is 12 wide and 14 tall. The plot fills most of it: ten tiles
-  /// wide, from row [top] at the front back to row -5.
-  static const cols = 12;
-  static const rows = 14;
+  /// The plot is ten tiles wide, and runs from row [top] at the front back to
+  /// row [plotTop].
   static const left = 1;
   static const top = 3;
 
   /// The plot's right-hand column and back row. The side street runs just
   /// beyond the column.
   static const plotRight = 10;
-  static const plotTop = -5;
+  static const plotTop = -13;
 
   /// The sections of the plot, the first being where the restaurant starts.
   /// Behind the front row, sections are four tiles deep.
@@ -558,6 +557,10 @@ class Diner {
     Plot('Room behind, right', 7, -1, 10, 2, needs: 1, level: 4),
     Plot('Room further back', 1, -5, 6, -2, needs: 2, level: 5),
     Plot('Room further back, right', 7, -5, 10, -2, needs: 3, level: 6),
+    Plot('Room at the back', 1, -9, 6, -6, needs: 4, level: 7),
+    Plot('Room at the back, right', 7, -9, 10, -6, needs: 5, level: 8),
+    Plot('The last room', 1, -13, 6, -10, needs: 6, level: 9),
+    Plot('The last room, right', 7, -13, 10, -10, needs: 7, level: 10),
   ];
 
   /// The plot's cheapest price a tile, and how much dearer each section
@@ -627,6 +630,9 @@ class Diner {
 
   /// What the board does to the number of guests on foot.
   double get specialLift => specialActive ? specialDraw : 1;
+
+  /// The guests who keep coming back.
+  RegularBook regulars = RegularBook();
 
   /// Who has come, over all the days, and on the last one.
   final Crowd crowd = Crowd();
@@ -731,6 +737,19 @@ class Diner {
 
   /// How many are working.
   int get vendingActive => vendingOn ? vendingMachines : 0;
+
+  /// What has built up in the machines' coin boxes. It stays there until it is
+  /// collected, up to what the boxes hold.
+  int vendCash = 0;
+  int get vendCashLimit => Vending.boxLimit * vendingMachines;
+
+  /// Empties the coin boxes into the till. Returns what was collected.
+  int collectVending() {
+    final n = vendCash;
+    coins += n;
+    vendCash = 0;
+    return n;
+  }
 
   /// Where the ingredients come from.
   Supplier supplier = Supplier.standard;
@@ -1576,7 +1595,9 @@ class Diner {
     'goals': goalsDone.toList()..sort(),
     'supplier': supplier.name,
     'vend': vend.name,
+    'regulars': regulars.toJson(),
     'vendOn': vendingOn,
+    'vendCash': vendCash,
     'contract': {
       'day': contractDay,
       'state': _contractState.name,
@@ -1634,6 +1655,8 @@ class Diner {
         Vend.values.where((x) => x.name == j['vend']).firstOrNull ??
         Vend.drinks;
     d.vendingOn = j['vendOn'] != false;
+    d.vendCash = ((j['vendCash'] as int?) ?? 0).clamp(0, 100000);
+    d.regulars = RegularBook.fromJson(j['regulars']);
     final log = j['history'];
     if (log is List) {
       d.history.addAll([for (final h in log) ?DayLog.fromJson(h)]);
