@@ -1104,6 +1104,347 @@ def block_building(name, w, d, H, wall_hex, roof_hex, awning=None,
     add(name, img, 0.5)
 
 
+# --------------------------------------------------- the rest of the town
+
+def town_building(name, w, d, H, wall_hex, roof_hex, style, accent,
+                  trim_hex='#fff3d6', roof_extra=None):
+    """A neighbour of a given [style]: a 'shop' with a shopfront and a sign
+    band, 'flats' with windows on every floor and balconies, a glass 'tower',
+    or a 'warehouse' with a big door. [w] by [d] cells and [H] tall, as one
+    sprite with its origin at the top vertex of its first cell."""
+    wall = ramp(wall_hex)
+    roof = ramp(roof_hex)
+    trim = ramp(trim_hex)
+    acc = ramp(accent)
+    glass = hexc('#8cc4e6')
+    glass_hi = hexc('#d4eefb')
+    dark = hexc('#3b4150')
+    U, V = 16 * w, 16 * d
+    img = Img(16 * (w + d) + 8, 8 * (w + d) + H + 14, 16 * d + 4, H + 10)
+
+    def shop_face(u, z, side):
+        base = wall.left if side == 'S' else wall.right
+        if z < 2:
+            return wall.lo
+        if z >= H - 3:
+            return trim.top
+        # the sign band over the shopfront, with a few "letters"
+        if 17 <= z <= 23:
+            if z in (17, 23) or u < 3 or u > (U if side == 'S' else V) - 3:
+                return acc.lo
+            letter = int(u) % 6 < 3 and int(z) % 2 == 0
+            return hexc('#fff6dc') if letter else acc.left
+        if z < 17:
+            span = U if side == 'S' else V
+            k = int(u) % 24
+            if 3 <= u <= span - 3 and 3 <= z <= 14:
+                if k in (0, 1) or z in (3, 14):
+                    return trim.top
+                if k == 12 and side == 'S':  # a door
+                    return dark
+                return glass_hi if z > 9 and k < 10 else glass
+            return base
+        # upper floors: a row of windows
+        if H > 30 and 28 <= z <= H - 8:
+            k = int(u) % 14
+            zz = (int(z) - 28) % 18
+            if 4 <= k <= 9 and 3 <= zz <= 12:
+                if k in (4, 9) or zz in (3, 12):
+                    return trim.top
+                return glass
+        return base
+
+    def flats_face(u, z, side):
+        base = wall.left if side == 'S' else wall.right
+        if z < 2:
+            return wall.lo
+        if z >= H - 3:
+            return trim.top
+        span = U if side == 'S' else V
+        k = int(u) % 16
+        zz = (int(z) - 6) % 16
+        if z >= 6 and 4 <= k <= 11 and 4 <= zz <= 12 and 4 <= u <= span - 4:
+            if k in (4, 11) or zz in (4, 12):
+                return trim.top
+            return glass_hi if zz > 9 and k < 8 else glass
+        # a balcony slab under each floor
+        if z >= 6 and zz == 3 and 3 <= k <= 12 and 4 <= u <= span - 4:
+            return trim.right
+        if z < 14 and 5 <= k <= 10 and 4 <= u <= span - 4 and side == 'S':
+            return dark  # the street door and lobby
+        return base
+
+    def tower_face(u, z, side):
+        base = wall.left if side == 'S' else wall.right
+        if z < 2:
+            return wall.lo
+        if z >= H - 4:
+            return trim.top
+        span = U if side == 'S' else V
+        k = int(u) % 8
+        zz = (int(z) - 2) % 8
+        if 3 <= u <= span - 3 and 1 <= k <= 6 and 1 <= zz <= 6:
+            return glass_hi if (zz > 3 and k < 4) else glass
+        return base
+
+    def warehouse_face(u, z, side):
+        base = wall.left if side == 'S' else wall.right
+        if z < 2:
+            return wall.lo
+        if z >= H - 3:
+            return trim.top
+        span = U if side == 'S' else V
+        # a roller door, and a band of corrugation
+        if side == 'S' and 20 <= u <= 56 and z <= 20:
+            return dark if int(z) % 4 else acc.left
+        if 3 <= z <= H - 6 and int(u) % 6 == 0:
+            return wall.right if side == 'S' else wall.lo
+        if H - 14 <= z <= H - 9 and 6 <= u <= span - 6 and int(u) % 14 < 8:
+            return glass
+        return base
+
+    face = {'shop': shop_face, 'flats': flats_face, 'tower': tower_face,
+            'warehouse': warehouse_face}[style]
+    box(img, 0, 0, U, V, 0, H, wall,
+        left=lambda u, z: face(u, z, 'S'),
+        right=lambda v, z: face(v, z, 'E'), top=roof.top)
+    # a parapet round the roof
+    box(img, 0, 0, U, 3, H, H + 3, trim, edge=False)
+    box(img, 0, V - 3, U, V, H, H + 3, trim, edge=False)
+    box(img, 0, 3, 3, V - 3, H, H + 3, trim, edge=False)
+    box(img, U - 3, 3, U, V - 3, H, H + 3, trim, edge=False)
+    # an awning along a shop, or a sign board on a flat roof
+    if style == 'shop':
+        aw = ramp(accent)
+        box(img, 4, V, U - 4, V + 5, 14, 19, aw,
+            top=lambda u, v: aw.top if int(u) % 6 < 3 else (250, 246, 238))
+    unit = ramp('#9aa3b2')
+    extra = roof_extra or ('tank' if style == 'flats' else 'units')
+    if extra == 'tank':
+        cylinder(img, U // 2, V // 2, 9, H + 3, H + 17, ramp('#8d8f9a'))
+    elif extra == 'units':
+        for i in range(max(1, w // 3)):
+            box(img, 14 + i * 36, 18, 30 + i * 36, 32, H + 3, H + 9, unit)
+    elif extra == 'board':
+        box(img, 8, V // 2 - 2, U - 8, V // 2 + 2, H + 3, H + 15, acc)
+    add(name, img, 0.5)
+
+
+def hedge():
+    img = cell_img(10)
+    bush = ramp('#3f8f4a')
+    n = noise(71)
+    box(img, 1, 3, 15, 13, 0, 9, bush,
+        left=lambda u, z: bush.left if n() > 0.2 else bush.top,
+        right=lambda v, z: bush.right if n() > 0.2 else bush.left,
+        top=lambda u, v: bush.top if n() > 0.25 else bush.hi)
+    add('hedge', img, 0.5)
+
+
+def flower_bed():
+    img = cell_img(8)
+    wood = ramp('#8d6a4a')
+    box(img, 1, 2, 15, 14, 0, 5, wood)
+    face_top(img, 2, 14, 3, 13, 5, ramp('#5a3f2a').top)
+    n = noise(73)
+    for _ in range(14):
+        cx, cy = P(int(2 + n() * 12), int(3 + n() * 10), 5)
+        col = [(240, 90, 120), (250, 220, 90), (250, 250, 240),
+               (170, 120, 230)][int(n() * 4) % 4]
+        img.put(cx, cy - 1, col)
+        img.put(cx, cy, hexc('#3f8f4a'))
+    add('flower_bed', img, 0.5)
+
+
+def broad_tree():
+    """A rounder, taller tree than the planter ones, for parks and verges."""
+    img = cell_img(60)
+    trunk = ramp('#6e4a2c')
+    box(img, 7, 7, 9, 9, 0, 22, trunk, edge=False)
+    leaf = ramp('#3c9a52')
+    leaf_d = ramp('#2a7a45')
+    cx, cy = P(8, 8, 28)
+    for dx, dy, rx, ry in ((-10, 2, 9, 7), (10, 2, 9, 7), (0, -4, 12, 9),
+                           (-6, -12, 9, 7), (6, -12, 9, 7), (0, -18, 8, 6)):
+        ellipse(img, cx + dx, cy + dy, rx, ry,
+                lambda x, y, dx=dx, dy=dy: (
+                    leaf.hi if (x - dx - cx) + (y - dy - cy) < -6 else
+                    (leaf.top if (x - dx - cx) + (y - dy - cy) < 0 else
+                     (leaf_d.left if (x - dx - cx) + (y - dy - cy) > 6
+                      else leaf.left))))
+    add('tree_broad', img, 0.5)
+
+
+def pine_tree():
+    img = cell_img(58)
+    trunk = ramp('#6e4a2c')
+    box(img, 7, 7, 9, 9, 0, 10, trunk, edge=False)
+    dark = ramp('#2b6f4d')
+    cx, cy = P(8, 8, 8)
+    for i, (rx, ry, up) in enumerate(((13, 7, 0), (10, 6, 10), (7, 5, 20),
+                                      (4, 3, 29))):
+        ellipse(img, cx, cy - up, rx, ry,
+                lambda x, y, cx=cx: (dark.top if x < cx - 2 else
+                                     (dark.left if x < cx + 3 else dark.right)))
+    add('tree_pine', img, 0.5)
+
+
+def fountain():
+    img = cell_img(30)
+    stone = ramp('#cfcac2')
+    water = hexc('#7cc4ea')
+    cu = cv = 8
+    cylinder(img, cu, cv, 14, 0, 6, stone)
+    cx, cy = P(cu, cv, 6)
+    ellipse(img, cx, cy, 11, 5, water)
+    cylinder(img, cu, cv, 3, 6, 18, stone)
+    ex, ey = P(cu, cv, 18)
+    ellipse(img, ex, ey, 7, 3, stone.hi)
+    ellipse(img, ex, ey, 5, 2, water)
+    for dy in range(-9, 0, 2):
+        img.put(ex, ey + dy, (230, 245, 255))
+    add('fountain', img, 0.5)
+
+
+def bus_stop():
+    img = cell_img(40)
+    post = ramp('#4a5568')
+    glass = ramp('#9ad0e8')
+    box(img, 1, 5, 3, 7, 0, 30, post, edge=False)
+    box(img, 13, 5, 15, 7, 0, 30, post, edge=False)
+    face_left(img, 3, 13, 6, 4, 28, glass.top)
+    box(img, 0, 3, 16, 10, 30, 33, ramp('#d9453d'))
+    # the sign
+    box(img, 7, 11, 9, 12, 0, 26, post, edge=False)
+    box(img, 5, 11, 11, 12, 22, 29, ramp('#f2c338'), edge=False)
+    # a bench inside
+    box(img, 3, 7, 13, 10, 5, 8, ramp('#8e5a37'))
+    add('bus_stop', img, 0.5)
+
+
+def postbox():
+    img = cell_img(26)
+    red = ramp('#d9453d')
+    cylinder(img, 8, 8, 6, 0, 18, red)
+    box(img, 5, 6, 11, 7, 12, 14, ramp('#2a2036'), edge=False)
+    add('postbox', img, 0.5)
+
+
+def street_bin():
+    img = cell_img(18)
+    grey = ramp('#6d7790')
+    cylinder(img, 8, 8, 5, 0, 11, grey)
+    cylinder(img, 8, 8, 6, 11, 13, ramp('#4a5568'))
+    add('bin', img, 0.5)
+
+
+def hydrant():
+    img = cell_img(16)
+    red = ramp('#d33f33')
+    cylinder(img, 8, 8, 3, 0, 9, red)
+    cylinder(img, 8, 8, 4, 9, 11, ramp('#a82a22'))
+    box(img, 4, 7, 12, 9, 5, 7, red, edge=False)
+    add('hydrant', img, 0.5)
+
+
+def bollards():
+    img = cell_img(14)
+    post = ramp('#3d4252')
+    for u in (3, 8, 13):
+        cylinder(img, u, 8, 2, 0, 9, post)
+        cx, cy = P(u, 8, 8)
+        img.put(cx, cy, (242, 195, 56))
+    add('bollards', img, 0.5)
+
+
+def bike_rack():
+    img = cell_img(14)
+    steel = ramp('#8a93a6')
+    for u in (3, 8, 13):
+        box(img, u - 1, 7, u, 9, 0, 9, steel, edge=False)
+        box(img, u - 1, 7, u + 3, 9, 9, 10, steel, edge=False)
+    add('bike_rack', img, 0.5)
+
+
+def park_bench():
+    img = cell_img(18)
+    wood = ramp('#a9733f')
+    iron = ramp('#3d4252')
+    box(img, 2, 4, 3, 12, 0, 6, iron, edge=False)
+    box(img, 13, 4, 14, 12, 0, 6, iron, edge=False)
+    box(img, 1, 3, 15, 13, 6, 8, wood)
+    box(img, 1, 3, 15, 5, 8, 15, wood)
+    add('bench_park', img, 0.5)
+
+
+def park_tile(name, seed):
+    img = cell_img(0)
+    n = noise(seed)
+    g = ramp('#86d063')
+    fill(img, DIAMOND_SCREEN, lambda x, y: g.top if n() > 0.15 else g.left)
+    for _ in range(5):
+        x = int((n() - 0.5) * 22)
+        y = int(n() * 10) + 3
+        if inside(DIAMOND_SCREEN, x, y):
+            img.put(x, y, [(255, 250, 235), (250, 140, 170),
+                           (250, 220, 90)][int(n() * 3) % 3])
+    add(name, img)
+
+
+def plaza_tile(name, seed):
+    flat_tile(name, ramp('#d6cfc0'), seed, speckle=0.06, seams=True)
+
+
+def car_park_tile(name, seed, bay):
+    img = cell_img(0)
+    n = noise(seed)
+    fill(img, DIAMOND_SCREEN,
+         lambda x, y: ASPHALT.top if n() > 0.12 else ASPHALT.left)
+    if bay:
+        # a white line along the two long edges of the bay
+        line(img, P(1, 1), P(1, 15), (222, 222, 214))
+        line(img, P(15, 1), P(15, 15), (222, 222, 214))
+    add(name, img)
+
+
+def neighbourhood():
+    # shops, flats, an office and a warehouse: one sprite each
+    town_building('shop_bakery', 4, 4, 26, '#f3d7c4', '#b5654a', 'shop',
+                  '#e8628a')
+    town_building('shop_laundry', 5, 4, 26, '#cfe4f2', '#7d8fa3', 'shop',
+                  '#3d8fd1', roof_extra='board')
+    town_building('shop_arcade', 5, 4, 30, '#5b4b8a', '#3a3358', 'shop',
+                  '#f2c338', roof_extra='board')
+    town_building('shop_cafe', 4, 4, 24, '#c9e2b8', '#8c6a4c', 'shop',
+                  '#d24b3a')
+    town_building('flats_a', 4, 5, 72, '#b86b4e', '#5c5b66', 'flats',
+                  '#e8e0d0')
+    town_building('flats_b', 4, 5, 60, '#d9c7a2', '#7a6f60', 'flats',
+                  '#8a7560')
+    town_building('office', 4, 4, 84, '#9fb7cf', '#5d6878', 'tower',
+                  '#d8e6f2')
+    town_building('warehouse', 6, 5, 26, '#a9adb5', '#6a6f7a', 'warehouse',
+                  '#d9453d')
+    hedge()
+    flower_bed()
+    broad_tree()
+    pine_tree()
+    fountain()
+    bus_stop()
+    postbox()
+    street_bin()
+    hydrant()
+    bollards()
+    bike_rack()
+    park_bench()
+    park_tile('park_a', 81)
+    park_tile('park_b', 82)
+    plaza_tile('plaza_a', 83)
+    plaza_tile('plaza_b', 84)
+    car_park_tile('carpark', 85, False)
+    car_park_tile('carpark_bay', 86, True)
+
+
 def street_lamp():
     img = cell_img(54)
     pole = ramp('#3d4252')
@@ -1282,6 +1623,7 @@ def city():
     block_building('block_lb', 8, 7, 44, '#8fa8c8', '#6b6a78')
     block_building('block_rf', 4, 7, 40, '#e8c9a0', '#9a6a52', awning='#f2c338')
     block_building('block_rb', 4, 7, 52, '#e8d3a3', '#7a7f8c')
+    neighbourhood()
     street_lamp()
     special_board()
     vending()

@@ -319,13 +319,29 @@ class DinerPainter extends CustomPainter {
       _cell(canvas, groundTile(diner, c), c, dim: !onPlot(c));
     }
     if (expanding) _plotTints(canvas);
-    // The neighbours, each a single sprite, dimmed with the rest.
-    final towers = [...buildings]
-      ..sort(
-        (a, b) => (a.x0 + a.y0 + a.w + a.d).compareTo(b.x0 + b.y0 + b.w + b.d),
-      );
-    for (final b in towers) {
-      _cell(canvas, b.sprite, Cell(b.x0, b.y0), dim: true);
+    // The neighbours and everything small in the town, back to front, dimmed
+    // with the rest. All of it is in this one cached picture.
+    final town = <(double, VoidCallback)>[
+      for (final b in buildings)
+        (
+          (b.x0 + b.y0 + b.w + b.d).toDouble(),
+          () => _cell(canvas, b.sprite, Cell(b.x0, b.y0), dim: true),
+        ),
+      for (final t in scenery)
+        (
+          (t.x + t.y + 1).toDouble() + (t.isCar ? 1 : 0),
+          () => t.isCar
+              ? _blit(
+                  canvas,
+                  art.sprite(t.sprite),
+                  view.vertex(t.x + 0.5, t.y + 0.5),
+                  dim: true,
+                )
+              : _cell(canvas, t.sprite, Cell(t.x, t.y), dim: true),
+        ),
+    ]..sort((a, b) => a.$1.compareTo(b.$1));
+    for (final piece in town) {
+      piece.$2();
     }
     // The floor's front and right-hand edges, so it has thickness.
     for (final c in diner.insideCells()) {

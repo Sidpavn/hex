@@ -351,11 +351,21 @@ void main() {
   });
 
   group('the neighbouring buildings', () {
-    test('there are six, each one sprite, three a side', () {
-      expect(buildings.length, 6);
-      expect(buildings.map((b) => b.sprite).toSet().length, 4);
-      expect(buildings.where((b) => b.x0 < 0).length, 3);
-      expect(buildings.where((b) => b.x0 > 10).length, 3);
+    bool left(Building b) => b.x0 + b.w - 1 < Diner.plotLeft;
+    bool right(Building b) => b.x0 > Diner.plotRight;
+    bool across(Building b) => b.y0 > Diner.plots[0].y1;
+
+    test('there are some on each side, and across the road', () {
+      expect(buildings.where(left).length, greaterThanOrEqualTo(4));
+      expect(buildings.where(right).length, greaterThanOrEqualTo(4));
+      expect(buildings.where(across).length, greaterThanOrEqualTo(3));
+      // A town of many kinds, not one block repeated.
+      expect(buildings.map((b) => b.sprite).toSet().length, greaterThan(8));
+    });
+
+    test('there is a limit, so the town stays light', () {
+      expect(buildings.length, lessThanOrEqualTo(24));
+      expect(scenery.length, lessThanOrEqualTo(80));
     });
 
     test('they stand clear of the plot, the street and each other', () {
@@ -365,7 +375,15 @@ void main() {
             final c = Cell(x, y);
             expect(onPlot(c), isFalse, reason: '${a.sprite} on the plot');
             final tile = groundTile(wholePlot(), c);
-            expect(tile, startsWith('concrete'), reason: '${a.sprite} $c');
+            if (across(a)) {
+              expect(
+                tile,
+                anyOf(startsWith('grass'), startsWith('park')),
+                reason: '${a.sprite} $c is not on a road',
+              );
+            } else {
+              expect(tile, startsWith('concrete'), reason: '${a.sprite} $c');
+            }
             for (final b in buildings) {
               if (b != a) expect(b.contains(c), isFalse, reason: '$c shared');
             }
@@ -374,28 +392,30 @@ void main() {
       }
     });
 
-    test('on one side they join up, with no gap between them', () {
-      final left = buildings.where((b) => b.x0 < 0).toList()
-        ..sort((a, b) => a.y0.compareTo(b.y0));
-      expect(left[0].y0 + left[0].d, left[1].y0);
-      expect(left[0].x0, left[1].x0);
-      expect(left[0].w, left[1].w);
-      final right = buildings.where((b) => b.x0 > 10).toList()
-        ..sort((a, b) => a.y0.compareTo(b.y0));
-      expect(right[0].y0 + right[0].d, right[1].y0);
-    });
-
-    test('a building is one long wall, not a row of one-tile blocks', () {
-      for (final b in buildings) {
-        expect(b.w * b.d, greaterThan(20), reason: b.sprite);
-        expect(b.w, greaterThanOrEqualTo(4));
-        expect(b.d, greaterThanOrEqualTo(7));
+    test('the ones beside the plot sit against the pavement', () {
+      for (final b
+          in buildings.where(left).where((b) => b.x0 >= -9 && !across(b))) {
+        expect(b.x0 + b.w - 1, Diner.plotLeft - 3, reason: b.sprite);
+      }
+      for (final b
+          in buildings.where(right).where((b) => b.x0 == 15 && !across(b))) {
+        expect(b.x0, Diner.plotRight + 5, reason: b.sprite);
       }
     });
 
-    test('they reach the street at the front, like the shops they are', () {
-      for (final b in buildings.where((b) => b.y0 > 0)) {
+    test('the front ones reach the street, like the shops they are', () {
+      final front = buildings.where((b) => b.y0 > 0 && !across(b));
+      expect(front, isNotEmpty);
+      for (final b in front) {
         expect(b.y0 + b.d - 1, Diner.plots[0].y1);
+      }
+    });
+
+    test('across the road they are low and well back from the road', () {
+      for (final b in buildings.where(across)) {
+        // Two grass rows clear of the far pavement, so a roof never reaches
+        // the road or its cars.
+        expect(b.y0, greaterThanOrEqualTo(Diner.plots[0].y1 + 9));
       }
     });
 
@@ -426,6 +446,71 @@ void main() {
       }
       for (final old in ['bld_a', 'bld_b', 'low_a', 'low_a_front']) {
         expect(art.has(old), isFalse, reason: '$old is gone');
+      }
+    });
+  });
+
+  group('the street furniture and the park', () {
+    test('everything small is clear of the plot, roads and buildings', () {
+      final d = wholePlot();
+      for (final t in scenery) {
+        final c = Cell(t.x, t.y);
+        expect(onPlot(c), isFalse, reason: '${t.sprite} on the plot');
+        for (final b in buildings) {
+          expect(
+            b.contains(c),
+            isFalse,
+            reason: '${t.sprite} inside a building',
+          );
+        }
+        final tile = groundTile(d, c);
+        expect(
+          tile,
+          isNot(anyOf(startsWith('road'), startsWith('crosswalk'), 'curb')),
+          reason: '${t.sprite} stands in the road at $c',
+        );
+      }
+    });
+
+    test('nothing is placed twice on one tile', () {
+      final seen = <Cell>{};
+      for (final t in scenery.where((t) => !t.isCar)) {
+        expect(
+          seen.add(Cell(t.x, t.y)),
+          isTrue,
+          reason: '${t.sprite} ${t.x},${t.y}',
+        );
+      }
+    });
+
+    test('the park has grass, a path and a fountain', () {
+      final d = wholePlot();
+      final tiles = {
+        for (var y = parkY0; y <= parkY1; y++)
+          for (var x = parkX0; x <= parkX1; x++) groundTile(d, Cell(x, y)),
+      };
+      expect(tiles, containsAll(['park_a', 'park_b', 'plaza_a']));
+      expect(scenery.any((t) => t.sprite == 'fountain'), isTrue);
+      expect(scenery.where((t) => t.sprite == 'bench_park').length, 2);
+    });
+
+    test('the car park has bays and parked cars', () {
+      final d = wholePlot();
+      final tiles = {
+        for (var y = carParkY0; y <= carParkY1; y++)
+          for (var x = carParkX0; x <= carParkX1; x++)
+            groundTile(d, Cell(x, y)),
+      };
+      expect(tiles, containsAll(['carpark', 'carpark_bay']));
+      expect(scenery.where((t) => t.isCar).length, 3);
+    });
+
+    test('every picture it names exists, and is not blank', () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      final art = await DinerArt.load(_Assets());
+      for (final t in scenery) {
+        expect(art.has(t.sprite), isTrue, reason: t.sprite);
+        expect(art.sprite(t.sprite).blank, isFalse, reason: t.sprite);
       }
     });
   });

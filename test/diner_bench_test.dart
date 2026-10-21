@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hex/diner/clock.dart';
+import 'package:hex/diner/city.dart';
 import 'package:hex/diner/diner.dart';
 import 'package:hex/diner/diner_art.dart';
 import 'package:hex/diner/diner_painter.dart';
@@ -130,6 +131,43 @@ void main() {
         'art load: ${load.elapsedMilliseconds} ms; '
         'sim: ${(run.elapsedMicroseconds / 5000).toStringAsFixed(1)} us per tick',
       );
+    });
+  });
+
+  testWidgets('the whole town is drawn once, not every frame', (tester) async {
+    await tester.runAsync(() async {
+      final art = await DinerArt.load();
+      final diner = Diner.starter();
+      const size = ui.Size(390, 780);
+      final fit = BoardFit.of(diner, size, 3);
+      final layer = StaticLayer();
+
+      int frame() {
+        final p = DinerPainter(
+          diner: diner,
+          art: art,
+          fit: fit,
+          layer: layer,
+          revision: 1,
+        );
+        final rec = ui.PictureRecorder();
+        p.paint(ui.Canvas(rec), size);
+        rec.endRecording().dispose();
+        return p.blits;
+      }
+
+      final first = frame();
+      final next = frame();
+      // The first frame draws the ground, every building and everything
+      // small; the next only draws what moves.
+      expect(
+        first - next,
+        greaterThanOrEqualTo(buildings.length + scenery.length ~/ 2),
+        reason: 'the town is in the cached picture',
+      );
+      expect(next, lessThan(60), reason: 'a quiet frame draws few images');
+      // And another frame costs the same as that one.
+      expect(frame(), next);
     });
   });
 }
