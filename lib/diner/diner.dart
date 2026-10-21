@@ -580,6 +580,10 @@ class Diner {
   /// The goals that have been met, by id. See `goals.dart`.
   final Set<String> goalsDone = {};
 
+  /// Every coin taken at the tills, over all the days played: what the
+  /// total-coins leaderboard ranks. Older saves start from their history.
+  int totalEarned = 0;
+
   /// One-off tips already shown, so each is said once.
   final Set<String> hintsSeen = {};
 
@@ -1614,6 +1618,7 @@ class Diner {
     'owned': owned.toList()..sort(),
     'goals': goalsDone.toList()..sort(),
     'hints': hintsSeen.toList()..sort(),
+    'earned': totalEarned,
     'supplier': supplier.name,
     'vend': vend.name,
     'regulars': regulars.toJson(),
@@ -1685,6 +1690,13 @@ class Diner {
     if (log is List) {
       d.history.addAll([for (final h in log) ?DayLog.fromJson(h)]);
     }
+    final total = j['earned'];
+    d.totalEarned = total is int
+        ? total
+        : d.history.fold(
+            0,
+            (a, h) => a + (h.detailed ? h.income : h.kept.clamp(0, 1 << 30)),
+          );
     final done = j['goals'];
     if (done is List) {
       d.goalsDone.addAll([

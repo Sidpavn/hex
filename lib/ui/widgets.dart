@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../audio/sound.dart';
 import 'pixel/palette.dart';
 import 'pixel/pixel_assets.dart';
 import 'pixel/pixel_ui.dart';
@@ -70,7 +71,10 @@ class _PressBoxState extends State<_PressBox> {
       onTapDown: (_) => setState(() => _down = true),
       onTapCancel: () => setState(() => _down = false),
       onTapUp: (_) => setState(() => _down = false),
-      onTap: widget.onTap,
+      onTap: () {
+        Sound.instance.play(Sfx.tap);
+        widget.onTap!();
+      },
       child: widget.builder(_down),
     );
   }
@@ -123,6 +127,7 @@ class GoldButton extends StatelessWidget {
     this.color = Pal.gold,
     this.fontSize = 17,
     this.tall = false,
+    this.compact = false,
   });
 
   final String label;
@@ -133,6 +138,10 @@ class GoldButton extends StatelessWidget {
   /// The main button on a screen is larger than the rest.
   final double fontSize;
   final bool tall;
+
+  /// Less room either side of the words, for a row of several buttons on a
+  /// narrow screen, so none of them is cut short.
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -147,7 +156,7 @@ class GoldButton extends StatelessWidget {
           pressed: pressed,
           padding: EdgeInsets.symmetric(
             vertical: tall ? 14 : 8,
-            horizontal: 12,
+            horizontal: compact ? 2 : 12,
           ),
           child: Center(
             child: PxText(

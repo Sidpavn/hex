@@ -37,6 +37,7 @@ dependencies:
   hive_ce: ^2.20.1
   hive_ce_flutter: ^2.3.4
   games_services: 5.0.0
+  audioplayers: ^6.7.1
 
 dev_dependencies:
   flutter_test:
@@ -63,6 +64,7 @@ flutter:
   assets:
     - assets/pixel/sprites.txt
     - assets/diner/
+    - assets/sounds/
 
   fonts:
     - family: VT323

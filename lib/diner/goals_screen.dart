@@ -9,6 +9,7 @@ import 'guide.dart';
 import '../data/play_games_store.dart';
 import '../data/storage.dart';
 import 'save_panel.dart';
+import 'settings_screen.dart';
 
 /// What to aim for: the next few goals with how to go about each, then what
 /// is further off, then what has been done.
@@ -92,6 +93,18 @@ class GoalsScreen extends StatelessWidget {
             color: Pal.text,
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(builder: (_) => const GuideScreen()),
+            ),
+          ),
+          const SizedBox(height: 24),
+          GoldButton(
+            key: const ValueKey('open-settings'),
+            label: ':gear: Settings',
+            filled: false,
+            color: Pal.text,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => SettingsScreen(diner: diner),
+              ),
             ),
           ),
           const SizedBox(height: 24),

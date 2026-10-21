@@ -42,6 +42,45 @@ class Storage {
     }
   }
 
+  // ───────────────────────── sound settings ─────────────────────────
+
+  /// Whether sound effects play. On unless the player turned them off.
+  static bool get effectsOn => _get('sfx') != false;
+  static set effectsOn(bool on) => _put('sfx', on);
+
+  /// Whether music plays. On unless the player turned it off.
+  static bool get musicOn => _get('music') != false;
+  static set musicOn(bool on) => _put('music', on);
+
+  /// How loud effects and music are, 0 to 2: low, medium (the default), high.
+  static int get effectsLevel => _level('sfx_level');
+  static set effectsLevel(int n) => _put('sfx_level', n.clamp(0, 2));
+  static int get musicLevel => _level('music_level');
+  static set musicLevel(int n) => _put('music_level', n.clamp(0, 2));
+
+  static int _level(String key) {
+    final n = _get(key);
+    return n is int ? n.clamp(0, 2) : 1;
+  }
+
+  /// Whether the save is sent to the cloud by itself, after each day and on
+  /// the way out. On unless the player turned it off.
+  static bool get autoBackup => _get('auto_backup') != false;
+  static set autoBackup(bool on) => _put('auto_backup', on);
+
+  /// Whether scores are sent to the leaderboards. On unless turned off.
+  static bool get postScores => _get('post_scores') != false;
+  static set postScores(bool on) => _put('post_scores', on);
+
+  /// The best score already sent for a leaderboard, by name, so a lower one
+  /// is not sent again.
+  static int sentScore(String board) {
+    final n = _get('score_$board');
+    return n is int ? n : 0;
+  }
+
+  static void sentScoreIs(String board, int n) => _put('score_$board', n);
+
   // ───────────────────────── diner save ─────────────────────────
 
   /// How many games can be kept side by side.

@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'actor.dart';
 import 'contracts.dart';
+import 'cues.dart';
 import 'crowd.dart';
 import 'diner.dart';
 import 'events.dart';
@@ -1142,7 +1143,17 @@ class DinerSim {
     _setupCatering();
   }
 
+  /// What happened, in order, for the screen to make sounds from. Nothing in
+  /// the sim reads it.
+  final List<Cue> cues = [];
+
   void tick() {
+    final walkedOut = walkouts;
+    _tick();
+    if (walkouts > walkedOut) cues.add(Cue.walkout);
+  }
+
+  void _tick() {
     if (finished) return;
     ticks++;
     for (final p in pops) {
@@ -1599,6 +1610,7 @@ class DinerSim {
       ..seat = best.$1
       ..path = best.$2
       ..state = GuestState.toSeat;
+    cues.add(Cue.enter);
     _queue.remove(head);
   }
 
@@ -1859,6 +1871,7 @@ class DinerSim {
     diner.coins += total;
     earned += total;
     tips += g.tip;
+    cues.add(g.tip > 0 && g.tip * 4 >= total ? Cue.paidWell : Cue.paid);
     served++;
     g.tallied = true;
     final bought = <Dish, (int, int)>{};
@@ -2101,6 +2114,7 @@ class DinerSim {
       if (--m.left <= 0) {
         m.ready = true;
         item.state = ItemState.ready;
+        cues.add(Cue.dishReady);
       }
     }
   }
@@ -2213,6 +2227,7 @@ class DinerSim {
         }
         w.platesToday += mine.length;
         w.staff.plates += mine.length;
+        cues.add(Cue.plate);
         if (g.mealComplete) _finishMeal(w, g);
     }
   }
@@ -2231,6 +2246,7 @@ class DinerSim {
       ..left = time
       ..total = time
       ..ready = false;
+    cues.add(Cue.cookStart);
     item
       ..state = ItemState.cooking
       ..quality =
@@ -3083,6 +3099,7 @@ class DinerSim {
       );
     }
     final gained = progress.gain(xp);
+    diner.totalEarned += earned;
     progress.day++;
     // Whoever walked in is among tomorrow's applicants.
     final applicant = _applicant;

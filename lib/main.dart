@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'audio/sound.dart';
 import 'data/storage.dart';
 import 'diner/diner_art.dart';
 import 'diner/home_screen.dart';
@@ -16,6 +17,7 @@ Future<void> main() async {
   }
   await PixelAssets.load();
   await DinerArt.load();
+  Sound.instance.watchLifecycle();
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   runApp(const HexApp());
 }

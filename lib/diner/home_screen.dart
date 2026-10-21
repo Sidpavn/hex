@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../audio/sound.dart';
 import '../data/cloud_save.dart';
+import '../data/leaderboards.dart';
 import '../data/play_games_store.dart';
 import '../data/save_sync.dart';
 import '../data/storage.dart';
@@ -13,12 +15,14 @@ import 'diner_painter.dart';
 import 'guide.dart';
 import 'iso.dart';
 import 'save_panel.dart';
+import 'settings_screen.dart';
 import 'title_sign.dart';
 
 /// Where to keep a copy of game [n] off the phone, if anywhere.
 typedef CloudFor = CloudStore? Function(int slot);
 
-CloudStore? _defaultCloud(int slot) => defaultCloudStore(slot: slot);
+/// Where each game's backup is kept on this platform, if anywhere.
+CloudStore? defaultCloudFor(int slot) => defaultCloudStore(slot: slot);
 
 /// "just now", "5 min ago", "2 h ago", "3 days ago". Empty if never saved.
 String savedAgo(int savedAt, [DateTime? now]) {
@@ -71,20 +75,31 @@ Future<void> _play(BuildContext context, int n, {bool fresh = false}) async {
   await Navigator.of(
     context,
   ).push(MaterialPageRoute<void>(builder: (_) => const BuildScreen()));
+  // The game stopped the music on the way out; the title has it.
+  Sound.instance.music(Music.build);
 }
 
 /// The title screen: the restaurant, what to do next, and whether the saves
 /// are safe.
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, this.cloudFor = _defaultCloud});
+  const HomeScreen({super.key, this.cloudFor = defaultCloudFor, this.scores});
 
   final CloudFor cloudFor;
+
+  /// The leaderboards (tests). By default Play Games on Android.
+  final ScoreBoard? scores;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  @override
+  void initState() {
+    super.initState();
+    Sound.instance.music(Music.build);
+  }
+
   Future<void> _continue(int n) async {
     await _play(context, n);
     if (mounted) setState(() {});
@@ -221,6 +236,42 @@ class _HomeScreenState extends State<HomeScreen> {
                         },
                       ),
                     ],
+                    const SizedBox(height: 8),
+                    Builder(
+                      builder: (context) {
+                        final scores = widget.scores ?? defaultScoreBoard();
+                        final settings = GoldButton(
+                          key: const ValueKey('settings'),
+                          label: ':gear: Settings',
+                          filled: false,
+                          color: Pal.dim,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => SettingsScreen(
+                                cloudFor: widget.cloudFor,
+                                scores: scores,
+                              ),
+                            ),
+                          ),
+                        );
+                        if (scores == null || !scores.any) return settings;
+                        return Row(
+                          children: [
+                            Expanded(
+                              child: GoldButton(
+                                key: const ValueKey('leaderboards'),
+                                label: ':trophy: Leaderboards',
+                                filled: false,
+                                color: Pal.dim,
+                                onTap: () => scores.show(),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(child: settings),
+                          ],
+                        );
+                      },
+                    ),
                   ],
                 ),
               ),
@@ -452,7 +503,11 @@ class _CloudLineState extends State<CloudLine> {
 
 /// The games kept on this phone, three places side by side.
 class SavesScreen extends StatefulWidget {
-  const SavesScreen({super.key, this.cloudFor = _defaultCloud, this.note = ''});
+  const SavesScreen({
+    super.key,
+    this.cloudFor = defaultCloudFor,
+    this.note = '',
+  });
 
   final CloudFor cloudFor;
 
@@ -543,7 +598,7 @@ class SlotScreen extends StatefulWidget {
   const SlotScreen({
     super.key,
     required this.game,
-    this.cloudFor = _defaultCloud,
+    this.cloudFor = defaultCloudFor,
   });
 
   final int game;

@@ -205,7 +205,7 @@ class _SavePanelState extends State<SavePanel> {
             const SizedBox(height: 8),
             GoldButton(
               key: const ValueKey('to-title'),
-              label: 'Save and go to the title screen',
+              label: 'Back to the title screen',
               filled: false,
               color: Pal.text,
               onTap: widget.onTitle,

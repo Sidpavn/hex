@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
+import '../audio/sound.dart';
+import '../data/leaderboards.dart';
 import '../data/play_games_store.dart';
 import '../data/save_sync.dart';
 import '../data/storage.dart';
@@ -13,6 +16,7 @@ import 'contracts.dart';
 import 'city.dart';
 import 'diner.dart';
 import 'order_screen.dart';
+import 'pause_menu.dart';
 import 'vending_dialog.dart';
 import 'advice.dart';
 import 'events.dart';
@@ -59,7 +63,7 @@ String describeFixture(FixtureDef d, Progress p) {
 /// Where the player runs the restaurant: lay it out, open for the day, watch
 /// it run, then spend what was earned.
 class BuildScreen extends StatefulWidget {
-  const BuildScreen({super.key, this.diner, this.cloud});
+  const BuildScreen({super.key, this.diner, this.cloud, this.scores});
 
   /// Start from this diner instead of the saved one (tests).
   final Diner? diner;
@@ -67,6 +71,10 @@ class BuildScreen extends StatefulWidget {
   /// Where the save is also kept off the phone (tests). By default Google
   /// Play Games on Android.
   final CloudStore? cloud;
+
+  /// Where the day's scores go (tests). By default the Play Games
+  /// leaderboards on Android.
+  final ScoreBoard? scores;
 
   @override
   State<BuildScreen> createState() => _BuildScreenState();
@@ -166,6 +174,7 @@ class _BuildScreenState extends State<BuildScreen>
   void initState() {
     super.initState();
     _coins = diner.coins;
+    Sound.instance.music(Music.build);
     WidgetsBinding.instance.addObserver(this);
     _ticker = createTicker((elapsed) {
       _now = elapsed;
@@ -184,6 +193,7 @@ class _BuildScreenState extends State<BuildScreen>
       if (_phase == Phase.service) {
         // A stalled frame (app was backgrounded) must not replay as a rush.
         clock.advance(dt.clamp(0.0, 0.25) * _speed);
+        _playCues();
         final fed = _toasts.feed(sim.story, elapsed);
         final gone = _toasts.expire(elapsed);
         if ((fed || gone) && mounted) setState(() {});
@@ -219,6 +229,7 @@ class _BuildScreenState extends State<BuildScreen>
   /// shows anything, and at most once a minute.
   void _backUp() {
     final now = DateTime.now();
+    if (!Storage.autoBackup) return;
     if (_syncing || now.difference(_lastBackup).inSeconds < 60) return;
     final store = widget.cloud ?? defaultCloudStore(slot: Storage.slot);
     if (store == null) return;
@@ -230,6 +241,8 @@ class _BuildScreenState extends State<BuildScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    Sound.instance.music(null);
+    _afterBell?.cancel();
     if (_unsaved) _save();
     _lastBackup = DateTime.fromMillisecondsSinceEpoch(0);
     _backUp();
@@ -247,6 +260,7 @@ class _BuildScreenState extends State<BuildScreen>
     final met = diner.checkGoals(day);
     if (met.isEmpty) return;
     _coins = diner.coins;
+    Sound.instance.play(Sfx.jingleUp);
     if (day != null) _dayGoals = [..._dayGoals, ...met];
     _note = met.length == 1
         ? 'Goal done: ${met.first.title}. +${met.first.reward}'
@@ -279,6 +293,63 @@ class _BuildScreenState extends State<BuildScreen>
       _focus = null;
       _note = '';
     });
+    Sound.instance
+      ..play(Sfx.bellOpen)
+      ..music(Music.service);
+  }
+
+  DinerSim? _cueSim;
+  int _cuesSeen = 0;
+  Timer? _afterBell;
+
+  /// Plays what the sim has recorded since last time.
+  void _playCues() {
+    if (!identical(_cueSim, sim)) {
+      _cueSim = sim;
+      _cuesSeen = 0;
+    }
+    final cues = sim.cues;
+    for (; _cuesSeen < cues.length; _cuesSeen++) {
+      Sound.instance.cue(cues[_cuesSeen]);
+    }
+  }
+
+  /// The closing bell, then a few notes for how the day went.
+  void _dayEndSounds(DayReport r) {
+    Sound.instance
+      ..play(Sfx.bellClose)
+      ..music(Music.build);
+    _afterBell?.cancel();
+    _afterBell = Timer(const Duration(milliseconds: 800), () {
+      Sound.instance.play(
+        r.unpaid > 0
+            ? Sfx.warn
+            : r.levelsGained > 0
+            ? Sfx.jingleUp
+            : r.stars >= 2
+            ? Sfx.jingleGood
+            : Sfx.jingleBad,
+      );
+    });
+  }
+
+  /// The pause menu. A running day is held while it is open, and carries on
+  /// at the speed it had.
+  Future<void> _openPauseMenu() async {
+    final service = _phase == Phase.service;
+    final was = _speed;
+    if (service) setState(() => _speed = 0);
+    final choice = await popupPixel<PauseChoice>(
+      context,
+      (_) => PauseMenu(diner: diner, inService: service),
+    );
+    if (!mounted) return;
+    if (service) setState(() => _speed = was);
+    if (choice == PauseChoice.title) {
+      _save(_savedAt);
+      // Back to the first screen, which is the title.
+      Navigator.of(context).popUntil((r) => r.isFirst);
+    }
   }
 
   void _endDay() {
@@ -292,6 +363,8 @@ class _BuildScreenState extends State<BuildScreen>
     if (_supplierHint?.startsWith('Farm delivery is open') ?? false) {
       diner.hintsSeen.add('farm');
     }
+    _dayEndSounds(report);
+    _postScores(report);
     setState(() {
       _checkGoals(report);
       _save(_savedAt);
@@ -300,6 +373,16 @@ class _BuildScreenState extends State<BuildScreen>
       _revision++;
     });
     _syncQuietly();
+  }
+
+  /// Sends the day's profit and the coins taken so far to the leaderboards,
+  /// if they are new bests. It never waits and never asks anything.
+  void _postScores(DayReport r) {
+    final board = widget.scores ?? defaultScoreBoard();
+    if (board == null) return;
+    ScorePoster(
+      board,
+    ).post(kept: r.earned - r.ingredients - r.wages, total: diner.totalEarned);
   }
 
   /// A word about the supplier after the day, if there is one.
@@ -314,6 +397,7 @@ class _BuildScreenState extends State<BuildScreen>
   /// sends this phone's save up; if the cloud holds something different, it
   /// says so and leaves the choice to the Goals page.
   Future<void> _syncQuietly() async {
+    if (!Storage.autoBackup) return;
     final store = widget.cloud ?? defaultCloudStore(slot: Storage.slot);
     if (store == null || _syncing) return;
     _syncing = true;
@@ -453,6 +537,7 @@ class _BuildScreenState extends State<BuildScreen>
       _facingAuto = true;
       _note = '';
       _hover = _defaultSpot(kind);
+      Sound.instance.play(Sfx.tick);
     });
   }
 
@@ -603,8 +688,12 @@ class _BuildScreenState extends State<BuildScreen>
             : '${fixtureDefs[kind]!.name} placed';
         if (moving != null) _clearEdit();
         _changed();
+        final heavy =
+            fixtureDefs[kind]!.role == Role.station || kind == Kind.counter;
+        Sound.instance.play(heavy ? Sfx.thud : Sfx.place);
       } else {
         _note = result.message;
+        Sound.instance.play(Sfx.no);
       }
     });
   }
@@ -752,6 +841,7 @@ class _BuildScreenState extends State<BuildScreen>
       _note = 'Sold $n for $back';
       _coins = diner.coins;
       _changed();
+      Sound.instance.play(Sfx.coin);
     });
   }
 
@@ -786,6 +876,7 @@ class _BuildScreenState extends State<BuildScreen>
       _note = 'Undid: ${what.toLowerCase()}';
       _coins = diner.coins;
       _changed();
+      Sound.instance.play(Sfx.coin);
     });
   }
 
@@ -803,6 +894,7 @@ class _BuildScreenState extends State<BuildScreen>
       _selected = null;
       _note = '${p.def.name} sold for ${p.def.refund}';
       _changed();
+      Sound.instance.play(Sfx.coin);
     });
   }
 
@@ -890,43 +982,52 @@ class _BuildScreenState extends State<BuildScreen>
   @override
   Widget build(BuildContext context) {
     final art = DinerArt.instance;
-    return Scaffold(
-      backgroundColor: Pal.bgTop,
-      body: Backdrop(
-        child: SafeArea(
-          child: Column(
-            children: [
-              _header(),
-              Expanded(
-                child: ColoredBox(
-                  color: DinerPainter.grass,
-                  child: art == null
-                      ? const SizedBox.shrink()
-                      : LayoutBuilder(builder: (_, box) => _board(art, box)),
+    // Back, from the arrow or by swiping, opens the pause menu on every
+    // screen of a game: a day is never left half way, and leaving between
+    // days is a choice in the menu.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _openPauseMenu();
+      },
+      child: Scaffold(
+        backgroundColor: Pal.bgTop,
+        body: Backdrop(
+          child: SafeArea(
+            child: Column(
+              children: [
+                _header(),
+                Expanded(
+                  child: ColoredBox(
+                    color: DinerPainter.grass,
+                    child: art == null
+                        ? const SizedBox.shrink()
+                        : LayoutBuilder(builder: (_, box) => _board(art, box)),
+                  ),
                 ),
-              ),
-              // Never more than half the screen, so the board always has room:
-              // on a small phone the panel scrolls.
-              ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: MediaQuery.of(context).size.height * 0.5,
-                ),
-                child: SingleChildScrollView(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                    child: PixelBox(
-                      padding: const EdgeInsets.all(12),
-                      child: switch (_phase) {
-                        Phase.build =>
-                          _expanding ? _expandPanel() : _buildPanel(),
-                        Phase.service => _servicePanel(),
-                        Phase.summary => _summaryPanel(),
-                      },
+                // Never more than half the screen, so the board always has room:
+                // on a small phone the panel scrolls.
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(context).size.height * 0.5,
+                  ),
+                  child: SingleChildScrollView(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                      child: PixelBox(
+                        padding: const EdgeInsets.all(12),
+                        child: switch (_phase) {
+                          Phase.build =>
+                            _expanding ? _expandPanel() : _buildPanel(),
+                          Phase.service => _servicePanel(),
+                          Phase.summary => _summaryPanel(),
+                        },
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -959,6 +1060,7 @@ class _BuildScreenState extends State<BuildScreen>
           Row(
             children: [
               GestureDetector(
+                key: const ValueKey('header-back'),
                 behavior: HitTestBehavior.opaque,
                 onTap: () => Navigator.of(context).maybePop(),
                 child: const Padding(
@@ -1460,6 +1562,7 @@ class _BuildScreenState extends State<BuildScreen>
           // A red flag when tonight's wages are more than is in the till:
           // the takings may still cover it, but it is worth a look.
           label: diner.coins < diner.roster.wages ? 'Staff !' : 'Staff',
+          compact: true,
           filled: false,
           color: diner.coins < diner.roster.wages ? Pal.red : Pal.text,
           onTap: _openStaff,
@@ -1470,6 +1573,7 @@ class _BuildScreenState extends State<BuildScreen>
         child: GoldButton(
           key: const ValueKey('menu'),
           label: 'Menu',
+          compact: true,
           filled: false,
           color: Pal.text,
           onTap: _openMenu,
@@ -1480,6 +1584,7 @@ class _BuildScreenState extends State<BuildScreen>
         child: GoldButton(
           key: const ValueKey('stats'),
           label: 'Stats',
+          compact: true,
           filled: false,
           color: Pal.text,
           onTap: () => Navigator.of(context).push(
