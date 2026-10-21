@@ -3102,6 +3102,13 @@ class DinerSim {
           walkouts: walkouts,
           rating: progress.reputation,
           event: event == DayEvent.none ? '' : event.name,
+          detailed: true,
+          income: earned,
+          ingredients: ingredientCost,
+          wages: paid,
+          leftover: leftoverCost,
+          spoiled: spoiled,
+          supplier: diner.supplier.name,
         ),
       )
       ..removeRange(0, math.max(0, diner.history.length - DayLog.keep));

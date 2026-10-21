@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
+import '../data/play_games_store.dart';
+import '../data/save_sync.dart';
 import '../data/storage.dart';
 import '../ui/pixel_dialog.dart';
 import '../ui/widgets.dart';
@@ -20,6 +22,7 @@ import 'diner_art.dart';
 import 'diner_painter.dart';
 import 'iso.dart';
 import 'menu_screen.dart';
+import 'money.dart';
 import 'recipes.dart';
 import 'service.dart';
 import 'report_screen.dart';
@@ -56,10 +59,14 @@ String describeFixture(FixtureDef d, Progress p) {
 /// Where the player runs the restaurant: lay it out, open for the day, watch
 /// it run, then spend what was earned.
 class BuildScreen extends StatefulWidget {
-  const BuildScreen({super.key, this.diner});
+  const BuildScreen({super.key, this.diner, this.cloud});
 
   /// Start from this diner instead of the saved one (tests).
   final Diner? diner;
+
+  /// Where the save is also kept off the phone (tests). By default Google
+  /// Play Games on Android.
+  final CloudStore? cloud;
 
   @override
   State<BuildScreen> createState() => _BuildScreenState();
@@ -199,13 +206,33 @@ class _BuildScreenState extends State<BuildScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state != AppLifecycleState.resumed && _unsaved) _save(_savedAt);
+    if (state == AppLifecycleState.resumed) return;
+    if (_unsaved) _save(_savedAt);
+    // Leaving the app is the moment a player might uninstall it, or switch
+    // phones: put the latest in the backup too.
+    _backUp();
+  }
+
+  DateTime _lastBackup = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// Sends this phone's save up if it is the one to keep. Never waits, never
+  /// shows anything, and at most once a minute.
+  void _backUp() {
+    final now = DateTime.now();
+    if (_syncing || now.difference(_lastBackup).inSeconds < 60) return;
+    final store = widget.cloud ?? defaultCloudStore(slot: Storage.slot);
+    if (store == null) return;
+    _lastBackup = now;
+    _syncing = true;
+    SaveSync(store).quiet(diner).whenComplete(() => _syncing = false);
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     if (_unsaved) _save();
+    _lastBackup = DateTime.fromMillisecondsSinceEpoch(0);
+    _backUp();
     _ticker.dispose();
     clock.dispose();
     _layer.dispose();
@@ -256,6 +283,15 @@ class _BuildScreenState extends State<BuildScreen>
 
   void _endDay() {
     final report = sim.result ?? sim.finishDay();
+    _supplierHint = supplierHint(
+      report,
+      diner.supplier,
+      diner.progress.level,
+      farmSeen: diner.hintsSeen.contains('farm'),
+    );
+    if (_supplierHint?.startsWith('Farm delivery is open') ?? false) {
+      diner.hintsSeen.add('farm');
+    }
     setState(() {
       _checkGoals(report);
       _save(_savedAt);
@@ -263,12 +299,36 @@ class _BuildScreenState extends State<BuildScreen>
       _phase = Phase.summary;
       _revision++;
     });
+    _syncQuietly();
+  }
+
+  /// A word about the supplier after the day, if there is one.
+  String? _supplierHint;
+
+  bool _syncing = false;
+
+  /// What the quiet sync after the day had to say, shown on the summary.
+  String _cloudNote = '';
+
+  /// After each day, quietly keeps the cloud copy up to date. It only ever
+  /// sends this phone's save up; if the cloud holds something different, it
+  /// says so and leaves the choice to the Goals page.
+  Future<void> _syncQuietly() async {
+    final store = widget.cloud ?? defaultCloudStore(slot: Storage.slot);
+    if (store == null || _syncing) return;
+    _syncing = true;
+    final note = await SaveSync(store).quiet(diner);
+    _syncing = false;
+    if (note == null || !mounted) return;
+    setState(() => _cloudNote = note);
   }
 
   void _nextDay() {
     setState(() {
       sim = DinerSim(diner);
       _toasts.clear();
+      _cloudNote = '';
+      _supplierHint = null;
       _dayGoals = [];
       _phase = Phase.build;
       _report = null;
@@ -292,15 +352,42 @@ class _BuildScreenState extends State<BuildScreen>
 
   Future<void> _openGoals() async {
     var startOver = false;
+    Diner? loaded;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) =>
-            GoalsScreen(diner: diner, onReset: () => startOver = true),
+        builder: (_) => GoalsScreen(
+          diner: diner,
+          onReset: () => startOver = true,
+          onLoad: (d) => loaded = d,
+          onTitle: _save,
+        ),
       ),
     );
     if (!mounted) return;
     setState(() {});
-    if (startOver) await _reset();
+    if (loaded != null) {
+      _adopt(loaded!);
+    } else if (startOver) {
+      await _reset();
+    }
+  }
+
+  /// Carries on with [next] in place of the diner that was here, saving it.
+  void _adopt(Diner next) {
+    Storage.saveDiner(next);
+    setState(() {
+      diner = next;
+      sim = DinerSim(diner);
+      _clearEdit();
+      _phase = Phase.build;
+      _report = null;
+      _k = null;
+      _focus = null;
+      _note = '';
+      _coins = diner.coins;
+      _unsaved = false;
+      _revision++;
+    });
   }
 
   Future<void> _openMenu() async {
@@ -1684,12 +1771,22 @@ class _BuildScreenState extends State<BuildScreen>
               ),
             ),
             const SizedBox(width: 8),
-            const Expanded(
+            Expanded(
               child: Padding(
-                padding: EdgeInsets.only(bottom: 4),
-                child: PxText(
-                  'kept today',
-                  style: TextStyle(color: Pal.dim, fontSize: 14),
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const PxText(
+                      'kept today',
+                      style: TextStyle(color: Pal.dim, fontSize: 14),
+                    ),
+                    PxText(
+                      profitLine(r),
+                      key: const ValueKey('profit-line'),
+                      style: const TextStyle(color: Pal.text, fontSize: 14),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -1832,6 +1929,22 @@ class _BuildScreenState extends State<BuildScreen>
             'Fix first: $fix',
             key: const ValueKey('fix-first'),
             style: const TextStyle(color: Pal.text, fontSize: 14),
+          ),
+        ],
+        if (_supplierHint != null) ...[
+          const SizedBox(height: 8),
+          PxText(
+            _supplierHint!,
+            key: const ValueKey('supplier-hint'),
+            style: const TextStyle(color: Pal.dim, fontSize: 14),
+          ),
+        ],
+        if (_cloudNote.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          PxText(
+            _cloudNote,
+            key: const ValueKey('cloud-note'),
+            style: const TextStyle(color: Pal.dim, fontSize: 14),
           ),
         ],
         const SizedBox(height: 12),

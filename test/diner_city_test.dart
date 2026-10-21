@@ -33,10 +33,11 @@ void main() {
       expect(d.isLocked(const Cell(3, 1)), isTrue);
     });
 
-    test('the sections add up to a plot ten wide and twenty-one deep', () {
+    test('the sections add up to the plot, with wings on the left', () {
       final tiles = Diner.plots.fold(0, (a, p) => a + p.tiles);
-      expect(tiles, 10 * 21);
-      expect(Diner.plots.length, 10);
+      // Ten wide and twenty-one deep, and three wings four wide.
+      expect(tiles, 10 * 21 + 4 * 5 + 4 * 4 + 4 * 4);
+      expect(Diner.plots.length, 13);
       final seen = <Cell>{};
       for (final p in Diner.plots) {
         for (var y = p.y0; y <= p.y1; y++) {
@@ -53,7 +54,7 @@ void main() {
     test('every section but the first needs the one in front of it', () {
       expect(Diner.plots[0].needs, isNull);
       expect(Diner.plots[1].needs, 0, reason: 'the room beside the first');
-      for (var i = 2; i < Diner.plots.length; i++) {
+      for (var i = 2; i < 10; i++) {
         final needs = Diner.plots[i].needs!;
         expect(needs, lessThan(i));
         // The one in front is nearer the street, in the same column.
@@ -103,11 +104,18 @@ void main() {
       d.progress.level = 2;
       expect(d.whyLocked(1), isNull);
       expect(d.whyLocked(2), 'Needs restaurant level 3');
-      for (var i = 1; i < Diner.plots.length; i++) {
+      for (var i = 1; i < 10; i++) {
         expect(
           Diner.plots[i].level,
           greaterThanOrEqualTo(Diner.plots[i - 1].level),
           reason: 'further back needs a better restaurant',
+        );
+      }
+      for (var i = 10; i < Diner.plots.length; i++) {
+        expect(
+          Diner.plots[i].level,
+          greaterThanOrEqualTo(Diner.plots[Diner.plots[i].needs!].level),
+          reason: 'a wing needs at least what the room it opens from needed',
         );
       }
     });
@@ -126,24 +134,30 @@ void main() {
 
     test('what is next to buy is what has its front neighbour', () {
       final d = Diner(coins: 0);
-      expect(d.nextPlots, [1, 2]);
+      expect(d.nextPlots, [1, 2, 10]);
       d.owned.add(1);
-      expect(d.nextPlots, [2, 3]);
+      expect(d.nextPlots, [2, 3, 10]);
       d.owned.addAll({2, 3});
-      expect(d.nextPlots, [4, 5]);
+      expect(d.nextPlots, [4, 5, 10]);
       d.owned.addAll({4, 5});
-      expect(d.nextPlots, [6, 7]);
+      expect(d.nextPlots, [6, 7, 10]);
       d.owned.addAll({6, 7});
-      expect(d.nextPlots, [8, 9]);
+      expect(d.nextPlots, [8, 9, 10]);
       d.owned.addAll({8, 9});
+      expect(d.nextPlots, [10]);
+      d.owned.add(10);
+      expect(d.nextPlots, [11]);
+      d.owned.add(11);
+      expect(d.nextPlots, [12]);
+      d.owned.add(12);
       expect(d.nextPlots, isEmpty);
     });
 
     test('bought sections join into one room, with no gaps', () {
       final d = wholePlot();
       final reach = d.reachable();
-      expect(reach.length, 210);
-      expect(d.insideCells().length, 210);
+      expect(reach.length, 262);
+      expect(d.insideCells().length, 262);
       expect(reach, contains(const Cell(10, -13)));
     });
 
@@ -267,7 +281,8 @@ void main() {
         expect(groundTile(d, const Cell(3, 5)), startsWith('floor'));
         expect(groundTile(d, const Cell(8, 5)), 'lot');
         expect(groundTile(d, const Cell(3, -3)), 'lot');
-        expect(groundTile(d, const Cell(-3, 5)), startsWith('concrete'));
+        expect(groundTile(d, const Cell(-3, 5)), 'lot');
+        expect(groundTile(d, const Cell(-8, 5)), startsWith('concrete'));
         expect(
           groundTile(d, Cell(Diner.plotRight + 7, 2)),
           startsWith('concrete'),
@@ -388,11 +403,15 @@ void main() {
       final d = Diner(coins: 0);
       for (var y = -6; y <= d.bottom; y++) {
         expect(
-          groundTile(d, Cell(-1, y)),
+          groundTile(d, Cell(Diner.plotLeft - 1, y)),
           startsWith('sidewalk'),
           reason: '$y',
         );
-        expect(groundTile(d, Cell(0, y)), startsWith('sidewalk'), reason: '$y');
+        expect(
+          groundTile(d, Cell(Diner.plotLeft - 2, y)),
+          startsWith('sidewalk'),
+          reason: '$y',
+        );
       }
     });
 

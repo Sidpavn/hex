@@ -170,6 +170,18 @@ final List<Goal> goals = [
         'from people walking by.',
   ),
   Goal(
+    'supplier',
+    'Run a day with another supplier',
+    60,
+    (f) => f.diner.history.any(
+      (h) => h.supplier.isNotEmpty && h.supplier != 'standard',
+    ),
+    hint:
+        "Change supplier in Today's portions. The budget market costs less "
+        'but some food arrives spoiled; the farm costs more and guests tip '
+        'more.',
+  ),
+  Goal(
     'regular',
     'Win a regular',
     100,

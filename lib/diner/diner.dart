@@ -538,10 +538,12 @@ class Diner {
     return d;
   }
 
-  /// The plot is ten tiles wide, and runs from row [top] at the front back to
-  /// row [plotTop].
+  /// The restaurant starts at column [left] and row [top]. The plot reaches
+  /// four columns further left, to [plotLeft], which is bare land until
+  /// bought, with the pavement and the neighbours' buildings beyond it.
   static const left = 1;
   static const top = 3;
+  static const plotLeft = -3;
 
   /// The plot's right-hand column and back row. The side street runs just
   /// beyond the column.
@@ -561,6 +563,11 @@ class Diner {
     Plot('Room at the back, right', 7, -9, 10, -6, needs: 5, level: 8),
     Plot('The last room', 1, -13, 6, -10, needs: 6, level: 9),
     Plot('The last room, right', 7, -13, 10, -10, needs: 7, level: 10),
+    // Wings on the left. They come after the rest so a saved game's sections
+    // keep their numbers.
+    Plot('Room to the left', -3, 3, 0, 7, needs: 0, level: 3),
+    Plot('Room behind, left', -3, -1, 0, 2, needs: 10, level: 5),
+    Plot('Room further back, left', -3, -5, 0, -2, needs: 11, level: 7),
   ];
 
   /// The plot's cheapest price a tile, and how much dearer each section
@@ -572,6 +579,9 @@ class Diner {
 
   /// The goals that have been met, by id. See `goals.dart`.
   final Set<String> goalsDone = {};
+
+  /// One-off tips already shown, so each is said once.
+  final Set<String> hintsSeen = {};
 
   /// The sections of the plot that are the restaurant's, by index in [plots].
   final Set<int> owned;
@@ -887,6 +897,7 @@ class Diner {
 
   int get topRow => framed.map((p) => p.y0).reduce((a, b) => a < b ? a : b);
   int get rightCol => framed.map((p) => p.x1).reduce((a, b) => a > b ? a : b);
+  int get leftCol => framed.map((p) => p.x0).reduce((a, b) => a < b ? a : b);
 
   /// Whether [c] is within [radius] tiles of any part of [p].
   bool _near(Placed p, Cell c, int radius) {
@@ -1589,10 +1600,20 @@ class Diner {
     return StaffResult.ok;
   }
 
+  /// The save's format, so a newer game's save is recognised as such. Raise it
+  /// when what is saved changes in a way an older game could not read.
+  static const saveVersion = 1;
+
+  /// When this was last saved, in milliseconds since 1970. Zero if never.
+  int savedAt = 0;
+
   Map<String, Object?> toJson() => {
+    'v': saveVersion,
+    'saved': savedAt,
     'coins': coins,
     'owned': owned.toList()..sort(),
     'goals': goalsDone.toList()..sort(),
+    'hints': hintsSeen.toList()..sort(),
     'supplier': supplier.name,
     'vend': vend.name,
     'regulars': regulars.toJson(),
@@ -1656,7 +1677,10 @@ class Diner {
         Vend.drinks;
     d.vendingOn = j['vendOn'] != false;
     d.vendCash = ((j['vendCash'] as int?) ?? 0).clamp(0, 100000);
+    d.savedAt = (j['saved'] is int ? j['saved'] as int : 0).clamp(0, 1 << 52);
     d.regulars = RegularBook.fromJson(j['regulars']);
+    final hints = j['hints'];
+    if (hints is List) d.hintsSeen.addAll(hints.whereType<String>());
     final log = j['history'];
     if (log is List) {
       d.history.addAll([for (final h in log) ?DayLog.fromJson(h)]);

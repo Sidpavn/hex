@@ -76,15 +76,17 @@ void main() {
     test('zooming about a point keeps that point still', () {
       final d = Diner.starter();
       final a = BoardFit.of(d, canvas, 3);
-      // The room point at the top-right of the middle of the screen.
-      const dxy = Offset(10, -8);
+      // Zoom in by up to three steps, as far as it goes.
+      final k2 = a.k + 3 > a.kMax ? a.kMax : a.k + 3;
+      // A room point to the right of the middle of the screen.
+      const dxy = Offset(10, 0);
       final anchor = a.focus + dxy / a.s;
       final b = BoardFit.of(
         d,
         canvas,
         3,
-        k: a.k + 3,
-        focus: anchor - dxy / ((a.k + 3) / 3),
+        k: k2,
+        focus: anchor - dxy / (k2 / 3),
       );
       final screenA =
           Offset(canvas.width / 2, canvas.height / 2) +

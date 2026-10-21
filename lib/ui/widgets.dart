@@ -121,12 +121,18 @@ class GoldButton extends StatelessWidget {
     required this.onTap,
     this.filled = true,
     this.color = Pal.gold,
+    this.fontSize = 17,
+    this.tall = false,
   });
 
   final String label;
   final VoidCallback? onTap;
   final bool filled;
   final Color color;
+
+  /// The main button on a screen is larger than the rest.
+  final double fontSize;
+  final bool tall;
 
   @override
   Widget build(BuildContext context) {
@@ -139,12 +145,18 @@ class GoldButton extends StatelessWidget {
           color: filled ? color : Pal.panel,
           border: filled ? Pal.ink : color,
           pressed: pressed,
-          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+          padding: EdgeInsets.symmetric(
+            vertical: tall ? 14 : 8,
+            horizontal: 12,
+          ),
           child: Center(
             child: PxText(
               label,
               maxLines: 1,
-              style: TextStyle(color: filled ? Pal.ink : color, fontSize: 17),
+              style: TextStyle(
+                color: filled ? Pal.ink : color,
+                fontSize: fontSize,
+              ),
             ),
           ),
         ),

@@ -13,11 +13,12 @@ class IsoView {
     final plots = whole ? Diner.plots : d.framed.toList();
     final topRow = plots.map((p) => p.y0).reduce((a, b) => a < b ? a : b);
     final rightCol = plots.map((p) => p.x1).reduce((a, b) => a > b ? a : b);
+    final leftCol = plots.map((p) => p.x0).reduce((a, b) => a < b ? a : b);
     // Frame the room itself: its diamond, the tall back walls above it, the
     // front edge below it, and a little ground all round.
-    final minX = (Diner.left - (d.bottom + 1)) * halfW - pad;
+    final minX = (leftCol - (d.bottom + 1)) * halfW - pad;
     final maxX = ((rightCol + 1) - topRow) * halfW + pad;
-    final minY = ((Diner.left - 1) + (topRow - 1)) * halfH - headroom;
+    final minY = ((leftCol - 1) + (topRow - 1)) * halfH - headroom;
     final maxY = ((rightCol + 1) + (d.bottom + 1)) * halfH + 20;
     _ox = -minX + shift.dx;
     _oy = -minY + shift.dy;

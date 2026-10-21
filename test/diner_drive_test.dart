@@ -716,6 +716,7 @@ void main() {
         if (find.byKey(const ValueKey('next-day')).evaluate().isNotEmpty) break;
       }
       expect(find.byKey(const ValueKey('next-day')), findsOneWidget);
+      await tester.ensureVisible(find.byKey(const ValueKey('details')));
       await tester.tap(find.byKey(const ValueKey('details')));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('cars-line')), findsOneWidget);

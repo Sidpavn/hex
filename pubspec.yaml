@@ -36,6 +36,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   hive_ce: ^2.20.1
   hive_ce_flutter: ^2.3.4
+  games_services: 5.0.0
 
 dev_dependencies:
   flutter_test:

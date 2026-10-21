@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 
 import 'data/storage.dart';
 import 'diner/diner_art.dart';
-import 'diner/build_screen.dart';
+import 'diner/home_screen.dart';
 import 'ui/pixel/pixel_assets.dart';
 import 'ui/widgets.dart' show Pal, PixelTextScaler;
 
@@ -24,7 +24,7 @@ Future<void> main() async {
 const _tight = TextStyle(height: 1.05);
 
 class HexApp extends StatelessWidget {
-  const HexApp({super.key, this.home = const BuildScreen()});
+  const HexApp({super.key, this.home = const HomeScreen()});
 
   /// The first screen. Overridable so tests can open any screen directly.
   final Widget home;
@@ -33,7 +33,7 @@ class HexApp extends StatelessWidget {
   Widget build(BuildContext context) {
     const sharp = RoundedRectangleBorder();
     return MaterialApp(
-      title: 'Hex Diner',
+      title: 'Tiny Diner Tycoon',
       debugShowCheckedModeBanner: false,
       builder: (context, child) {
         final mq = MediaQuery.of(context);

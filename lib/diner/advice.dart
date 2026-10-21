@@ -65,7 +65,7 @@ String? fixFirst(DayReport r) {
       "portions in Today's portions.",
     );
   }
-  if (r.earned + r.tips - r.ingredients - r.wages < 0) {
+  if (r.earned - r.ingredients - r.wages < 0) {
     add(
       60,
       'The day lost money after ingredients and wages. Raise prices, or '

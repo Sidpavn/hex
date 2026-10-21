@@ -8,7 +8,7 @@
 PRODUCT_NAME = hex
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.sithpavan.hex
+PRODUCT_BUNDLE_IDENTIFIER = com.niche.diner
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2026 com.sithpavan. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2026 com.niche. All rights reserved.

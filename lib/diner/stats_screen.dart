@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../ui/pixel_hearts.dart';
+import '../ui/pixel_lines.dart';
 import '../ui/pixel_pie.dart';
 import '../ui/widgets.dart';
 import 'build_screen.dart' show DinerSprite;
@@ -11,6 +12,7 @@ import 'crowd.dart';
 import 'diner.dart';
 import 'events.dart';
 import 'guests.dart';
+import 'money.dart';
 import 'recipes.dart';
 import 'regulars.dart';
 
@@ -137,6 +139,7 @@ enum _Tab {
   guests('Guests'),
   dishes('Dishes'),
   regulars('Regulars'),
+  money('Money'),
   days('Days');
 
   const _Tab(this.label);
@@ -171,6 +174,10 @@ class _StatsScreenState extends State<StatsScreen> {
         _Tab.regulars =>
           '${diner.regulars.people.length} of '
               '${RegularBook.cap(diner.progress.level)} regulars',
+        _Tab.money =>
+          MoneyView(diner.history).isEmpty
+              ? 'No days yet'
+              : 'The last ${math.min(MoneyView(diner.history).days.length, _days)} days',
         _Tab.days =>
           diner.history.isEmpty
               ? 'No days yet'
@@ -201,7 +208,9 @@ class _StatsScreenState extends State<StatsScreen> {
                 ),
             ],
           ),
-          if (_tab != _Tab.days && _tab != _Tab.regulars) ...[
+          if (_tab != _Tab.days &&
+              _tab != _Tab.regulars &&
+              _tab != _Tab.money) ...[
             const SizedBox(height: 8),
             Wrap(
               spacing: 6,
@@ -226,6 +235,7 @@ class _StatsScreenState extends State<StatsScreen> {
             _Tab.guests => _guests(c),
             _Tab.dishes => _dishes(c),
             _Tab.regulars => _regulars(),
+            _Tab.money => _moneyTab(),
             _Tab.days => _daysTab(),
           },
         ],
@@ -584,6 +594,167 @@ class _StatsScreenState extends State<StatsScreen> {
   /// Five hearts, red for each they have.
   Widget _hearts(Regular r) =>
       PixelHearts(key: ValueKey('hearts-${r.id}'), filled: r.hearts);
+
+  // ------------------------------------------------------------ money
+
+  List<Widget> _moneyTab() {
+    final all = MoneyView(diner.history);
+    if (all.isEmpty) {
+      return [
+        _empty(
+          'money-empty',
+          'No money figures yet. Finish a day and this fills in.',
+        ),
+      ];
+    }
+    final shown = all.days.length > _days
+        ? all.days.sublist(all.days.length - _days)
+        : all.days;
+    final v = MoneyView(shown);
+    final fewer = diner.history.length > all.days.length;
+    final tips = v.savings();
+    Widget fact(String key, String label, int n, Color colour) => Expanded(
+      child: Column(
+        key: ValueKey(key),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          PxText(
+            '$n',
+            style: TextStyle(color: colour, fontSize: 26, height: 1.1),
+          ),
+          PxText(label, style: const TextStyle(color: Pal.dim, fontSize: 13)),
+        ],
+      ),
+    );
+    return [
+      if (fewer)
+        _note(
+          'Days before this update only show what was kept, so they are '
+          'left out here.',
+        ),
+      const Eyebrow('A day, on average'),
+      Panel(
+        child: Row(
+          children: [
+            fact('money-took', 'took', v.incomeAvg, Pal.green),
+            fact('money-costs', 'costs', v.costsAvg, Pal.red),
+            fact(
+              'money-kept',
+              v.keptAvg < 0 ? 'lost' : 'kept',
+              v.keptAvg,
+              v.keptAvg < 0 ? Pal.red : Pal.gold,
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 12),
+      const Eyebrow('Money in and out'),
+      Panel(
+        key: const ValueKey('money-lines'),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: PixelLines(
+                height: 56,
+                step: shown.length > 12 ? 12 : 16,
+                series: [
+                  PixelSeries([for (final d in shown) d.income], Pal.green),
+                  PixelSeries([for (final d in shown) d.costs], Pal.red),
+                ],
+              ),
+            ),
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 12,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                _swatch(Pal.green, 'Took'),
+                _swatch(Pal.red, 'Costs'),
+                PxText(
+                  'Day ${shown.first.day} to ${shown.last.day}',
+                  style: const TextStyle(color: Pal.dim, fontSize: 13),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 12),
+      const Eyebrow('What was kept each day'),
+      Panel(
+        key: const ValueKey('money-kept-chart'),
+        child: Center(
+          child: PixelColumns(
+            values: [for (final d in shown) d.kept],
+            up: Pal.gold,
+            down: Pal.red,
+            width: 7,
+            gap: 2,
+          ),
+        ),
+      ),
+      const SizedBox(height: 12),
+      const Eyebrow('Where the money goes'),
+      _chart('money-split', [
+        (
+          'split-food',
+          'Ingredients used',
+          math.max(0, v.ingredients - v.leftover),
+          Pal.gold,
+          '${v.share(math.max(0, v.ingredients - v.leftover))}% of takings',
+        ),
+        (
+          'split-waste',
+          'Thrown away',
+          v.leftover,
+          Pal.red,
+          '${v.share(v.leftover)}% of takings',
+        ),
+        (
+          'split-wages',
+          'Wages',
+          v.wages,
+          Pal.blue,
+          '${v.share(v.wages)}% of takings',
+        ),
+      ], v.ingredients + v.wages),
+      const SizedBox(height: 12),
+      const Eyebrow('Where to save'),
+      Panel(
+        key: const ValueKey('money-savings'),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (tips.isEmpty)
+              const PxText(
+                'Nothing stands out. Costs look in proportion to takings.',
+                style: TextStyle(color: Pal.dim, fontSize: 14),
+              )
+            else
+              for (var i = 0; i < tips.length; i++) ...[
+                if (i > 0) const SizedBox(height: 8),
+                PxText(
+                  tips[i],
+                  key: ValueKey('saving-$i'),
+                  style: const TextStyle(color: Pal.text, fontSize: 14),
+                ),
+              ],
+          ],
+        ),
+      ),
+    ];
+  }
+
+  Widget _swatch(Color colour, String label) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      SizedBox(width: 8, height: 8, child: ColoredBox(color: colour)),
+      const SizedBox(width: 6),
+      PxText(label, style: const TextStyle(color: Pal.text, fontSize: 13)),
+    ],
+  );
 
   // ------------------------------------------------------------- days
 

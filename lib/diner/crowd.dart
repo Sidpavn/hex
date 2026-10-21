@@ -170,6 +170,13 @@ class DayLog {
     required this.walkouts,
     required this.rating,
     this.event = '',
+    this.detailed = false,
+    this.income = 0,
+    this.ingredients = 0,
+    this.wages = 0,
+    this.leftover = 0,
+    this.spoiled = 0,
+    this.supplier = '',
   });
 
   final int day;
@@ -185,6 +192,24 @@ class DayLog {
   /// The day's event, by name, or empty.
   final String event;
 
+  /// Whether the money is broken down. Days saved by older versions only
+  /// have what was kept.
+  final bool detailed;
+
+  /// Takings including tips, what was spent on ingredients, wages paid, the
+  /// value of food thrown away, and portions that arrived spoiled.
+  final int income;
+  final int ingredients;
+  final int wages;
+  final int leftover;
+  final int spoiled;
+
+  /// Who the ingredients came from, by name.
+  final String supplier;
+
+  /// Everything spent: ingredients and wages.
+  int get costs => ingredients + wages;
+
   /// How many days are kept.
   static const keep = 60;
 
@@ -195,6 +220,14 @@ class DayLog {
     'w': walkouts,
     'r': rating,
     if (event.isNotEmpty) 'e': event,
+    if (detailed) ...{
+      'i': income,
+      'c': ingredients,
+      'g': wages,
+      'l': leftover,
+      'b': spoiled,
+      'u': supplier,
+    },
   };
 
   static DayLog? fromJson(Object? j) {
@@ -207,6 +240,13 @@ class DayLog {
       walkouts: n('w'),
       rating: n('r'),
       event: j['e'] is String ? j['e'] as String : '',
+      detailed: j['i'] is int,
+      income: n('i'),
+      ingredients: n('c'),
+      wages: n('g'),
+      leftover: n('l'),
+      spoiled: n('b'),
+      supplier: j['u'] is String ? j['u'] as String : '',
     );
   }
 }

@@ -275,7 +275,7 @@ void main() {
       final painter =
           tester.widget<CustomPaint>(board).painter! as DinerPainter;
       expect(painter.expanding, isTrue);
-      expect(d.nextPlots, [1, 2]);
+      expect(d.nextPlots, [1, 2, 10]);
       // A section that is already yours cannot be picked.
       await tester.tapAt(onCell(tester, const Cell(3, 5)));
       await beat(tester);

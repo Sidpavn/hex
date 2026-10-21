@@ -1,6 +1,6 @@
 {
-    "name": "hex",
-    "short_name": "hex",
+    "name": "Tiny Diner Tycoon",
+    "short_name": "Tiny Diner",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

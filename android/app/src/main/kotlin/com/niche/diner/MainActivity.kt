@@ -1,4 +1,4 @@
-package com.sithpavan.hex
+package com.niche.diner
 
 import io.flutter.embedding.android.FlutterActivity
 

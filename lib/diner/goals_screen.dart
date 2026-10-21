@@ -1,18 +1,41 @@
 import 'package:flutter/material.dart';
 
+import '../data/save_sync.dart';
+
 import '../ui/widgets.dart';
 import 'diner.dart';
 import 'goals.dart';
+import 'guide.dart';
+import '../data/play_games_store.dart';
+import '../data/storage.dart';
+import 'save_panel.dart';
 
 /// What to aim for: the next few goals with how to go about each, then what
 /// is further off, then what has been done.
 class GoalsScreen extends StatelessWidget {
-  const GoalsScreen({super.key, required this.diner, this.onReset});
+  const GoalsScreen({
+    super.key,
+    required this.diner,
+    this.onReset,
+    this.onLoad,
+    this.store,
+    this.onTitle,
+  });
 
   final Diner diner;
 
   /// Wipes the save and starts again. A testing aid, kept out of the way.
   final VoidCallback? onReset;
+
+  /// Where the save is also kept off the phone. By default Google Play
+  /// Games on Android, and nowhere else.
+  final CloudStore? store;
+
+  /// Called to save, just before going back to the title screen.
+  final VoidCallback? onTitle;
+
+  /// Carries on from a save the player pasted in.
+  final ValueChanged<Diner>? onLoad;
 
   @override
   Widget build(BuildContext context) {
@@ -61,6 +84,36 @@ class GoalsScreen extends StatelessWidget {
               const SizedBox(height: 6),
             ],
           ],
+          const SizedBox(height: 24),
+          GoldButton(
+            key: const ValueKey('open-guide'),
+            label: 'How to play',
+            filled: false,
+            color: Pal.text,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const GuideScreen()),
+            ),
+          ),
+          const SizedBox(height: 24),
+          const Eyebrow('Your save'),
+          SavePanel(
+            diner: diner,
+            onSave: () => Storage.saveDiner(diner),
+            onTitle: onTitle == null
+                ? null
+                : () {
+                    onTitle!();
+                    // Back to the first screen, which is the title.
+                    Navigator.of(context).popUntil((r) => r.isFirst);
+                  },
+            store: store ?? defaultCloudStore(slot: Storage.slot),
+            onLoad: onLoad == null
+                ? null
+                : (d) {
+                    onLoad!(d);
+                    Navigator.of(context).pop();
+                  },
+          ),
           if (onReset != null) ...[
             const SizedBox(height: 24),
             GestureDetector(

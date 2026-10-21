@@ -227,6 +227,11 @@ void main() {
       expect(meets('plot', (d) => d.owned.addAll({1, 2, 3, 4, 5})), isFalse);
       expect(
         meets('plot', (d) => d.owned.addAll({1, 2, 3, 4, 5, 6, 7, 8, 9})),
+        isFalse,
+        reason: 'the wings on the left count too',
+      );
+      expect(
+        meets('plot', (d) => d.owned.addAll({for (var i = 1; i <= 12; i++) i})),
         isTrue,
       );
     });

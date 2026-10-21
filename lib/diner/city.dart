@@ -4,12 +4,8 @@ import 'diner.dart';
 /// street furniture standing on it. Pure data, so it can be tested without
 /// drawing.
 
-/// Whether [c] is on the plot, bought or not.
-bool onPlot(Cell c) =>
-    c.x >= Diner.left &&
-    c.x <= Diner.plotRight &&
-    c.y >= Diner.plotTop &&
-    c.y <= Diner.plots[0].y1;
+/// Whether [c] is on the plot, bought or not: inside any of its sections.
+bool onPlot(Cell c) => Diner.plots.any((p) => p.contains(c));
 
 /// A neighbouring building: one sprite standing on a rectangle of the ground,
 /// its first cell at ([x0], [y0]).
@@ -31,9 +27,9 @@ class Building {
 /// The buildings either side of the plot: three on the left, three across the
 /// side street. Their sizes match the sprites made by `gen_diner_art.py`.
 const buildings = [
-  Building('block_lf', -9, 1, 8, 7),
-  Building('block_lb', -9, -6, 8, 7),
-  Building('block_lb', -9, -13, 8, 7),
+  Building('block_lf', -13, 1, 8, 7),
+  Building('block_lb', -13, -6, 8, 7),
+  Building('block_lb', -13, -13, 8, 7),
   Building('block_rf', 15, 1, 4, 7),
   Building('block_rb', 15, -6, 4, 7),
   Building('block_rb', 15, -13, 4, 7),
@@ -76,7 +72,7 @@ String groundTile(Diner d, Cell c) {
     if (side == 2) return 'road_v';
     if (side == 3) return 'road_b';
     // A pavement runs along the plot's left, between it and the buildings.
-    if (c.x == Diner.left - 1 || c.x == Diner.left - 2) {
+    if (c.x == Diner.plotLeft - 1 || c.x == Diner.plotLeft - 2) {
       return (c.x + c.y).isEven ? 'sidewalk_a' : 'sidewalk_b';
     }
     // Under the buildings, which hide it.
