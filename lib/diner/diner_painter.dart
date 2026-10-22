@@ -1,11 +1,14 @@
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 
 import '../ui/pixel/palette.dart';
 import 'actor.dart';
 import 'city.dart';
 import 'clock.dart';
+import 'pedestrians.dart';
+import 'styles.dart';
 import 'diner.dart';
 import 'diner_art.dart';
 import 'iso.dart';
@@ -54,6 +57,7 @@ class DinerPainter extends CustomPainter {
     this.actors = const [],
     this.sim,
     this.clock,
+    this.stroll,
     this.placing,
     this.hover,
     this.selected,
@@ -77,7 +81,7 @@ class DinerPainter extends CustomPainter {
     this.doorOpen = _closed,
     StaticLayer? layer,
   }) : layer = layer ?? StaticLayer(),
-       super(repaint: clock);
+       super(repaint: Listenable.merge([clock, stroll]));
 
   final Diner diner;
   final DinerArt art;
@@ -90,6 +94,10 @@ class DinerPainter extends CustomPainter {
   /// through the tick they are.
   final DinerSim? sim;
   final TickClock? clock;
+
+  /// Counts tenths of a second, for the people walking by on the far
+  /// pavement. Null draws none.
+  final ValueListenable<int>? stroll;
 
   /// The fixture the player is about to put down, and the cell under their
   /// finger.
@@ -290,7 +298,11 @@ class DinerPainter extends CustomPainter {
     canvas
       ..save()
       ..clipRect(Offset.zero & size);
-    final live = [...actors, ...?sim?.actors(clock?.alpha ?? 1)];
+    final live = [
+      ...actors,
+      ...?sim?.actors(clock?.alpha ?? 1),
+      if (stroll != null) ...pedestrians(diner, stroll!.value),
+    ];
     final things = <_Drawn>[
       for (final p in diner.items.where((p) => !p.def.floor))
         _Drawn(
@@ -338,7 +350,14 @@ class DinerPainter extends CustomPainter {
 
     // The street, the plot and the floor. Everything off the plot is dimmed.
     for (final c in view.ground(diner, size.width / s, size.height / s)) {
-      _cell(canvas, groundTile(diner, c), c, dim: !onPlot(c));
+      // Sections that are not for sale yet are just more lawn.
+      final bought = diner.owned.any((i) => Diner.plots[i].contains(c));
+      _cell(
+        canvas,
+        groundTile(diner, c),
+        c,
+        dim: !onPlot(c) || !(bought || diner.forSale(c)),
+      );
     }
     if (expanding) _plotTints(canvas);
     // The neighbours and everything small in the town, back to front, dimmed
@@ -511,11 +530,12 @@ class DinerPainter extends CustomPainter {
     void wall(String name, Cell c) => out.add(
       _Drawn(c.x + c.y + 1 - 0.25, true, () => _cell(canvas, name, c)),
     );
+    final look = styleById(StyleKind.wall, diner.wallStyle)?.suffix ?? '';
     String across(int x) {
       final i = x - Diner.left;
       return i % 3 == 1
-          ? 'wall_a_window'
-          : (i == 2 ? 'wall_a_board' : 'wall_a');
+          ? 'wall_a_window$look'
+          : (i == 2 ? 'wall_a_board$look' : 'wall_a$look');
     }
 
     for (final c in diner.insideCells()) {
@@ -524,9 +544,12 @@ class DinerPainter extends CustomPainter {
       if (north) wall(across(c.x), Cell(c.x, c.y - 1));
       if (west) {
         final j = c.y - Diner.top;
-        wall(j % 3 == 1 ? 'wall_b_window' : 'wall_b', Cell(c.x - 1, c.y));
+        wall(
+          j % 3 == 1 ? 'wall_b_window$look' : 'wall_b$look',
+          Cell(c.x - 1, c.y),
+        );
       }
-      if (north && west) wall('wall_corner', Cell(c.x - 1, c.y - 1));
+      if (north && west) wall('wall_corner$look', Cell(c.x - 1, c.y - 1));
     }
     return out;
   }
@@ -692,7 +715,8 @@ class DinerPainter extends CustomPainter {
   /// The sections of the plot still to buy, drawn on the ground.
   void _plotOutlines(Canvas canvas) {
     for (var i = 0; i < Diner.plots.length; i++) {
-      if (diner.owned.contains(i)) continue;
+      // Only what could be bought: the rest is not shown as a plot at all.
+      if (diner.owned.contains(i) || !diner.nextPlots.contains(i)) continue;
       final p = Diner.plots[i];
       final path = Path();
       _outline(path, Cell(p.x0, p.y0), p.width, p.height);

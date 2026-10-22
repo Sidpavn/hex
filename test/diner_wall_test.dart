@@ -2,6 +2,7 @@
 // leaves a gap for a door.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'shelf.dart';
 import 'package:hex/data/storage.dart';
 import 'package:hex/diner/build_screen.dart';
 import 'package:hex/diner/diner.dart';
@@ -73,6 +74,7 @@ void main() {
 
     testWidgets('it is on the shelf, and aims at an edge', (tester) async {
       await open(tester);
+      await openShelf(tester, Kind.wall);
       final tile = find.byKey(const ValueKey('fixture-wall'));
       await tester.scrollUntilVisible(
         tile,
@@ -195,6 +197,7 @@ void main() {
     addTearDown(tester.view.reset);
     await tester.pumpWidget(HexApp(home: BuildScreen(diner: d)));
     await tester.pump();
+    await openShelf(tester, Kind.pass);
     final tile = find.byKey(const ValueKey('fixture-pass'));
     await tester.scrollUntilVisible(
       tile,

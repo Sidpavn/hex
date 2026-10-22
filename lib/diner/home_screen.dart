@@ -65,7 +65,7 @@ int? _firstEmpty() {
 Future<void> _play(BuildContext context, int n, {bool fresh = false}) async {
   Storage.useSlot(n);
   if (fresh) {
-    Storage.saveSlot(n, Diner.starter());
+    Storage.saveSlot(n, Diner.fresh());
     // A new game starts with the guide, which can be skipped.
     await Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => const GuideScreen(intro: true)),

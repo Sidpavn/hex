@@ -10,6 +10,7 @@ import 'package:hex/diner/build_screen.dart';
 import 'package:hex/main.dart';
 import 'package:hex/ui/pixel/pixel_assets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'shelf.dart';
 import 'package:hex/diner/diner_art.dart';
 import 'package:hex/diner/diner_painter.dart';
 import 'package:hex/diner/iso.dart';
@@ -401,6 +402,7 @@ void main() {
         tester.widget<CustomPaint>(boardKey).painter! as DinerPainter;
 
     Future<void> pickWall(WidgetTester tester) async {
+      await openShelf(tester, Kind.wall);
       final tile = find.byKey(const ValueKey('fixture-wall'));
       await tester.scrollUntilVisible(
         tile,

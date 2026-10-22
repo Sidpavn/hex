@@ -150,16 +150,49 @@ def edge_tiles():
 WALL_H = 40
 
 
-def wall_pieces():
-    wall = ramp('#a6e0d1')
-    trim = ramp('#fff3d6')
+# Wallpapers and floors the player can choose, besides the ones the diner
+# starts with: id, colours, and for walls a pattern. The ids are the ones in
+# lib/diner/styles.dart.
+WALL_STYLES = [
+    ('cream', '#f1e2c4', '#fff6e4', 'plain'),
+    ('sage', '#b7cfa4', '#f4f1dc', 'plain'),
+    ('rose', '#f0b0c0', '#fff0f2', 'plain'),
+    ('navy', '#5a6fa8', '#e8ecf6', 'plain'),
+    ('stripe', '#8fcfc8', '#fff3d6', 'stripe'),
+    ('brick', '#b5563f', '#e8d9c0', 'brick'),
+]
+FLOOR_STYLES = [
+    ('slate', '#a9b2c4', '#8d97ad'),
+    ('wood', '#c99a63', '#b3834d'),
+    ('checker', '#f4f1ea', '#3b3a46'),
+    ('terra', '#d98f6a', '#c47b57'),
+    ('mint', '#bfe6d8', '#a2d4c3'),
+]
+
+
+def wall_pieces(suffix='', wall_hex='#a6e0d1', trim_hex='#fff3d6',
+                pattern='plain'):
+    wall = ramp(wall_hex)
+    trim = ramp(trim_hex)
     rail = WOOD
 
     def wallpaper(a, z):
         # a = along-wall coordinate
         c = wall.left
-        if int(a) % 8 < 1:
-            c = wall.right
+        if pattern == 'stripe':
+            # wide bands of the colour and a paler one
+            if (int(a) // 3) % 2:
+                c = mix(c, trim.top, 0.6)
+        elif pattern == 'brick':
+            # courses of bricks, every other course shifted half a brick
+            row = int(z) // 4
+            if int(z) % 4 == 0 or (int(a) + 4 * (row % 2)) % 8 == 0:
+                c = mix(wall.hi, trim.top, 0.5)
+            elif (row * 5 + int(a) // 8) % 3 == 0:
+                c = wall.right
+        else:
+            if int(a) % 8 < 1:
+                c = wall.right
         if z > 28:
             c = mix(c, wall.hi, 0.35)
         return c
@@ -184,7 +217,7 @@ def wall_pieces():
         line(img, P(0, 16, WALL_H - 3), P(16, 16, WALL_H - 3), trim.hi)
         if deco:
             deco(img)
-        add(name, img)
+        add(name + suffix, img)
 
     def window(img):
         for (a0, a1) in ((3, 13),):
@@ -231,7 +264,7 @@ def wall_pieces():
         face_right(img, 16, 0, 16, WALL_H - 3, WALL_H, darker(trim.top, 0.2))
         if deco:
             deco(img)
-        add(name, img)
+        add(name + suffix, img)
 
     def window_b(img):
         a0, a1, z0, z1 = 3, 13, 17, 34
@@ -249,7 +282,7 @@ def wall_pieces():
     box(img, 10, 10, 16, 16, 0, WALL_H + 3, trim, edge=False)
     face_left(img, 10, 16, 16, 0, 2, WOOD_D.left)
     box(img, 9, 9, 17, 17, WALL_H + 3, WALL_H + 5, WOOD)
-    add('wall_corner', img)
+    add('wall_corner' + suffix, img)
 
 
 # -------------------------------------------------------------- fixtures
@@ -1792,6 +1825,33 @@ def emotes():
         rect(b, -1, 0, 2, 1, (255, 255, 255))
         return b
 
+    # a coin: they tipped
+    b = bubble()
+    ellipse(b, 0, -9, 4.2, 4.2, GOLD.base)
+    ellipse(b, 0, -9, 3.0, 3.0, GOLD.top)
+    rect(b, -1, -11, 2, 4, GOLD.right)
+    rect(b, -3, -11, 1, 1, (255, 252, 230))
+    b.outline(0.5)
+    add('emote_coin', b)
+
+    # three dots: given up on the queue
+    b = bubble()
+    for dx in (-4, -1, 2):
+        rect(b, dx, -9, 2, 2, hexc('#7a7488'))
+    b.outline(0.5)
+    add('emote_sigh', b)
+
+    # a green swirl: a table nobody cleared
+    b = bubble()
+    g = hexc('#58a85a')
+    rect(b, -4, -12, 6, 1, g)
+    rect(b, -5, -11, 1, 3, g)
+    rect(b, -4, -8, 6, 1, g)
+    rect(b, 2, -11, 1, 2, g)
+    rect(b, -2, -10, 3, 1, g)
+    b.outline(0.5)
+    add('emote_yuck', b)
+
     # oops: a sweat drop
     b = bubble()
     cx, cy = 0, -9
@@ -1966,12 +2026,20 @@ def window_front():
 def build():
     floor_tile('floor_a', CREAM, 1)
     floor_tile('floor_b', PEACH, 2)
+    for k, (sid, hex_a, hex_b) in enumerate(FLOOR_STYLES):
+        floor_tile(f'floor_a_s_{sid}', ramp(hex_a), 10 + k)
+        floor_tile(f'floor_b_s_{sid}', ramp(hex_b), 20 + k)
+    floor_tile('kitchen_a', ramp('#d3e4e6'), 3)
+    floor_tile('kitchen_b', ramp('#b3ccd2'), 4)
+    floor_tile('kitchenFloor', ramp('#d3e4e6'), 3)
     grass_tile('grass_a', 3)
     grass_tile('grass_b', 4, flowers=True)
     lot_tile()
     mat_tile()
     edge_tiles()
     wall_pieces()
+    for sid, wall_hex, trim_hex, pattern in WALL_STYLES:
+        wall_pieces(f'_s_{sid}', wall_hex, trim_hex, pattern)
     for f in FACINGS:
         counter(f)
         grill(f)

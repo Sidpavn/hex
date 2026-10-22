@@ -1,4 +1,5 @@
 import 'diner.dart';
+import 'styles.dart';
 
 /// The ground around the restaurant: what each tile is made of, and the
 /// street furniture standing on it. Pure data, so it can be tested without
@@ -130,8 +131,15 @@ const scenery = [
 /// (where guests queue), the kerb, two lanes of road, then the pavement on the
 /// far side. A side street runs up the right-hand side of the plot.
 String groundTile(Diner d, Cell c) {
-  if (d.isInside(c)) return (c.x + c.y).isEven ? 'floor_a' : 'floor_b';
-  if (d.isLocked(c)) return 'lot';
+  if (d.isInside(c)) {
+    final even = (c.x + c.y).isEven;
+    if (d.kitchen.contains(c)) return even ? 'kitchen_a' : 'kitchen_b';
+    final look = styleById(StyleKind.floor, d.floorStyle)?.suffix ?? '';
+    return even ? 'floor_a$look' : 'floor_b$look';
+  }
+  // Bare lot only where it can be bought; the rest of the plot is lawn until
+  // the sections in front of it are the restaurant's.
+  if (d.isLocked(c)) return d.forSale(c) ? 'lot' : _lawn(c);
   final row = c.y - d.bottom;
   final side = c.x - Diner.plotRight;
   if (row >= 1) {

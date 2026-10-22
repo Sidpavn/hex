@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'shelf.dart';
 import 'package:hex/data/storage.dart';
 import 'package:hex/diner/build_screen.dart';
 import 'package:hex/diner/diner.dart';
@@ -395,6 +396,7 @@ void main() {
       tester,
     ) async {
       await open(tester, level: 2);
+      await openShelf(tester, Kind.tv);
       final tile = find.byKey(const ValueKey('fixture-tv'));
       await tester.ensureVisible(tile);
       await tester.tap(tile);
@@ -404,6 +406,7 @@ void main() {
 
     testWidgets('picking it says what it does', (tester) async {
       await open(tester);
+      await openShelf(tester, Kind.tv);
       final tile = find.byKey(const ValueKey('fixture-tv'));
       await tester.ensureVisible(tile);
       await tester.tap(tile);

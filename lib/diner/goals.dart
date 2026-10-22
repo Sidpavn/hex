@@ -157,8 +157,8 @@ final List<Goal> goals = [
     120,
     (f) => f.day?.cateringState == ContractState.done,
     hint:
-        'Once your rating is 3.5 stars or more, some days bring a catering '
-        'order. Open it from the card above the shelf and choose who cooks it.',
+        'Some days bring a catering order. Open it from the card above the '
+        'shelf and choose who cooks it.',
   ),
   Goal(
     'vending',
@@ -230,6 +230,7 @@ extension GoalBook on Diner {
       if (goalsDone.contains(g.id) || !g.done(facts)) continue;
       goalsDone.add(g.id);
       coins += g.reward;
+      gems += Diner.goalGems;
       met.add(g);
     }
     return met;

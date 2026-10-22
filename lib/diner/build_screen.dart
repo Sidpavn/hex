@@ -12,6 +12,9 @@ import '../data/storage.dart';
 import '../ui/pixel_dialog.dart';
 import '../ui/widgets.dart';
 import 'clock.dart';
+import '../data/gem_shop.dart';
+import 'catalog.dart';
+import 'coach.dart';
 import 'contracts.dart';
 import 'city.dart';
 import 'diner.dart';
@@ -24,6 +27,9 @@ import 'goals.dart';
 import 'goals_screen.dart';
 import 'diner_art.dart';
 import 'diner_painter.dart';
+export 'diner_sprite.dart' show DinerSprite;
+import 'shelf_popup.dart';
+import 'style_popup.dart';
 import 'iso.dart';
 import 'menu_screen.dart';
 import 'money.dart';
@@ -66,7 +72,13 @@ String describeFixture(FixtureDef d, Progress p) {
 /// Where the player runs the restaurant: lay it out, open for the day, watch
 /// it run, then spend what was earned.
 class BuildScreen extends StatefulWidget {
-  const BuildScreen({super.key, this.diner, this.cloud, this.scores});
+  const BuildScreen({
+    super.key,
+    this.diner,
+    this.cloud,
+    this.scores,
+    this.gems,
+  });
 
   /// Start from this diner instead of the saved one (tests).
   final Diner? diner;
@@ -78,6 +90,9 @@ class BuildScreen extends StatefulWidget {
   /// Where the day's scores go (tests). By default the Play Games
   /// leaderboards on Android.
   final ScoreBoard? scores;
+
+  /// Where gems are bought (tests). By default Google Play.
+  final GemShop? gems;
 
   @override
   State<BuildScreen> createState() => _BuildScreenState();
@@ -111,6 +126,9 @@ class _BuildScreenState extends State<BuildScreen>
   final StaticLayer _layer = StaticLayer();
   final ToastQueue _toasts = ToastQueue();
   late final Ticker _ticker;
+
+  /// Tenths of a second since the screen opened, for the street's walkers.
+  final ValueNotifier<int> _stroll = ValueNotifier(0);
   Duration _last = Duration.zero;
   int _coins = 0;
 
@@ -142,6 +160,9 @@ class _BuildScreenState extends State<BuildScreen>
   /// ones chosen. [_op] says what is being aimed: a move or a copy. The ghost
   /// is where the group's middle would go, and [_gturns] how far it is turned.
   bool _selecting = false;
+
+  /// The group the build popup opened on last.
+  Category _shelfTab = Category.seating;
   final List<Placed> _group = [];
   _GroupOp _op = _GroupOp.none;
   int _gturns = 0;
@@ -157,6 +178,12 @@ class _BuildScreenState extends State<BuildScreen>
 
   /// The wall being carried to a new edge, while aiming.
   Edge? _wallFrom;
+
+  /// Painting kitchen floor: whether a touch takes it off instead, whether a
+  /// stroke has begun (so it is one undo), and the last tile it touched.
+  bool _erasing = false;
+  bool _stroke = false;
+  Cell? _lastPaint;
 
   /// Looking at the plot to choose a section to buy, and the one chosen.
   bool _expanding = false;
@@ -185,10 +212,16 @@ class _BuildScreenState extends State<BuildScreen>
   void initState() {
     super.initState();
     _coins = diner.coins;
+    // Gems that were paid for while no game was open, and any that arrive
+    // from now on.
+    diner.gems += _gemShop.takePending();
+    _gemShop.onGems = _onGems;
     Sound.instance.music(Music.build);
     WidgetsBinding.instance.addObserver(this);
     _ticker = createTicker((elapsed) {
       _now = elapsed;
+      final tenth = elapsed.inMilliseconds ~/ 100;
+      if (tenth != _stroll.value) _stroll.value = tenth;
       if (_flashStep > 0) {
         final step = (3 - (elapsed - _flashAt).inMilliseconds ~/ 100).clamp(
           0,
@@ -258,7 +291,9 @@ class _BuildScreenState extends State<BuildScreen>
     _lastBackup = DateTime.fromMillisecondsSinceEpoch(0);
     _backUp();
     _ticker.dispose();
+    if (identical(_gemShop.onGems, _onGems)) _gemShop.onGems = null;
     clock.dispose();
+    _stroll.dispose();
     _layer.dispose();
     super.dispose();
   }
@@ -282,10 +317,78 @@ class _BuildScreenState extends State<BuildScreen>
 
   void _changed() {
     _revision++;
+    _coachTo(Coach.startDay);
     _checkGoals();
     sim.layoutChanged();
     _save(_savedAt);
   }
+
+  // ------------------------------------------------------------ the tips
+
+  /// The tip showing now, if the game is on the first day's tips and the
+  /// screen is the one the tip is about.
+  Coach? get _coachNow {
+    final i = diner.coach;
+    if (i < 0 || i >= Coach.values.length) return null;
+    final c = Coach.values[i];
+    final here = switch (_phase) {
+      Phase.build => CoachPhase.build,
+      Phase.service => CoachPhase.service,
+      Phase.summary => CoachPhase.summary,
+    };
+    return c.phase == here && !_expanding ? c : null;
+  }
+
+  /// Moves the tips on to [to], if they have not got that far already.
+  void _coachTo(Coach to) {
+    if (diner.coach < 0 || diner.coach >= to.index) return;
+    diner.coach = to.index;
+    _unsaved = true;
+  }
+
+  /// Ends the tips for good.
+  void _coachEnd() {
+    if (diner.coach < 0) return;
+    setState(() => diner.coach = Coach.values.length);
+    _save(_savedAt);
+  }
+
+  /// The tip, on the board's lower edge: what to do now, and a way out.
+  Widget _coachCard(Coach c) => ConstrainedBox(
+    constraints: const BoxConstraints(maxWidth: 300),
+    child: PixelBox(
+      key: const ValueKey('coach-card'),
+      color: Pal.panel,
+      border: Pal.gold,
+      padding: const EdgeInsets.all(8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          PxText(
+            c.text,
+            key: const ValueKey('coach-text'),
+            style: const TextStyle(color: Pal.text, fontSize: 14),
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: SizedBox(
+              width: 120,
+              child: GoldButton(
+                key: const ValueKey('coach-skip'),
+                label: 'Skip tips',
+                compact: true,
+                filled: false,
+                color: Pal.dim,
+                onTap: _coachEnd,
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 
   // ------------------------------------------------------------- the day
 
@@ -299,6 +402,7 @@ class _BuildScreenState extends State<BuildScreen>
       _guestSel = null;
       _toasts.clear();
       _phase = Phase.service;
+      _coachTo(Coach.watch);
       _speed = 1;
       _k = null;
       _focus = null;
@@ -376,11 +480,13 @@ class _BuildScreenState extends State<BuildScreen>
     }
     _dayEndSounds(report);
     _postScores(report);
+    diner.gems += report.levelsGained * Diner.levelGems;
     setState(() {
       _checkGoals(report);
       _save(_savedAt);
       _report = report;
       _phase = Phase.summary;
+      _coachTo(Coach.nextDay);
       _revision++;
     });
     _syncQuietly();
@@ -420,6 +526,7 @@ class _BuildScreenState extends State<BuildScreen>
 
   void _nextDay() {
     setState(() {
+      if (diner.coach >= 0) diner.coach = Coach.values.length;
       sim = DinerSim(diner);
       _toasts.clear();
       _cloudNote = '';
@@ -554,7 +661,11 @@ class _BuildScreenState extends State<BuildScreen>
       _facingAuto = true;
       _note = '';
       _wallSel = null;
-      if (_onEdge(kind)) {
+      if (kind == Kind.kitchenFloor) {
+        _hover = null;
+        _erasing = false;
+        _note = '';
+      } else if (_onEdge(kind)) {
         _hover = null;
         _edge = _defaultEdge(kind);
       } else {
@@ -879,6 +990,41 @@ class _BuildScreenState extends State<BuildScreen>
     });
   }
 
+  /// Lays or takes off kitchen floor on [c] as a finger passes over it.
+  void _paint(Cell c) {
+    if (c == _lastPaint) return;
+    _lastPaint = c;
+    setState(() {
+      if (_erasing) {
+        if (!diner.kitchen.contains(c)) return;
+        if (!_stroke) diner.remember('Removed kitchen floor');
+        _stroke = true;
+        diner.eraseKitchen(c);
+      } else {
+        final r = diner.checkKitchen(c);
+        if (r != PlaceResult.ok) {
+          if (r != PlaceResult.taken) {
+            _note = r.message;
+            Sound.instance.play(Sfx.no);
+          }
+          return;
+        }
+        if (!_stroke) diner.remember('Kitchen floor');
+        _stroke = true;
+        diner.paintKitchen(c);
+        _note = '';
+      }
+      _coins = diner.coins;
+      _changed();
+    });
+  }
+
+  void _endStroke() {
+    if (_stroke) Sound.instance.play(Sfx.place);
+    _stroke = false;
+    _lastPaint = null;
+  }
+
   void _sellWall() {
     final e = _wallSel;
     if (e == null) return;
@@ -1051,6 +1197,7 @@ class _BuildScreenState extends State<BuildScreen>
     final g = sim.guestAt(front) ?? sim.guestAt(exact) ?? sim.guestAt(near);
     setState(() {
       _guestSel = g;
+      if (g != null) _coachTo(Coach.nextDay);
       // No guest there: a tap on a table with a mess on it clears it.
       if (g == null) {
         sim.cleanAt(front);
@@ -1161,7 +1308,7 @@ class _BuildScreenState extends State<BuildScreen>
     if (!ok || !mounted) return;
     Storage.clearDiner();
     setState(() {
-      diner = Diner.starter();
+      diner = Diner.fresh();
       sim = DinerSim(diner);
       _clearEdit();
       _phase = Phase.build;
@@ -1340,6 +1487,14 @@ class _BuildScreenState extends State<BuildScreen>
           : 'Aim, then Put down. Rotate turns the group.';
     }
     final kind = _placing;
+    if (kind == Kind.kitchenFloor) {
+      return _erasing
+          ? 'Tap or drag over kitchen tiles to take them off. You get '
+                '${fixtureDefs[kind]!.refund} back for each.'
+          : 'Tap or drag over tiles to lay kitchen floor, '
+                '${fixtureDefs[kind]!.cost} a tile. Guests will not walk on '
+                'it.';
+    }
     if (_onEdge(kind)) {
       final r = _placeResult;
       if (r == null) {
@@ -1481,8 +1636,9 @@ class _BuildScreenState extends State<BuildScreen>
           _orderCard()!,
           const SizedBox(height: 12),
         ],
-        if (!_selecting) ...[_shelf(), const SizedBox(height: 12)],
-        if (editing)
+        if (editing && _placing == Kind.kitchenFloor)
+          ..._paintRows()
+        else if (editing)
           ..._placingRows(result, cost)
         else if (_selecting)
           ..._groupRows()
@@ -1565,26 +1721,82 @@ class _BuildScreenState extends State<BuildScreen>
     });
   }
 
-  /// The fixtures that can be bought, to pick one to place.
-  Widget _shelf() => SingleChildScrollView(
-    scrollDirection: Axis.horizontal,
-    child: Row(
+  GemShop get _gemShop => widget.gems ?? GemShop.instance;
+
+  void _onGems(int n) {
+    if (!mounted) return;
+    setState(() => diner.gems += n);
+    _save(_savedAt);
+  }
+
+  Future<void> _openGemShop() =>
+      popupPixel<void>(context, (_) => GemShopPopup(shop: _gemShop));
+
+  /// Opens the style popup: wallpapers and floors.
+  Future<void> _openStyle() async {
+    await popupPixel<void>(
+      context,
+      (_) => StylePopup(
+        diner: diner,
+        shop: _openGemShop,
+        onChanged: () {
+          setState(() => _revision++);
+          _save(_savedAt);
+        },
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
+  /// Opens the build popup, and starts placing whatever is chosen in it.
+  Future<void> _openShelf() async {
+    setState(() => _coachTo(Coach.place));
+    final kind = await popupPixel<Kind>(
+      context,
+      (_) => ShelfPopup(
+        diner: diner,
+        chosen: _placing,
+        start: _shelfTab,
+        onTab: (c) => _shelfTab = c,
+      ),
+    );
+    if (kind != null && mounted && kind != _placing) _pick(kind);
+  }
+
+  /// The controls while painting kitchen floor: paint or erase, and done.
+  List<Widget> _paintRows() => [
+    Row(
       children: [
-        for (final def in fixtureDefs.values)
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: _FixtureTile(
-              key: ValueKey('fixture-${def.kind.name}'),
-              def: def,
-              selected: _placing == def.kind,
-              affordable: diner.coins >= def.cost,
-              locked: def.unlock > diner.progress.level,
-              onTap: () => _pick(def.kind),
-            ),
+        Expanded(
+          child: GoldButton(
+            key: const ValueKey('paint-on'),
+            label: 'Paint',
+            filled: !_erasing,
+            color: Pal.text,
+            onTap: () => setState(() => _erasing = false),
           ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: GoldButton(
+            key: const ValueKey('paint-off'),
+            label: 'Erase',
+            filled: _erasing,
+            color: Pal.text,
+            onTap: () => setState(() => _erasing = true),
+          ),
+        ),
       ],
     ),
-  );
+    const SizedBox(height: 8),
+    GoldButton(
+      key: const ValueKey('cancel-edit'),
+      label: 'Done',
+      filled: false,
+      color: Pal.dim,
+      onTap: _cancel,
+    ),
+  ];
 
   /// The controls while something is being aimed with the ghost: nudge it a
   /// tile, turn it, then put it down or be done.
@@ -1629,6 +1841,18 @@ class _BuildScreenState extends State<BuildScreen>
               onTap: _cancel,
             ),
           ),
+          if (!group && _moving == null) ...[
+            const SizedBox(width: 8),
+            Expanded(
+              child: GoldButton(
+                key: const ValueKey('another'),
+                label: 'Another',
+                filled: false,
+                color: Pal.text,
+                onTap: _openShelf,
+              ),
+            ),
+          ],
           const SizedBox(width: 8),
           Expanded(
             flex: 2,
@@ -1808,16 +2032,6 @@ class _BuildScreenState extends State<BuildScreen>
       const SizedBox(width: 8),
       Expanded(
         child: GoldButton(
-          key: const ValueKey('expand'),
-          label: 'Expand',
-          filled: false,
-          color: Pal.text,
-          onTap: _startExpanding,
-        ),
-      ),
-      const SizedBox(width: 8),
-      Expanded(
-        child: GoldButton(
           key: const ValueKey('upgrades'),
           label: 'Upgrades',
           filled: false,
@@ -1831,44 +2045,6 @@ class _BuildScreenState extends State<BuildScreen>
   Widget _bottomRow() => Row(
     children: [
       Expanded(
-        child: GoldButton(
-          key: const ValueKey('staff'),
-          // A red flag when tonight's wages are more than is in the till:
-          // the takings may still cover it, but it is worth a look.
-          label: diner.coins < diner.roster.wages ? 'Staff !' : 'Staff',
-          compact: true,
-          filled: false,
-          color: diner.coins < diner.roster.wages ? Pal.red : Pal.text,
-          onTap: _openStaff,
-        ),
-      ),
-      const SizedBox(width: 8),
-      Expanded(
-        child: GoldButton(
-          key: const ValueKey('menu'),
-          label: 'Menu',
-          compact: true,
-          filled: false,
-          color: Pal.text,
-          onTap: _openMenu,
-        ),
-      ),
-      const SizedBox(width: 8),
-      Expanded(
-        child: GoldButton(
-          key: const ValueKey('stats'),
-          label: 'Stats',
-          compact: true,
-          filled: false,
-          color: Pal.text,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(builder: (_) => StatsScreen(diner: diner)),
-          ),
-        ),
-      ),
-      const SizedBox(width: 8),
-      Expanded(
-        flex: 2,
         child: GoldButton(
           key: const ValueKey('start-day'),
           label: diner.takenContract != null && diner.closedForOrder
@@ -2271,7 +2447,8 @@ class _BuildScreenState extends State<BuildScreen>
         else if (r.levelsGained > 0)
           PxText(
             'Level ${progress.level}!'
-            '${unlocked.isEmpty ? '' : ' New: ${unlocked.join(', ')}.'}',
+            '${unlocked.isEmpty ? '' : ' New: ${unlocked.join(', ')}.'}'
+            ' +${r.levelsGained * Diner.levelGems} gems.',
             key: const ValueKey('level-line'),
             style: const TextStyle(color: Pal.gold, fontSize: 14),
           )
@@ -2364,14 +2541,7 @@ class _BuildScreenState extends State<BuildScreen>
   Widget _board(DinerArt art, BoxConstraints box) {
     final canvas = Size(box.maxWidth, box.maxHeight);
     final dpr = MediaQuery.of(context).devicePixelRatio;
-    final fit = BoardFit.of(
-      diner,
-      canvas,
-      dpr,
-      k: _k,
-      focus: _focus,
-      whole: _expanding,
-    );
+    final fit = BoardFit.of(diner, canvas, dpr, k: _k, focus: _focus);
     _fit = fit;
     _canvas = canvas;
     final s = fit.s;
@@ -2388,6 +2558,10 @@ class _BuildScreenState extends State<BuildScreen>
 
     void aim(Offset p) {
       if (!_aiming || !_building) return;
+      if (_placing == Kind.kitchenFloor) {
+        _paint(cellAt(p));
+        return;
+      }
       if (_onEdge(_placing)) {
         final e = fit.view.nearestEdge(p / s).edge;
         if (e != _edge) setState(() => _edge = e);
@@ -2479,7 +2653,10 @@ class _BuildScreenState extends State<BuildScreen>
                 _moveView(d, dpr);
               }
             },
+            onTapUp: (_) => _endStroke(),
+            onTapCancel: _endStroke,
             onScaleEnd: (_) {
+              _endStroke();
               _multi = false;
               setState(() => _gesturing = false);
             },
@@ -2518,6 +2695,7 @@ class _BuildScreenState extends State<BuildScreen>
                 showProblems: _building,
                 sim: sim,
                 clock: clock,
+                stroll: _stroll,
               ),
             ),
           ),
@@ -2526,13 +2704,16 @@ class _BuildScreenState extends State<BuildScreen>
           Positioned(left: 8, top: 8, child: ToastStack(toasts: _toasts.shown)),
         if (_phase == Phase.service && _guestSel != null && !_guestSel!.gone)
           Positioned(left: 8, bottom: 8, child: _guestCard(_guestSel!)),
+        if (_coachNow case final c?)
+          Positioned(left: 8, right: 56, bottom: 8, child: _coachCard(c)),
         if (_phase == Phase.build && _infoLine().isNotEmpty)
           Positioned(
-            left: 8,
+            // Beside the square buttons, not under them.
+            left: _railShown ? 68 : 8,
             top: 8,
             child: IgnorePointer(
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 232),
+                constraints: BoxConstraints(maxWidth: _railShown ? 176 : 232),
                 child: PixelBox(
                   key: const ValueKey('hint'),
                   color: Pal.panel,
@@ -2555,6 +2736,7 @@ class _BuildScreenState extends State<BuildScreen>
               ),
             ),
           ),
+        if (_railShown) Positioned(left: 8, top: 8, bottom: 8, child: _rail()),
         Positioned(
           right: 8,
           top: 8,
@@ -2572,6 +2754,64 @@ class _BuildScreenState extends State<BuildScreen>
                 onTap: fit.zoomed ? () => _zoomBy(-1) : null,
               ),
             ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  bool get _railShown =>
+      _phase == Phase.build && !_expanding && !_aiming && !_selecting;
+
+  /// Square buttons down the left of the board: what you do between days.
+  /// They wrap into a second column if the board is short.
+  Widget _rail() {
+    final wages = diner.coins < diner.roster.wages;
+    return Wrap(
+      direction: Axis.vertical,
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        _RailButton(
+          key: const ValueKey('build-mode'),
+          icon: 'hammer',
+          label: 'Build',
+          active: false,
+          hint: _coachNow == Coach.openBuild,
+          onTap: _openShelf,
+        ),
+        _RailButton(
+          key: const ValueKey('style'),
+          icon: 'brush',
+          label: 'Style',
+          onTap: _openStyle,
+        ),
+        _RailButton(
+          key: const ValueKey('expand'),
+          icon: 'expand',
+          label: 'Expand',
+          onTap: _startExpanding,
+        ),
+        _RailButton(
+          key: const ValueKey('menu'),
+          icon: 'scroll',
+          label: 'Menu',
+          onTap: _openMenu,
+        ),
+        _RailButton(
+          key: const ValueKey('staff'),
+          icon: 'people',
+          label: 'Staff',
+          // Tonight's wages are more than is in the till: worth a look.
+          warn: wages,
+          onTap: _openStaff,
+        ),
+        _RailButton(
+          key: const ValueKey('stats'),
+          icon: 'chart',
+          label: 'Stats',
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => StatsScreen(diner: diner)),
           ),
         ),
       ],
@@ -2616,6 +2856,64 @@ class _BuildScreenState extends State<BuildScreen>
   }
 }
 
+/// A square icon button with its name under it, on the board's edge.
+class _RailButton extends StatelessWidget {
+  const _RailButton({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.active = false,
+    this.warn = false,
+    this.hint = false,
+  });
+
+  final String icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool active;
+  final bool warn;
+
+  /// The tip is about this button: a gold border says so.
+  final bool hint;
+
+  @override
+  Widget build(BuildContext context) {
+    // The biggest whole multiple of the icon that leaves room for the name.
+    final mult = PixelUi.unit(context) * 24 <= 34 ? 2 : 1;
+    return Panel(
+      onTap: onTap,
+      glow: warn ? Pal.red : (active || hint ? Pal.gold : null),
+      padding: EdgeInsets.zero,
+      child: SizedBox(
+        width: 52,
+        height: 52,
+        child: Center(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Transform.scale(
+              scale: 1.2,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  PxIcon(icon, mult: mult),
+                  PxText(
+                    label,
+                    style: TextStyle(
+                      color: warn ? Pal.red : (active ? Pal.gold : Pal.dim),
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// A small square button over the board.
 class _ZoomButton extends StatelessWidget {
   const _ZoomButton({super.key, required this.label, required this.onTap});
@@ -2641,103 +2939,6 @@ class _ZoomButton extends StatelessWidget {
       ),
     );
   }
-}
-
-/// A fixture in the picker: its sprite and price.
-class _FixtureTile extends StatelessWidget {
-  const _FixtureTile({
-    super.key,
-    required this.def,
-    required this.selected,
-    required this.affordable,
-    required this.locked,
-    required this.onTap,
-  });
-
-  final FixtureDef def;
-  final bool selected;
-  final bool affordable;
-  final bool locked;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Panel(
-      onTap: onTap,
-      dim: (locked || !affordable) && !selected,
-      glow: selected ? Pal.gold : null,
-      padding: const EdgeInsets.all(6),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minWidth: 44, minHeight: 52),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              height: 44,
-              child: Align(
-                alignment: Alignment.bottomCenter,
-                child: DinerSprite(spriteName(def.kind, Dir.sw)),
-              ),
-            ),
-            const SizedBox(height: 4),
-            PxText(
-              locked ? ':lock: Lv ${def.unlock}' : ':coin: ${def.cost}',
-              style: TextStyle(
-                color: affordable && !locked ? Pal.text : Pal.dimmer,
-                fontSize: 13,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// A fixture's sprite for the picker: just the part with pixels in it, one
-/// art pixel per whole device-pixel multiple.
-class DinerSprite extends StatelessWidget {
-  const DinerSprite(this.name, {super.key, this.mult = 1});
-
-  final String name;
-
-  /// Whole-number size multiple.
-  final int mult;
-
-  @override
-  Widget build(BuildContext context) {
-    final art = DinerArt.instance;
-    if (art == null) return const SizedBox.shrink();
-    final spr = art.sprite(name);
-    final dpr = MediaQuery.of(context).devicePixelRatio;
-    final u = math.max(1, dpr.floor()) / dpr * mult;
-    return SizedBox(
-      width: spr.trim.width * u,
-      height: spr.trim.height * u,
-      child: CustomPaint(painter: _SpritePainter(spr)),
-    );
-  }
-}
-
-class _SpritePainter extends CustomPainter {
-  _SpritePainter(this.spr);
-
-  final Spr spr;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    canvas.drawImageRect(
-      spr.image,
-      spr.trim,
-      Offset.zero & size,
-      Paint()
-        ..filterQuality = FilterQuality.none
-        ..isAntiAlias = false,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _SpritePainter old) => old.spr != spr;
 }
 
 /// A small square button with an arrow pointing one way along the grid, which

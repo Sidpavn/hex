@@ -1,6 +1,7 @@
 // Who comes: gender, how much they spend, and what sells best.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hex/diner/contracts.dart';
 import 'package:hex/data/storage.dart';
 import 'package:hex/diner/build_screen.dart';
 import 'package:hex/diner/crowd.dart';
@@ -58,6 +59,11 @@ DinerSim play(Diner d, {int seed = 1}) {
 }
 
 void main() {
+  // The rating gate is off in the game for now; these tests are about the
+  // rule itself, so they run with it at the old 3.5.
+  setUp(() => ContractBook.minRating = 3.5);
+  tearDown(() => ContractBook.minRating = 0.0);
+
   group('gender', () {
     test('three, and most are women or men', () {
       expect(Gender.values.length, 3);

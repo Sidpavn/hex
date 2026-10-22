@@ -2,6 +2,9 @@ import 'dart:ui' show PictureRecorder;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'shelf.dart';
+import 'package:hex/diner/catalog.dart';
+import 'package:hex/diner/shelf_popup.dart' show FixtureTile;
 import 'package:hex/data/storage.dart';
 import 'package:hex/diner/build_screen.dart';
 import 'package:hex/diner/diner.dart';
@@ -14,6 +17,7 @@ import 'package:hex/main.dart';
 import 'package:hex/ui/pixel/pixel_assets.dart';
 
 void main() {
+  _railTests();
   final board = find.byKey(const ValueKey('diner-board'));
 
   Future<Diner> open(WidgetTester tester, {Diner? diner}) async {
@@ -70,10 +74,15 @@ void main() {
 
   testWidgets('the layout is locked while the diner is open', (tester) async {
     await open(tester);
+    await openShelf(tester, Kind.grill);
     expect(find.byKey(const ValueKey('fixture-grill')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('shelf-close')));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byKey(const ValueKey('shelf-popup')), findsNothing);
     await tester.tap(find.byKey(const ValueKey('start-day')));
     await tester.pump();
-    expect(find.byKey(const ValueKey('fixture-grill')), findsNothing);
+    expect(find.byKey(const ValueKey('build-mode')), findsNothing);
     expect(find.byKey(const ValueKey('rotate')), findsNothing);
     expect(find.byKey(const ValueKey('expand')), findsNothing);
     expect(find.byKey(const ValueKey('start-day')), findsNothing);
@@ -91,7 +100,7 @@ void main() {
       warnIfMissed: false,
     );
     await tester.pump();
-    expect(find.byKey(const ValueKey('fixture-grill')), findsOneWidget);
+    expect(find.byKey(const ValueKey('build-mode')), findsOneWidget);
     expect(find.textContaining('Closed:'), findsOneWidget);
   });
 
@@ -135,7 +144,9 @@ void main() {
 
   testWidgets('locked fixtures say what level unlocks them', (tester) async {
     final d = await open(tester);
+    await openShelf(tester, Kind.fryer);
     await tester.ensureVisible(find.byKey(const ValueKey('fixture-fryer')));
+    await openShelf(tester, Kind.fryer);
     await tester.tap(find.byKey(const ValueKey('fixture-fryer')));
     await tester.pump();
     expect(find.textContaining('unlocks at level 2'), findsOneWidget);
@@ -228,10 +239,10 @@ void main() {
     expect(find.byKey(const ValueKey('plot-detail')), findsOneWidget);
     expect(find.byKey(const ValueKey('done-expanding')), findsOneWidget);
     expect(find.byKey(const ValueKey('start-day')), findsNothing);
-    // The view pulls back to take in the whole plot.
+    // The view stays where it was: it does not pull back to the whole plot.
     final painter = tester.widget<CustomPaint>(board).painter! as DinerPainter;
     expect(painter.expanding, isTrue);
-    expect(fit(tester).view.height, greaterThan(before.view.height));
+    expect(fit(tester).view.height, before.view.height);
     await tester.tap(find.byKey(const ValueKey('done-expanding')));
     await beat(tester);
     expect(find.byKey(const ValueKey('start-day')), findsOneWidget);
@@ -342,6 +353,7 @@ void main() {
     tester,
   ) async {
     await open(tester);
+    await openShelf(tester, Kind.grill);
     expect(find.byKey(const ValueKey('fixture-grill')), findsOneWidget);
     await expand(tester);
     final painter = tester.widget<CustomPaint>(board).painter! as DinerPainter;
@@ -406,5 +418,118 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('start-day')));
     await tester.pump();
     expect(find.byKey(const ValueKey('goals')), findsNothing);
+  });
+}
+
+void _railTests() {
+  group('the buttons on the board edge', () {
+    testWidgets('are square, and Build opens and closes the shelf', (
+      tester,
+    ) async {
+      await tester.runAsync(() async {
+        await PixelAssets.load();
+        await DinerArt.load();
+      });
+      Storage.clearMemory();
+      tester.view.physicalSize = const Size(1170, 2532);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        HexApp(home: BuildScreen(diner: Diner.starter())),
+      );
+      await tester.pump();
+      for (final k in const [
+        'build-mode',
+        'expand',
+        'menu',
+        'staff',
+        'stats',
+      ]) {
+        final size = tester.getSize(find.byKey(ValueKey(k)));
+        // The box has a one-pixel lip along its bottom edge.
+        expect(size.width, closeTo(size.height, 3), reason: k);
+      }
+      expect(find.byKey(const ValueKey('shelf-popup')), findsNothing);
+    });
+
+    testWidgets('Build opens a popup in groups, and picking one closes it', (
+      tester,
+    ) async {
+      await tester.runAsync(() async {
+        await PixelAssets.load();
+        await DinerArt.load();
+      });
+      Storage.clearMemory();
+      tester.view.physicalSize = const Size(1170, 2532);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      final d = Diner.starter();
+      await tester.pumpWidget(HexApp(home: BuildScreen(diner: d)));
+      await tester.pump();
+      await openShelf(tester);
+      expect(find.byKey(const ValueKey('shelf-popup')), findsOneWidget);
+      // One group at a time: seating first, no machines yet.
+      expect(find.byKey(const ValueKey('fixture-chair')), findsOneWidget);
+      expect(find.byKey(const ValueKey('fixture-grill')), findsNothing);
+      for (final c in Category.values) {
+        expect(find.byKey(ValueKey('shelf-tab-${c.name}')), findsOneWidget);
+      }
+      await tester.tap(find.byKey(const ValueKey('shelf-tab-kitchen')));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('fixture-grill')), findsOneWidget);
+      expect(find.byKey(const ValueKey('fixture-chair')), findsNothing);
+      // Every kind can be found in some group.
+      var seen = 0;
+      for (final c in Category.values) {
+        await tester.tap(find.byKey(ValueKey('shelf-tab-${c.name}')));
+        await tester.pump();
+        seen += find.byType(FixtureTile).evaluate().length;
+      }
+      expect(seen, fixtureDefs.length);
+      await tester.tap(find.byKey(const ValueKey('shelf-tab-kitchen')));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('fixture-grill')));
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.byKey(const ValueKey('shelf-popup')), findsNothing);
+      final painter =
+          tester
+                  .widget<CustomPaint>(
+                    find.byKey(const ValueKey('diner-board')),
+                  )
+                  .painter!
+              as DinerPainter;
+      expect(painter.placing, Kind.grill);
+      // Another reopens it where it was left.
+      await tester.tap(find.byKey(const ValueKey('another')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.byKey(const ValueKey('fixture-grill')), findsOneWidget);
+    });
+
+    testWidgets('go away while placing and while the day runs', (tester) async {
+      await tester.runAsync(() async {
+        await PixelAssets.load();
+        await DinerArt.load();
+      });
+      Storage.clearMemory();
+      tester.view.physicalSize = const Size(1170, 2532);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        HexApp(home: BuildScreen(diner: Diner.starter())),
+      );
+      await tester.pump();
+      await openShelf(tester, Kind.grill);
+      await tester.tap(find.byKey(const ValueKey('fixture-grill')));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.byKey(const ValueKey('build-mode')), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('cancel-edit')));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('build-mode')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('start-day')));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('build-mode')), findsNothing);
+    });
   });
 }

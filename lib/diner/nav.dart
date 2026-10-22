@@ -16,10 +16,12 @@ bool canStep(Diner d, Cell a, Cell b) {
 /// Shortest walk from [from] to [to], not including [from], or null if there
 /// is none. [to] may be a cell nobody can normally stand on (a chair), and
 /// [from] may be too (the chair someone is leaving). The pavement outside the
-/// door counts as walkable.
-List<Cell>? route(Diner d, Cell from, Cell to) {
+/// door counts as walkable. A [guest] does not cross kitchen floor.
+List<Cell>? route(Diner d, Cell from, Cell to, {bool guest = false}) {
   if (from == to) return const [];
-  bool open(Cell c) => c == to || d.isSidewalk(c) || d.walkable(c);
+  bool open(Cell c) =>
+      !(guest && d.kitchen.contains(c)) &&
+      (c == to || d.isSidewalk(c) || d.walkable(c));
   final parent = <Cell, Cell>{};
   final seen = {from};
   final queue = [from];
@@ -43,10 +45,15 @@ List<Cell>? route(Diner d, Cell from, Cell to) {
 }
 
 /// The cheapest of [spots] to walk to from [from], with the route there.
-(Cell, List<Cell>)? nearest(Diner d, Cell from, Iterable<Cell> spots) {
+(Cell, List<Cell>)? nearest(
+  Diner d,
+  Cell from,
+  Iterable<Cell> spots, {
+  bool guest = false,
+}) {
   (Cell, List<Cell>)? best;
   for (final spot in spots) {
-    final r = route(d, from, spot);
+    final r = route(d, from, spot, guest: guest);
     if (r == null) continue;
     if (best == null || r.length < best.$2.length) best = (spot, r);
   }

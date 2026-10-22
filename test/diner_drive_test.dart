@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'shelf.dart';
 import 'package:hex/data/storage.dart';
 import 'package:hex/diner/build_screen.dart';
 import 'package:hex/diner/city.dart';
@@ -699,7 +700,9 @@ void main() {
       final d = withWindow();
       d.items.removeWhere((p) => p.kind == Kind.window);
       await open(tester, d);
+      await openShelf(tester, Kind.window);
       await tester.ensureVisible(find.byKey(const ValueKey('fixture-window')));
+      await openShelf(tester, Kind.window);
       await tester.tap(find.byKey(const ValueKey('fixture-window')));
       await tester.pump();
       expect(find.textContaining('Tap the right-hand wall'), findsOneWidget);

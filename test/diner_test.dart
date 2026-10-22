@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'shelf.dart';
 import 'package:hex/data/storage.dart';
 import 'package:hex/diner/build_screen.dart';
 import 'package:hex/diner/diner.dart';
@@ -335,7 +336,9 @@ void main() {
     await tester.pumpWidget(HexApp(home: BuildScreen(diner: diner)));
     await tester.pump();
 
+    await openShelf(tester, Kind.table);
     await tester.ensureVisible(find.byKey(const ValueKey('fixture-table')));
+    await openShelf(tester, Kind.table);
     await tester.tap(find.byKey(const ValueKey('fixture-table')));
     await tester.pump();
 

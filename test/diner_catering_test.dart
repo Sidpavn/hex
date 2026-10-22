@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hex/data/storage.dart';
 import 'package:hex/diner/build_screen.dart';
 import 'package:hex/diner/contracts.dart';
+import 'package:hex/diner/stats_screen.dart' show cateringLine;
 import 'package:hex/diner/diner.dart';
 import 'package:hex/diner/diner_art.dart';
 import 'package:hex/diner/goals.dart';
@@ -83,6 +84,11 @@ Contract order({
 );
 
 void main() {
+  // The rating gate is off in the game for now; these tests are about the
+  // rule itself, so they run with it at the old 3.5.
+  setUp(() => ContractBook.minRating = 3.5);
+  tearDown(() => ContractBook.minRating = 0.0);
+
   group('the offers', () {
     test('none on day one, and none below three and a half stars', () {
       expect(ContractBook.offerFor(1, cafe(level: 6, day: 1)), isNull);
@@ -103,6 +109,16 @@ void main() {
       }
       expect(at, greaterThan(40));
       expect(above, at, reason: 'the same days once past the line');
+    });
+
+    test('with the gate off, a poor restaurant gets offers too', () {
+      ContractBook.minRating = 0.0;
+      var got = 0;
+      for (var n = 2; n < 100; n++) {
+        if (ContractBook.offerFor(n, cafe(day: n, rep: 20)) != null) got++;
+      }
+      expect(got, greaterThan(10));
+      expect(cateringLine(1.0), 'Catering orders come on some days.');
     });
 
     test('a level does not matter, only the rating', () {

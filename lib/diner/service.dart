@@ -77,6 +77,15 @@ class Person {
 
   void face(Cell target) => dir = Dir.between(cell, target) ?? dir;
 
+  /// A little picture over their head for a few ticks after something happens.
+  String? emote;
+  int emoteLeft = 0;
+
+  void feel(String what, [int ticks = 8]) {
+    emote = what;
+    emoteLeft = ticks;
+  }
+
   /// Takes one step along [path]. False if there is nowhere to go.
   bool step() {
     prev = cell;
@@ -322,20 +331,11 @@ class Worker extends Person {
   /// Ticks left on whatever they are doing with their hands.
   int busy = 0;
 
-  /// A little picture over their head for a few ticks after something happens.
-  String? emote;
-  int emoteLeft = 0;
-
   /// Teammates who help everyone along, as a multiple of their pace.
   double paceMul = 1;
 
   /// Plates served today.
   int platesToday = 0;
-
-  void feel(String what, [int ticks = 8]) {
-    emote = what;
-    emoteLeft = ticks;
-  }
 
   /// Part of a tile walked but not yet stepped, and part of a tick of
   /// handling not yet spent.
@@ -1258,8 +1258,8 @@ class DinerSim {
     }
     pops.removeWhere((p) => p.age > 4);
 
-    for (final w in workers) {
-      if (w.emoteLeft > 0 && --w.emoteLeft == 0) w.emote = null;
+    for (final p in [...workers, ...guests]) {
+      if (p.emoteLeft > 0 && --p.emoteLeft == 0) p.emote = null;
     }
     if (ticks == 1) {
       _opening();
@@ -1624,6 +1624,7 @@ class DinerSim {
       }
       queueFull++;
       _missed(g);
+      g.feel('emote_sigh', 10);
       g
         ..passerby = true
         ..state = GuestState.leaving
@@ -1674,9 +1675,9 @@ class DinerSim {
       final slot = diner.queueSlot(i);
       if (g.slot != i) {
         g.slot = i;
-        g.path = route(diner, g.cell, slot) ?? [];
+        g.path = route(diner, g.cell, slot, guest: true) ?? [];
       } else if (g.cell != slot && g.path.isEmpty) {
-        g.path = route(diner, g.cell, slot) ?? [];
+        g.path = route(diner, g.cell, slot, guest: true) ?? [];
       }
     }
     if (_queue.isEmpty) return;
@@ -1697,7 +1698,7 @@ class DinerSim {
     // The nearest free seat to the door.
     (Seat, List<Cell>)? best;
     for (final s in free) {
-      final r = route(diner, head.cell, s.cell);
+      final r = route(diner, head.cell, s.cell, guest: true);
       if (r != null && (best == null || r.length < best.$2.length)) {
         best = (s, r);
       }
@@ -1741,6 +1742,7 @@ class DinerSim {
               ..grumpy = true
               ..patienceMax = (g.patienceMax * messPatience).round();
             g.patience = g.patienceMax;
+            g.feel('emote_yuck', 10);
             _tell(
               _say([
                 '{a} sat down at a table nobody had cleared.',
@@ -1839,7 +1841,7 @@ class DinerSim {
     (CounterState, Cell, List<Cell>)? best;
     var bestCost = 1 << 30;
     for (final c in counters) {
-      final spot = nearest(diner, g.cell, diner.useCells(c.at));
+      final spot = nearest(diner, g.cell, diner.useCells(c.at), guest: true);
       if (spot == null) continue;
       final cost = spot.$2.length + c.line.length * 3;
       if (cost < bestCost) {
@@ -1969,6 +1971,7 @@ class DinerSim {
     earned += total;
     tips += g.tip;
     cues.add(g.tip > 0 && g.tip * 4 >= total ? Cue.paidWell : Cue.paid);
+    if (g.tip > 0) g.feel('emote_coin', 10);
     served++;
     g.tallied = true;
     final bought = <Dish, (int, int)>{};
@@ -2026,7 +2029,7 @@ class DinerSim {
     }
     // Off along the pavement, one way or the other.
     final exit = g.id.isEven ? diner.arrivalLeft : diner.arrivalRight;
-    final way = route(diner, g.cell, exit);
+    final way = route(diner, g.cell, exit, guest: true);
     if (way == null) {
       g
         ..cell = exit
@@ -2502,6 +2505,8 @@ class DinerSim {
     g
       ..state = GuestState.eating
       ..timer = Pace.eat + 3 * (delivered.length - 1);
+    // Pleased with the food, if it came quickly enough to be worth a tip.
+    if (g.tipExact > 0 && !g.grumpy) g.feel('emote_heart', 10);
   }
 
   /// The name of the main thing a guest ordered, for the story.
@@ -2906,7 +2911,11 @@ class DinerSim {
   /// there is nothing to tell them apart by.
   Cell? _kitchenSide(PassShelf p) {
     final sides = diner.hatchSides(p.edge);
-    if (sides.length < 2 || machines.isEmpty) return null;
+    if (sides.length < 2) return null;
+    // Kitchen floor says it outright.
+    final laid = sides.where(diner.kitchen.contains).toList();
+    if (laid.length == 1) return laid.single;
+    if (machines.isEmpty) return null;
     int far(Cell c) => machines
         .map((m) => (m.at.at.x - c.x).abs() + (m.at.at.y - c.y).abs())
         .reduce(math.min);
@@ -3577,7 +3586,7 @@ class DinerSim {
               ? 'warn'
               : g.rushed
               ? 'emote_star'
-              : null,
+              : g.emote,
           items: waiting && !g.angry
               ? [for (final i in g.unfinished) i.dish.name]
               : const [],

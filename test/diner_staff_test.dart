@@ -8,7 +8,7 @@ import 'package:hex/diner/recipes.dart';
 import 'package:hex/diner/service.dart';
 import 'package:hex/diner/staff.dart';
 import 'package:hex/diner/traits.dart';
-import 'package:hex/ui/widgets.dart' show Pal;
+import 'package:hex/ui/widgets.dart' show Pal, PxText;
 import 'package:hex/main.dart';
 import 'package:hex/ui/pixel/pixel_assets.dart';
 
@@ -1120,14 +1120,25 @@ void main() {
     ) async {
       final short = Diner.starter()..coins = 3;
       await open(tester, short, staff: false);
-      expect(find.text('Staff !'), findsOneWidget);
+      final label = tester.widget<PxText>(
+        find.descendant(
+          of: find.byKey(const ValueKey('staff')),
+          matching: find.byType(PxText),
+        ),
+      );
+      expect(label.style!.color, Pal.red);
     });
 
     testWidgets('and is calm when the till is fine', (tester) async {
       final fine = Diner.starter()..coins = 500;
       await open(tester, fine, staff: false);
-      expect(find.text('Staff'), findsOneWidget);
-      expect(find.text('Staff !'), findsNothing);
+      final label = tester.widget<PxText>(
+        find.descendant(
+          of: find.byKey(const ValueKey('staff')),
+          matching: find.byType(PxText),
+        ),
+      );
+      expect(label.style!.color, isNot(Pal.red));
     });
 
     testWidgets('no warning when there is plenty', (tester) async {

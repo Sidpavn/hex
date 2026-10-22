@@ -4,6 +4,7 @@
 /// driven by the service sim.
 library;
 
+import 'styles.dart';
 import 'dart:math' as math;
 
 import 'contracts.dart';
@@ -155,6 +156,7 @@ enum Kind {
   rug,
   wall,
   pass,
+  kitchenFloor,
 }
 
 /// What a fixture does in the restaurant.
@@ -440,6 +442,18 @@ const Map<Kind, FixtureDef> fixtureDefs = {
         'out, so cooks need not leave their machines. It holds four dishes. '
         'Put it where a wall would go, with a free tile on a side.',
   ),
+  Kind.kitchenFloor: FixtureDef(
+    Kind.kitchenFloor,
+    'Kitchen floor',
+    4,
+    Role.decor,
+    floor: true,
+    unlock: 3,
+    info:
+        'Tiles for the kitchen. Staff walk on them; guests never do. Paint '
+        'a tile for each step, drag to paint more, and keep a way round to '
+        'every seat and counter.',
+  ),
 };
 
 /// One fixture standing on the grid. [at] is its top-left cell.
@@ -612,6 +626,7 @@ class LayoutStep {
     this.items, [
     this.walls = const [],
     this.hatches = const [],
+    this.kitchen = const [],
   ]);
 
   /// What was done, in a few words: "Placed grill".
@@ -620,6 +635,7 @@ class LayoutStep {
   final List<({int id, Kind kind, Cell at, Dir facing})> items;
   final List<Edge> walls;
   final List<Edge> hatches;
+  final List<Cell> kitchen;
 }
 
 class Diner {
@@ -630,6 +646,9 @@ class Diner {
 
   /// A small working diner: grill and counters along the back wall, two
   /// tables with a chair each, a plant.
+  /// A new game: the starter restaurant, with the first day's tips to follow.
+  factory Diner.fresh() => Diner.starter()..coach = 0;
+
   factory Diner.starter() {
     final d = Diner(coins: 120);
     d._put(Kind.grill, const Cell(left, top), Dir.sw);
@@ -689,6 +708,52 @@ class Diner {
   /// Every coin taken at the tills, over all the days played: what the
   /// total-coins leaderboard ranks. Older saves start from their history.
   int totalEarned = 0;
+
+  /// How far through the first day's tips (see `coach.dart`) this game is:
+  /// the index of the one showing, or -1 when there are none, which is every
+  /// game except a new one.
+  int coach = -1;
+
+  /// Gems given for each goal done, and for each level gained: a few free
+  /// ones, so looks are within reach of someone who never buys any.
+  static const goalGems = 2;
+  static const levelGems = 5;
+
+  /// Gems: the money for looks. Bought in packs, or given for a first goal
+  /// and each new level.
+  int gems = 0;
+
+  /// The paid-for wallpapers and floors the player owns, by id. The free ones
+  /// are always theirs.
+  final Set<String> ownedStyles = {};
+
+  /// The wallpaper and the floor in use.
+  String wallStyle = wallDefault;
+  String floorStyle = floorDefault;
+
+  /// Whether [s] can be used: free, or bought.
+  bool owns(Style s) =>
+      s.free || ownedStyles.contains('${s.kind.name}:${s.id}');
+
+  /// Spends gems on [s]. Refused if it is already owned or there are too few.
+  PlaceResult buyStyle(Style s) {
+    if (owns(s)) return PlaceResult.taken;
+    if (gems < s.gems) return PlaceResult.broke;
+    gems -= s.gems;
+    ownedStyles.add('${s.kind.name}:${s.id}');
+    return PlaceResult.ok;
+  }
+
+  /// Puts [s] on the walls or the floor, if it is owned.
+  bool useStyle(Style s) {
+    if (!owns(s)) return false;
+    if (s.kind == StyleKind.wall) {
+      wallStyle = s.id;
+    } else {
+      floorStyle = s.id;
+    }
+    return true;
+  }
 
   /// One-off tips already shown, so each is said once.
   final Set<String> hintsSeen = {};
@@ -911,6 +976,7 @@ class Diner {
         ],
         walls.toList(),
         hatches.toList(),
+        kitchen.toList(),
       ),
     );
     if (_undo.length > undoLimit) _undo.removeAt(0);
@@ -939,6 +1005,9 @@ class Diner {
     hatches
       ..clear()
       ..addAll(step.hatches);
+    kitchen
+      ..clear()
+      ..addAll(step.kitchen);
     coins = step.coins;
     return step.label;
   }
@@ -992,6 +1061,15 @@ class Diner {
         }
       }
     }
+  }
+
+  /// Whether [c] is in a section that could be bought now: the bare lot the
+  /// player can see to expand into. Other sections are not for sale yet.
+  bool forSale(Cell c) {
+    for (final i in nextPlots) {
+      if (plots[i].contains(c)) return true;
+    }
+    return false;
   }
 
   /// Whether [c] is on the plot but not yet the restaurant's.
@@ -1133,6 +1211,39 @@ class Diner {
   /// machine, counter, table or seat from the far side of one.
   final Set<Edge> walls = {};
 
+  /// The tiles laid as kitchen floor: staff walk on them, guests do not.
+  final Set<Cell> kitchen = {};
+
+  /// Whether a guest may step on [c]: not a kitchen tile.
+  bool guestWalkable(Cell c) => walkable(c) && !kitchen.contains(c);
+
+  /// Whether kitchen floor can go on [c]: a tile of the room that is not the
+  /// door, and not already kitchen. The price is not checked here.
+  PlaceResult checkKitchen(Cell c, {bool free = false}) {
+    final def = fixtureDefs[Kind.kitchenFloor]!;
+    if (def.unlock > progress.level && !free) return PlaceResult.locked;
+    if (!isInside(c)) return PlaceResult.outside;
+    if (c == entrance || kitchen.contains(c)) return PlaceResult.taken;
+    if (!free && coins < def.cost) return PlaceResult.broke;
+    return PlaceResult.ok;
+  }
+
+  /// Lays kitchen floor on [c]. The caller says [remember] once per stroke.
+  PlaceResult paintKitchen(Cell c) {
+    final r = checkKitchen(c);
+    if (r != PlaceResult.ok) return r;
+    coins -= fixtureDefs[Kind.kitchenFloor]!.cost;
+    kitchen.add(c);
+    return r;
+  }
+
+  /// Takes the kitchen floor off [c], giving back half. False if none.
+  bool eraseKitchen(Cell c) {
+    if (!kitchen.remove(c)) return false;
+    coins += fixtureDefs[Kind.kitchenFloor]!.refund;
+    return true;
+  }
+
   /// The walls that have a serving hatch in them. Each is one of [walls]: a
   /// hatch blocks walking like any wall, and plates are passed through it.
   final Set<Edge> hatches = {};
@@ -1261,12 +1372,13 @@ class Diner {
   }
 
   /// Every walkable cell reachable from the door.
-  Set<Cell> reachable() {
+  Set<Cell> reachable({bool guest = false}) {
     final seen = <Cell>{entrance};
     final todo = [entrance];
     while (todo.isNotEmpty) {
       final c = todo.removeLast();
       for (final n in c.neighbors) {
+        if (guest && kitchen.contains(n)) continue;
         if (canWalk(c, n) && seen.add(n)) todo.add(n);
       }
     }
@@ -1277,6 +1389,7 @@ class Diner {
   /// to walk up from.
   List<Seat> seats() {
     final out = <Seat>[];
+    final guestWay = kitchen.isEmpty ? null : reachable(guest: true);
     for (final p in ofRole(Role.seat)) {
       for (final c in p.cells) {
         final front = p.frontOf(c);
@@ -1284,6 +1397,8 @@ class Diner {
         // A wall between the seat and the table keeps them apart.
         if (wallBetween(c, front)) continue;
         if (approaches(c).isEmpty) continue;
+        // Guests do not cross the kitchen, so the way to it must be theirs.
+        if (guestWay != null && !approaches(c).any(guestWay.contains)) continue;
         out.add(Seat(c, front, p.facing));
       }
     }
@@ -1438,6 +1553,10 @@ class Diner {
             problems.add(
               Problem(p, '${p.def.name} needs a free tile in front'),
             );
+          } else if (p.def.role == Role.counter &&
+              kitchen.isNotEmpty &&
+              !useCells(p).any(reachable(guest: true).contains)) {
+            problems.add(Problem(p, 'Guests cannot get to the counter'));
           }
         case Role.window:
           if (operatorSpots.isEmpty) {
@@ -1519,7 +1638,9 @@ class Diner {
   }) {
     final def = fixtureDefs[kind]!;
     // Walls and passes stand between tiles now, not on one.
-    if (kind == Kind.wall || kind == Kind.pass) return PlaceResult.taken;
+    if (kind == Kind.wall || kind == Kind.pass || kind == Kind.kitchenFloor) {
+      return PlaceResult.taken;
+    }
     if (def.unlock > progress.level && !free) return PlaceResult.locked;
     final probe = Placed(0, kind, at, kind == Kind.window ? Dir.se : facing);
     for (final c in probe.cells) {
@@ -1920,6 +2041,11 @@ class Diner {
     'owned': owned.toList()..sort(),
     'goals': goalsDone.toList()..sort(),
     'hints': hintsSeen.toList()..sort(),
+    if (coach >= 0) 'coach': coach,
+    if (gems > 0) 'gems': gems,
+    if (ownedStyles.isNotEmpty) 'styles': ownedStyles.toList()..sort(),
+    if (wallStyle != wallDefault) 'wall': wallStyle,
+    if (floorStyle != floorDefault) 'floor': floorStyle,
     'earned': totalEarned,
     'supplier': supplier.name,
     'vend': vend.name,
@@ -1950,6 +2076,15 @@ class Diner {
     ],
     if (walls.isNotEmpty)
       'walls': [for (final e in walls.toList()..sort(_byPlace)) e.toJson()],
+    if (kitchen.isNotEmpty)
+      'kitchen': [
+        for (final c
+            in kitchen.toList()..sort((a, b) {
+              final y = a.y.compareTo(b.y);
+              return y != 0 ? y : a.x.compareTo(b.x);
+            }))
+          [c.x, c.y],
+      ],
     if (hatches.isNotEmpty)
       'hatches': [for (final e in hatches.toList()..sort(_byPlace)) e.toJson()],
   };
@@ -2029,6 +2164,24 @@ class Diner {
     d.vendCash = ((j['vendCash'] as int?) ?? 0).clamp(0, 100000);
     d.savedAt = (j['saved'] is int ? j['saved'] as int : 0).clamp(0, 1 << 52);
     d.regulars = RegularBook.fromJson(j['regulars']);
+    final gems = j['gems'];
+    if (gems is int && gems > 0) d.gems = gems;
+    final bought = j['styles'];
+    if (bought is List) {
+      for (final id in bought.whereType<String>()) {
+        final parts = id.split(':');
+        if (parts.length == 2 &&
+            styles.any((s) => s.kind.name == parts[0] && s.id == parts[1])) {
+          d.ownedStyles.add(id);
+        }
+      }
+    }
+    final wall = styleById(StyleKind.wall, '${j['wall']}');
+    if (wall != null) d.useStyle(wall);
+    final floor = styleById(StyleKind.floor, '${j['floor']}');
+    if (floor != null) d.useStyle(floor);
+    final coach = j['coach'];
+    if (coach is int) d.coach = coach;
     final hints = j['hints'];
     if (hints is List) d.hintsSeen.addAll(hints.whereType<String>());
     final log = j['history'];
@@ -2139,6 +2292,12 @@ class Diner {
     for (final raw in (j['walls'] as List?) ?? const []) {
       final e = Edge.fromJson(raw);
       if (e != null && d.isInside(e.a) && d.isInside(e.b)) d.walls.add(e);
+    }
+    for (final raw in (j['kitchen'] as List?) ?? const []) {
+      if (raw is List && raw.length == 2 && raw[0] is int && raw[1] is int) {
+        final c = Cell(raw[0] as int, raw[1] as int);
+        if (d.isInside(c) && c != d.entrance) d.kitchen.add(c);
+      }
     }
     for (final raw in (j['hatches'] as List?) ?? const []) {
       final e = Edge.fromJson(raw);

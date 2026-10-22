@@ -127,7 +127,8 @@ String busiestTime(Crowd c) {
 
 /// When catering orders come, and whether they are coming now.
 String cateringLine(double rating) {
-  const min = ContractBook.minRating;
+  final min = ContractBook.minRating;
+  if (min <= 0) return 'Catering orders come on some days.';
   return rating >= min
       ? 'Catering orders come to you at ${min.toStringAsFixed(1)} stars and '
             'above. Some days have one.'

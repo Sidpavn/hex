@@ -84,6 +84,19 @@ class Storage {
   // ───────────────────────── diner save ─────────────────────────
 
   /// How many games can be kept side by side.
+  /// Gems bought but not yet put in a save: the purchase went through while
+  /// no game was open, or before it could be written.
+  static int get pendingGems => (_get('pending_gems') as int?) ?? 0;
+  static set pendingGems(int n) => _put('pending_gems', n < 0 ? 0 : n);
+
+  /// The purchases already turned into gems, by order id, so the same one is
+  /// never paid twice when the store tells us again.
+  static Set<String> get creditedOrders => {
+    for (final o in (_get('gem_orders') as List? ?? const [])) '$o',
+  };
+  static set creditedOrders(Set<String> ids) =>
+      _put('gem_orders', ids.toList()..sort());
+
   static const slots = 3;
 
   /// Which game is being played, 1 to [slots]. The first uses the key every

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'shelf.dart';
 import 'package:hex/audio/sound.dart';
 import 'package:hex/data/save_sync.dart' show CloudStore;
 import 'package:hex/data/storage.dart';
@@ -482,7 +483,9 @@ void main() {
       final d = Diner.starter();
       d.coins = 100000;
       await show(tester, BuildScreen(diner: d));
+      await openShelf(tester, Kind.table);
       await tester.ensureVisible(find.byKey(const ValueKey('fixture-table')));
+      await openShelf(tester, Kind.table);
       await tester.tap(find.byKey(const ValueKey('fixture-table')));
       await tester.pump();
       expect(backend.played, contains(Sfx.tick));

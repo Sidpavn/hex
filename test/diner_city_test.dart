@@ -280,7 +280,9 @@ void main() {
         final d = Diner(coins: 0);
         expect(groundTile(d, const Cell(3, 5)), startsWith('floor'));
         expect(groundTile(d, const Cell(8, 5)), 'lot');
-        expect(groundTile(d, const Cell(3, -3)), 'lot');
+        expect(groundTile(d, const Cell(3, 0)), 'lot');
+        // Two sections back is not for sale yet: it is lawn like the rest.
+        expect(groundTile(d, const Cell(3, -3)), startsWith('grass'));
         expect(groundTile(d, const Cell(-3, 5)), 'lot');
         expect(groundTile(d, const Cell(-8, 5)), startsWith('concrete'));
         expect(

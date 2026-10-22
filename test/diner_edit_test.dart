@@ -2,6 +2,7 @@
 // what was done.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'shelf.dart';
 import 'package:hex/data/storage.dart';
 import 'package:hex/diner/build_screen.dart';
 import 'package:hex/diner/diner.dart';
@@ -367,6 +368,7 @@ void main() {
     }
 
     Future<void> pick(WidgetTester tester, String kind) async {
+      await openShelf(tester, Kind.values.byName(kind));
       final tile = find.byKey(ValueKey('fixture-$kind'));
       await tester.ensureVisible(tile);
       await tester.tap(tile);
@@ -789,7 +791,8 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('group-done')));
       await tester.pump();
       expect(painter(tester).group, isEmpty);
-      expect(find.byKey(const ValueKey('fixture-table')), findsOneWidget);
+      // Back to the board's own buttons.
+      expect(find.byKey(const ValueKey('build-mode')), findsOneWidget);
     });
 
     testWidgets('Done while aiming goes back to choosing, group kept', (

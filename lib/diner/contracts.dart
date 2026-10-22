@@ -95,8 +95,9 @@ class ContractBook {
   ContractBook._();
 
   /// Orders only come to a restaurant people think well of: this many stars
-  /// or more.
-  static const minRating = 3.5;
+  /// or more. Zero for now, so they can be tried from the first day; it was
+  /// 3.5.
+  static double minRating = 0.0;
 
   /// How likely a day is to have an offer.
   static const chance = 0.4;

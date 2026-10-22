@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'shelf.dart';
 import 'package:hex/data/storage.dart';
 import 'package:hex/diner/build_screen.dart';
 import 'package:hex/diner/diner.dart';
@@ -87,6 +88,7 @@ void main() {
       tester,
     ) async {
       final d = await open(tester, Diner.starter());
+      await openShelf(tester, Kind.grill);
       await tester.tap(find.byKey(const ValueKey('fixture-grill')));
       await tester.pump();
       final hint = find.byKey(const ValueKey('hint'));
@@ -106,7 +108,9 @@ void main() {
     ) async {
       final d = Diner.starter()..progress.level = 3;
       await open(tester, d);
+      await openShelf(tester, Kind.window);
       await tester.ensureVisible(find.byKey(const ValueKey('fixture-window')));
+      await openShelf(tester, Kind.window);
       await tester.tap(find.byKey(const ValueKey('fixture-window')));
       await tester.pump();
       final line = find.byKey(const ValueKey('info-line'));
