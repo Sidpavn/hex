@@ -394,7 +394,13 @@ void main() {
       await tester.tap(find.byKey(ValueKey('team-${s.id}')));
       await tester.pumpAndSettle();
       expect(find.text('Clears tables'), findsOneWidget);
-      await tester.tap(find.byKey(ValueKey('duty-${s.id}-table')));
+      // Turn on clearing, and turn off cooking and carrying, to keep them
+      // for the tables alone.
+      await tester.tap(find.byKey(ValueKey('task-${s.id}-clear')));
+      await tester.pump();
+      await tester.tap(find.byKey(ValueKey('cook-${s.id}-all')));
+      await tester.pump();
+      await tester.tap(find.byKey(ValueKey('task-${s.id}-serve')));
       await tester.pump();
       expect(s.duty, Kind.table);
       expect(find.textContaining('clears the tables'), findsOneWidget);

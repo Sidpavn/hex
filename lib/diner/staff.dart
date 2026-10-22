@@ -44,6 +44,9 @@ const Map<Stat, StatInfo> statInfo = {
 };
 
 /// One employee, or one candidate for a job.
+/// What a member of staff can be set to do besides cooking.
+enum Task { serve, clear, window }
+
 class Staff {
   Staff({
     required this.id,
@@ -63,14 +66,21 @@ class Staff {
     this.lastPay = Pay.none,
     Map<Dish, int>? mastery,
     this.specialty,
-    this.duty,
+    Kind? duty,
+    Set<Task>? tasks,
+    this.cooksAt,
+    this.focus,
     this.walkIn = false,
   }) : mastery = mastery ?? {},
        traits = traits ?? [],
        known = known ?? {},
        memories = memories ?? [],
        stats = Map.of(stats),
-       potential = Map.of(potential);
+       potential = Map.of(potential),
+       tasks = tasks ?? {Task.serve} {
+    // A person made with a single old-style duty.
+    if (duty != null) this.duty = duty;
+  }
 
   static const maxStat = 10;
   static const maxMorale = 3;
@@ -110,9 +120,61 @@ class Staff {
   /// The dish they came here knowing how to make, if any.
   final Dish? specialty;
 
-  /// The machine they prefer to work: they look after it first, and help
-  /// elsewhere when it needs nothing. Null means anywhere.
-  Kind? duty;
+  /// What they do besides cook: carry food out, clear tables, run the
+  /// takeaway window. Everyone starts by carrying food out.
+  Set<Task> tasks;
+
+  /// The machines they cook at. Null means every machine, including any
+  /// bought later; an empty set means they do not cook.
+  Set<Kind>? cooksAt;
+
+  /// The machine they look after first, and help elsewhere when it needs
+  /// nothing. Null means no preference.
+  Kind? focus;
+
+  /// Whether they cook at all.
+  bool get cooks => cooksAt == null || cooksAt!.isNotEmpty;
+
+  bool does(Task t) => tasks.contains(t);
+
+  /// Whether they may cook at a machine of [kind].
+  bool cooksAtKind(Kind kind) => cooksAt == null || cooksAt!.contains(kind);
+
+  /// The old single duty, for saves from before tasks and for short ways of
+  /// setting a person up: a machine they prefer, clearing tables, the window,
+  /// or serving food, or null for the usual work.
+  Kind? get duty {
+    if (tasks.length == 1 && cooksAt != null && cooksAt!.isEmpty) {
+      return switch (tasks.first) {
+        Task.clear => Kind.table,
+        Task.window => Kind.window,
+        Task.serve => Kind.pass,
+      };
+    }
+    return focus;
+  }
+
+  set duty(Kind? k) {
+    focus = null;
+    switch (k) {
+      case null:
+        tasks = {Task.serve};
+        cooksAt = null;
+      case Kind.table:
+        tasks = {Task.clear};
+        cooksAt = {};
+      case Kind.window:
+        tasks = {Task.window};
+        cooksAt = {};
+      case Kind.pass:
+        tasks = {Task.serve};
+        cooksAt = {};
+      default:
+        tasks = {Task.serve};
+        cooksAt = null;
+        focus = k;
+    }
+  }
 
   /// Dishes made to reach each level of mastery.
   static const masteryAt = [8, 25, 60];
@@ -283,7 +345,9 @@ class Staff {
     'pay': lastPay.name,
     'mastery': {for (final e in mastery.entries) e.key.name: e.value},
     'specialty': specialty?.name,
-    'duty': duty?.name,
+    'tasks': [for (final t in tasks) t.name],
+    if (cooksAt != null) 'cooks': [for (final k in cooksAt!) k.name],
+    if (focus != null) 'focus': focus!.name,
     if (walkIn) 'walkIn': true,
   };
 
@@ -337,7 +401,25 @@ class Staff {
       specialty: Dish.values
           .where((d) => d.name == raw['specialty'])
           .firstOrNull,
-      duty: Kind.values.where((k) => k.name == raw['duty']).firstOrNull,
+      // Older saves have one duty; newer ones have tasks and machines.
+      duty: raw['tasks'] is List
+          ? null
+          : Kind.values.where((k) => k.name == raw['duty']).firstOrNull,
+      tasks: raw['tasks'] is List
+          ? {
+              for (final n in raw['tasks'] as List)
+                ...Task.values.where((t) => t.name == n),
+            }
+          : null,
+      cooksAt: raw['tasks'] is List && raw['cooks'] is List
+          ? {
+              for (final n in raw['cooks'] as List)
+                ...Kind.values.where((k) => k.name == n),
+            }
+          : null,
+      focus: raw['tasks'] is List
+          ? Kind.values.where((k) => k.name == raw['focus']).firstOrNull
+          : null,
       walkIn: raw['walkIn'] == true,
     );
   }

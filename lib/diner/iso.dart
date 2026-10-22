@@ -63,6 +63,26 @@ class IsoView {
   Offset vertex(num x, num y) =>
       Offset(_ox + (x - y) * halfW, _oy + (x + y) * halfH);
 
+  /// The edge between tiles nearest a point on the board, and how far the
+  /// point is from it, in tiles (0 on it, a half at the middle of a tile).
+  ({Edge edge, double dist}) nearestEdge(Offset p) {
+    final dx = (p.dx - _ox) / halfW;
+    final dy = (p.dy - _oy) / halfH;
+    final u = (dy + dx) / 2;
+    final v = (dy - dx) / 2;
+    final x = u.floor();
+    final y = v.floor();
+    final fu = u - x;
+    final fv = v - y;
+    final options = [
+      (edge: Edge(x, y, true), dist: fv),
+      (edge: Edge(x, y + 1, true), dist: 1 - fv),
+      (edge: Edge(x, y, false), dist: fu),
+      (edge: Edge(x + 1, y, false), dist: 1 - fu),
+    ];
+    return options.reduce((a, b) => a.dist <= b.dist ? a : b);
+  }
+
   /// The cell under a point on the board.
   Cell cellAt(Offset p) {
     final dx = (p.dx - _ox) / halfW;

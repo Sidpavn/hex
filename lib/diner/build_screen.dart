@@ -40,6 +40,9 @@ import 'upgrade_screen.dart';
 /// once the doors open, you live with it.
 enum Phase { build, service, summary }
 
+/// Whether [kind] is put on an edge between tiles, not on a tile.
+bool _onEdge(Kind? kind) => kind == Kind.wall || kind == Kind.pass;
+
 /// What is being done to the selected group of fixtures.
 enum _GroupOp { none, move, copy }
 
@@ -146,6 +149,14 @@ class _BuildScreenState extends State<BuildScreen>
   /// Something is being aimed with the ghost: a new fixture, one being moved,
   /// or a group being moved or copied.
   bool get _aiming => _placing != null || _op != _GroupOp.none;
+
+  /// A wall stands on an edge between tiles. While one is being placed, the
+  /// edge it is aimed at; and a placed wall that has been tapped, to sell.
+  Edge? _edge;
+  Edge? _wallSel;
+
+  /// The wall being carried to a new edge, while aiming.
+  Edge? _wallFrom;
 
   /// Looking at the plot to choose a section to buy, and the one chosen.
   bool _expanding = false;
@@ -505,6 +516,9 @@ class _BuildScreenState extends State<BuildScreen>
 
   void _clearEdit() {
     _placing = null;
+    _edge = null;
+    _wallSel = null;
+    _wallFrom = null;
     _selected = null;
     _moving = null;
     _selecting = false;
@@ -522,6 +536,9 @@ class _BuildScreenState extends State<BuildScreen>
       _selected = null;
       _moving = null;
       _hover = null;
+      _edge = null;
+      _wallSel = null;
+      _wallFrom = null;
       if (_placing == kind) {
         _placing = null;
         _note = '';
@@ -536,7 +553,13 @@ class _BuildScreenState extends State<BuildScreen>
       _facing = Dir.sw;
       _facingAuto = true;
       _note = '';
-      _hover = _defaultSpot(kind);
+      _wallSel = null;
+      if (_onEdge(kind)) {
+        _hover = null;
+        _edge = _defaultEdge(kind);
+      } else {
+        _hover = _defaultSpot(kind);
+      }
       Sound.instance.play(Sfx.tick);
     });
   }
@@ -554,6 +577,13 @@ class _BuildScreenState extends State<BuildScreen>
   /// where the ghost is now. Null when there is no ghost.
   PlaceResult? get _placeResult {
     final kind = _placing;
+    if (_onEdge(kind)) {
+      if (_edge == null) return null;
+      if (_wallFrom != null) return diner.checkMove(_wallFrom!, _edge!);
+      return kind == Kind.pass
+          ? diner.checkHatch(_edge!)
+          : diner.checkWall(_edge!);
+    }
     final at = _hover;
     if (kind == null || at == null) return null;
     return diner.check(
@@ -563,6 +593,32 @@ class _BuildScreenState extends State<BuildScreen>
       ignore: _moving,
       free: _moving != null,
     );
+  }
+
+  /// Where to aim a wall to begin with: the free edge nearest the middle of
+  /// what is on screen.
+  Edge? _defaultEdge(Kind kind) {
+    final fit = _fit;
+    final centre = fit == null
+        ? const Cell(Diner.left + 3, Diner.top + 2)
+        : fit.view.cellAt(Offset(_canvas.width, _canvas.height) / 2 / fit.s);
+    Edge? best;
+    var bestD = 1 << 30;
+    for (final c in diner.insideCells()) {
+      final d = (c.x - centre.x).abs() + (c.y - centre.y).abs();
+      if (d >= bestD) continue;
+      for (final e in [Edge(c.x, c.y, true), Edge(c.x, c.y, false)]) {
+        final r = kind == Kind.pass
+            ? diner.checkHatch(e, free: true)
+            : diner.checkWall(e, free: true);
+        if (r == PlaceResult.ok) {
+          best = e;
+          bestD = d;
+          break;
+        }
+      }
+    }
+    return best;
   }
 
   /// Where to put the ghost to begin with: the free spot nearest the middle of
@@ -602,6 +658,15 @@ class _BuildScreenState extends State<BuildScreen>
     }
     final kind = _placing;
     if (kind == null) return;
+    if (_onEdge(kind)) {
+      final e = _edge;
+      if (e == null) return;
+      setState(() {
+        _edge = Edge(e.x + d.dx, e.y + d.dy, e.alongX);
+        _note = '';
+      });
+      return;
+    }
     setState(() {
       var at =
           (_hover ?? _defaultSpot(kind) ?? const Cell(Diner.left, Diner.top))
@@ -628,7 +693,11 @@ class _BuildScreenState extends State<BuildScreen>
         if (r == PlaceResult.ok) _changed();
       } else {
         final kind = _placing;
-        if (kind != null && fixtureDefs[kind]!.hung) {
+        if (_onEdge(kind)) {
+          // The other side of the same tile: the wall runs the other way.
+          final e = _edge;
+          if (e != null) _edge = Edge(e.x, e.y, !e.alongX);
+        } else if (kind != null && fixtureDefs[kind]!.hung) {
           _facing = _facing == Dir.sw ? Dir.se : Dir.sw;
           final at = _hover;
           _note = at != null && !diner.hangsKind(kind, at, _facing)
@@ -674,6 +743,10 @@ class _BuildScreenState extends State<BuildScreen>
   void _commit() {
     final at = _hover;
     final kind = _placing;
+    if (_onEdge(kind)) {
+      _commitWall();
+      return;
+    }
     setState(() {
       if (kind == null || at == null) return;
       final moving = _moving;
@@ -695,6 +768,131 @@ class _BuildScreenState extends State<BuildScreen>
         _note = result.message;
         Sound.instance.play(Sfx.no);
       }
+    });
+  }
+
+  /// Puts a wall on the edge aimed at, and aims at the next one along, so a
+  /// long wall is a run of taps.
+  void _commitWall() {
+    final e = _edge;
+    if (e == null) return;
+    final hatch = _placing == Kind.pass;
+    final from = _wallFrom;
+    if (from != null) {
+      setState(() {
+        final r = diner.moveWall(from, e);
+        if (r == PlaceResult.ok) {
+          _note = e == from ? '' : (hatch ? 'Pass moved' : 'Wall moved');
+          if (e != from) _changed();
+          Sound.instance.play(Sfx.place);
+          _wallFrom = null;
+          _placing = null;
+          _edge = null;
+          _wallSel = e;
+        } else {
+          _note = r == PlaceResult.blocksWay
+              ? 'That would block off the red tiles. Leave a way to walk through.'
+              : r.message;
+          Sound.instance.play(Sfx.no);
+        }
+      });
+      return;
+    }
+    setState(() {
+      final result = hatch ? diner.placeHatch(e) : diner.placeWall(e);
+      if (result == PlaceResult.ok) {
+        _note = hatch ? 'Pass placed' : 'Wall placed';
+        _coins = diner.coins;
+        _changed();
+        // A wall goes on to the next edge along; a pass is one of a kind.
+        if (!hatch) {
+          _edge = Edge(
+            e.x + (e.alongX ? 1 : 0),
+            e.y + (e.alongX ? 0 : 1),
+            e.alongX,
+          );
+        }
+        Sound.instance.play(hatch ? Sfx.thud : Sfx.place);
+      } else {
+        _note = result == PlaceResult.blocksWay
+            ? 'That would block off the red tiles. Leave a way to walk through.'
+            : result.message;
+        Sound.instance.play(Sfx.no);
+      }
+    });
+  }
+
+  /// A tap on the board when nothing is being aimed: a fixture, or a wall
+  /// nearest the finger, whichever is closer.
+  void _tapBoard(Offset p, Cell cell, IsoView view, double s) {
+    final near = view.nearestEdge(p / s);
+    final wall = diner.walls.contains(near.edge) && near.dist < 0.3;
+    final hit = diner.pickAt(cell);
+    if (wall && (hit == null || near.dist < 0.12)) {
+      setState(() {
+        _wallSel = near.edge;
+        _selected = null;
+        _note = '';
+      });
+      return;
+    }
+    setState(() => _wallSel = null);
+    _tapSelect(cell);
+  }
+
+  @visibleForTesting
+  void debugSelectWall(Edge e) => setState(() => _wallSel = e);
+
+  /// Turns the selected wall to run the other way round the same tile.
+  void _turnWall() {
+    final e = _wallSel;
+    if (e == null) return;
+    setState(() {
+      final to = Edge(e.x, e.y, !e.alongX);
+      final r = diner.moveWall(e, to);
+      if (r == PlaceResult.ok) {
+        _wallSel = to;
+        _note = '';
+        _changed();
+        Sound.instance.play(Sfx.place);
+      } else {
+        _note = r == PlaceResult.taken
+            ? 'There is a wall there already'
+            : r == PlaceResult.blocksWay
+            ? 'That would block off the red tiles'
+            : "It won't turn here";
+        Sound.instance.play(Sfx.no);
+      }
+    });
+  }
+
+  /// Picks the selected wall up, to put it on another edge.
+  void _moveWall() {
+    final e = _wallSel;
+    if (e == null) return;
+    setState(() {
+      _placing = diner.hatches.contains(e) ? Kind.pass : Kind.wall;
+      _wallFrom = e;
+      _edge = e;
+      _wallSel = null;
+      _note = '';
+    });
+  }
+
+  void _sellWall() {
+    final e = _wallSel;
+    if (e == null) return;
+    setState(() {
+      final hatch = diner.hatches.contains(e);
+      if (diner.sellWall(e)) {
+        _note =
+            '${hatch ? 'Pass' : 'Wall'} sold for '
+            '${fixtureDefs[hatch ? Kind.pass : Kind.wall]!.refund}';
+        _coins = diner.coins;
+        _changed();
+        Sound.instance.play(Sfx.coin);
+      }
+      _wallSel = null;
     });
   }
 
@@ -1114,6 +1312,14 @@ class _BuildScreenState extends State<BuildScreen>
   String _infoLine() {
     if (_note.isNotEmpty) return _note;
     final progress = diner.progress;
+    if (_wallSel != null) {
+      final hatch = diner.hatches.contains(_wallSel);
+      return hatch
+          ? 'A serving hatch. Sell it for ${fixtureDefs[Kind.pass]!.refund}, '
+                'or tap Done.'
+          : 'A low wall. Sell it for ${fixtureDefs[Kind.wall]!.refund}, or '
+                'tap Done.';
+    }
     final sel = _selected;
     if (sel != null) {
       final problem = sim.report.problemFor(sel);
@@ -1134,6 +1340,23 @@ class _BuildScreenState extends State<BuildScreen>
           : 'Aim, then Put down. Rotate turns the group.';
     }
     final kind = _placing;
+    if (_onEdge(kind)) {
+      final r = _placeResult;
+      if (r == null) {
+        return 'Tap near a tile edge to aim, then Place. It takes no floor '
+            'space.';
+      }
+      if (r == PlaceResult.blocksWay) {
+        return 'That would block off the red tiles. Leave a way to walk '
+            'through.';
+      }
+      if (r != PlaceResult.ok) return r.message;
+      if (_wallFrom != null) {
+        return 'Tap Place to move it here. Moving is free.';
+      }
+      return '${describeFixture(fixtureDefs[kind!]!, progress)} Tap Place '
+          'to put it down.';
+    }
     if (kind == Kind.window) {
       return 'Tap the right-hand wall where the window goes. Cars pull up in '
           'the side street outside.';
@@ -1264,7 +1487,12 @@ class _BuildScreenState extends State<BuildScreen>
         else if (_selecting)
           ..._groupRows()
         else ...[
-          if (sel != null) _selectedRow(sel) else _idleRow(),
+          if (sel != null)
+            _selectedRow(sel)
+          else if (_wallSel != null)
+            _wallRow()
+          else
+            _idleRow(),
           const SizedBox(height: 8),
           _bottomRow(),
         ],
@@ -1364,7 +1592,7 @@ class _BuildScreenState extends State<BuildScreen>
     final group = _op != _GroupOp.none;
     final label = group
         ? (_op == _GroupOp.move ? 'Put down' : 'Place  :coin: $cost')
-        : _moving != null
+        : _moving != null || _wallFrom != null
         ? 'Put down'
         : 'Place  :coin: $cost';
     return [
@@ -1474,7 +1702,7 @@ class _BuildScreenState extends State<BuildScreen>
 
   Widget _selectedRow(Placed sel) => Row(
     children: [
-      if (sel.def.turns) ...[
+      if (sel.def.rotates) ...[
         Expanded(
           child: GoldButton(
             key: const ValueKey('rotate'),
@@ -1515,6 +1743,52 @@ class _BuildScreenState extends State<BuildScreen>
           filled: false,
           color: Pal.dim,
           onTap: _sell,
+        ),
+      ),
+    ],
+  );
+
+  /// The controls for a wall that has been tapped.
+  Widget _wallRow() => Row(
+    children: [
+      Expanded(
+        child: GoldButton(
+          key: const ValueKey('wall-done'),
+          label: 'Done',
+          filled: false,
+          color: Pal.text,
+          onTap: () => setState(() => _wallSel = null),
+        ),
+      ),
+      const SizedBox(width: 8),
+      Expanded(
+        child: GoldButton(
+          key: const ValueKey('turn-wall'),
+          label: 'Rotate',
+          filled: false,
+          color: Pal.text,
+          onTap: _turnWall,
+        ),
+      ),
+      const SizedBox(width: 8),
+      Expanded(
+        child: GoldButton(
+          key: const ValueKey('move-wall'),
+          label: 'Move',
+          filled: false,
+          color: Pal.text,
+          onTap: _moveWall,
+        ),
+      ),
+      const SizedBox(width: 8),
+      Expanded(
+        child: GoldButton(
+          key: const ValueKey('sell-wall'),
+          label:
+              'Sell +${fixtureDefs[diner.hatches.contains(_wallSel) ? Kind.pass : Kind.wall]!.refund}',
+          filled: false,
+          color: Pal.dim,
+          onTap: _sellWall,
         ),
       ),
     ],
@@ -2114,6 +2388,11 @@ class _BuildScreenState extends State<BuildScreen>
 
     void aim(Offset p) {
       if (!_aiming || !_building) return;
+      if (_onEdge(_placing)) {
+        final e = fit.view.nearestEdge(p / s).edge;
+        if (e != _edge) setState(() => _edge = e);
+        return;
+      }
       var c = cellAt(p);
       if (_placing == Kind.window) {
         // The window only goes in the right-hand wall: wherever it is aimed,
@@ -2169,7 +2448,12 @@ class _BuildScreenState extends State<BuildScreen>
               } else if (_selecting && _op == _GroupOp.none) {
                 _toggleGroup(pickCell(d.localPosition));
               } else if (!_aiming) {
-                _tapSelect(pickCell(d.localPosition));
+                _tapBoard(
+                  d.localPosition,
+                  pickCell(d.localPosition),
+                  fit.view,
+                  s,
+                );
               } else {
                 aim(d.localPosition);
               }
@@ -2219,6 +2503,8 @@ class _BuildScreenState extends State<BuildScreen>
                 flash: _flashStep,
                 placing: _building ? _placing : null,
                 hover: _hover,
+                hoverEdge: _building && _onEdge(_placing) ? _edge : null,
+                selectedEdge: _building ? _wallSel : null,
                 guestSel: _phase == Phase.service ? _guestSel : null,
                 placeOk: _op != _GroupOp.none
                     ? _groupResult == PlaceResult.ok

@@ -296,56 +296,158 @@ class _PersonScreenState extends State<PersonScreen> {
     );
   }
 
-  /// Where on the team they work: anywhere, or one machine they look after.
+  /// What they do: which machines they cook at, whether they carry food out,
+  /// clear tables or run the window. Each one is a switch.
   Widget _work() {
-    final stations = <Kind>{
-      for (final p in diner.ofRole(Role.station)) p.kind,
-      if (diner.window != null) Kind.window,
-      if (diner.ofRole(Role.table).isNotEmpty) Kind.table,
-    }.toList();
-    final duty = s.duty != null && stations.contains(s.duty) ? s.duty : null;
-    void set(Kind? k) {
+    final machines = <Kind>[
+      for (final k in Kind.values)
+        if (diner.ofRole(Role.station).any((p) => p.kind == k)) k,
+    ];
+    final hasTables = diner.ofRole(Role.table).isNotEmpty;
+    final hasWindow = diner.window != null;
+
+    // The machines they cook at now, as a set: all of them when it is open.
+    Set<Kind> cooking() => s.cooksAt == null
+        ? machines.toSet()
+        : s.cooksAt!.where(machines.contains).toSet();
+
+    void save(void Function() change) {
       setState(() {
-        s.duty = k;
+        change();
         _note = '';
       });
       _save();
     }
 
-    final help = duty == null
-        ? '${s.name} helps wherever they are needed.'
-        : duty == Kind.table
-        ? '${s.name} clears the tables as guests leave. They do not cook.'
-        : duty == Kind.window
-        ? '${s.name} stays at the takeaway window and serves the cars. They '
-              'do not cook.'
-        : '${s.name} looks after the ${fixtureDefs[duty]!.name.toLowerCase()} '
-              'first, and helps elsewhere when it needs nothing.';
+    bool leavesNothing(Set<Task> tasks, Set<Kind>? cooks) =>
+        tasks.isEmpty && cooks != null && cooks.isEmpty;
+
+    void refuse() => setState(() => _note = 'Keep at least one thing on');
+
+    void cookAtAll() {
+      if (s.cooksAt == null) {
+        if (leavesNothing(s.tasks, {})) return refuse();
+        save(() => s.cooksAt = {});
+      } else {
+        save(() {
+          s.cooksAt = null;
+          s.tasks.remove(Task.window);
+        });
+      }
+      s.focus = null;
+    }
+
+    void cookAt(Kind k) {
+      final now = cooking();
+      final next = now.contains(k)
+          ? (now.toSet()..remove(k))
+          : (now.toSet()..add(k));
+      if (leavesNothing(s.tasks, next)) return refuse();
+      save(() {
+        // Every machine there is: the same as "all", so new ones are included.
+        s.cooksAt = next.length == machines.length ? null : next;
+        if (next.isNotEmpty) s.tasks.remove(Task.window);
+        s.focus = null;
+      });
+    }
+
+    void task(Task t) {
+      final on = s.tasks.contains(t);
+      if (on && leavesNothing(s.tasks.difference({t}), s.cooksAt)) {
+        return refuse();
+      }
+      save(() {
+        if (t == Task.window && !on) {
+          // The window is a job of its own.
+          s.tasks = {Task.window};
+          s.cooksAt = {};
+          s.focus = null;
+          return;
+        }
+        if (on) {
+          s.tasks = s.tasks.difference({t});
+        } else {
+          s.tasks = {...s.tasks, t}..remove(Task.window);
+        }
+      });
+    }
+
+    String names(Iterable<Kind> kinds) {
+      final list = [for (final k in kinds) fixtureDefs[k]!.name.toLowerCase()];
+      if (list.length <= 1) return list.join();
+      return '${list.sublist(0, list.length - 1).join(', ')} and ${list.last}';
+    }
+
+    final cook = cooking();
+    final parts = <String>[
+      if (s.does(Task.window))
+        'stays at the takeaway window and serves the cars'
+      else ...[
+        if (s.cooksAt == null)
+          'cooks at every machine'
+        else if (cook.isNotEmpty)
+          'cooks at the ${names(cook)}',
+        if (s.does(Task.serve)) 'carries food out to the tables',
+        if (s.does(Task.clear)) 'clears the tables',
+      ],
+    ];
+    final help = parts.isEmpty
+        ? '${s.name} does nothing. Turn something on.'
+        : '${s.name} ${parts.length == 1 ? parts.first : '${parts.sublist(0, parts.length - 1).join(', ')} and ${parts.last}'}.';
+
+    Widget group(String label, List<Widget> chips) => Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        PxText(label, style: const TextStyle(color: Pal.dim, fontSize: 14)),
+        const SizedBox(height: 4),
+        Wrap(spacing: 6, runSpacing: 6, children: chips),
+      ],
+    );
+
     return Panel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
+          if (machines.isNotEmpty) ...[
+            group('Cooks at', [
               Choice(
-                key: ValueKey('duty-${s.id}-anywhere'),
-                label: 'Anywhere',
-                selected: duty == null,
-                onTap: () => set(null),
+                key: ValueKey('cook-${s.id}-all'),
+                label: 'All machines',
+                selected: s.cooksAt == null,
+                onTap: cookAtAll,
               ),
-              for (final k in stations)
+              for (final k in machines)
                 Choice(
-                  key: ValueKey('duty-${s.id}-${k.name}'),
-                  label: k == Kind.table
-                      ? 'Clears tables'
-                      : fixtureDefs[k]!.name,
-                  selected: duty == k,
-                  onTap: () => set(k),
+                  key: ValueKey('cook-${s.id}-${k.name}'),
+                  label: fixtureDefs[k]!.name,
+                  selected: cook.contains(k),
+                  onTap: () => cookAt(k),
                 ),
-            ],
-          ),
+            ]),
+            const SizedBox(height: 8),
+          ],
+          group('Also', [
+            Choice(
+              key: ValueKey('task-${s.id}-serve'),
+              label: 'Serves food',
+              selected: s.does(Task.serve),
+              onTap: () => task(Task.serve),
+            ),
+            if (hasTables)
+              Choice(
+                key: ValueKey('task-${s.id}-clear'),
+                label: 'Clears tables',
+                selected: s.does(Task.clear),
+                onTap: () => task(Task.clear),
+              ),
+            if (hasWindow)
+              Choice(
+                key: ValueKey('task-${s.id}-window'),
+                label: 'Takeaway window',
+                selected: s.does(Task.window),
+                onTap: () => task(Task.window),
+              ),
+          ]),
           const SizedBox(height: 8),
           PxText(
             help,

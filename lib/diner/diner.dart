@@ -87,6 +87,55 @@ class Cell {
   String toString() => '($x,$y)';
 }
 
+/// The border between two touching cells, where a wall can stand. It is named
+/// by one cell and a side: with [alongX] it is the cell's north side, between
+/// (x, y - 1) and (x, y), and a wall there runs along x; without it, the
+/// west side, between (x - 1, y) and (x, y), and the wall runs along y.
+class Edge {
+  const Edge(this.x, this.y, this.alongX);
+
+  final int x;
+  final int y;
+  final bool alongX;
+
+  /// The cell on the north or west side of it, and the one the edge is named
+  /// for, on the other.
+  Cell get a => alongX ? Cell(x, y - 1) : Cell(x - 1, y);
+  Cell get b => Cell(x, y);
+
+  /// The edge between two touching cells, or null if they do not touch.
+  static Edge? between(Cell p, Cell q) {
+    if (p.x == q.x && (p.y - q.y).abs() == 1) {
+      return Edge(p.x, p.y > q.y ? p.y : q.y, true);
+    }
+    if (p.y == q.y && (p.x - q.x).abs() == 1) {
+      return Edge(p.x > q.x ? p.x : q.x, p.y, false);
+    }
+    return null;
+  }
+
+  List<int> toJson() => [x, y, alongX ? 1 : 0];
+
+  static Edge? fromJson(Object? j) {
+    if (j is! List || j.length != 3) return null;
+    final x = j[0];
+    final y = j[1];
+    final h = j[2];
+    if (x is! int || y is! int || (h != 0 && h != 1)) return null;
+    return Edge(x, y, h == 1);
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is Edge && other.x == x && other.y == y && other.alongX == alongX;
+
+  @override
+  int get hashCode => Object.hash(x, y, alongX);
+
+  @override
+  String toString() => 'Edge($x,$y,${alongX ? 'x' : 'y'})';
+}
+
 enum Kind {
   counter,
   grill,
@@ -97,12 +146,15 @@ enum Kind {
   freezer,
   window,
   table,
+  longTable,
   chair,
   bench,
   plant,
   jukebox,
   tv,
   rug,
+  wall,
+  pass,
 }
 
 /// What a fixture does in the restaurant.
@@ -122,6 +174,9 @@ enum Role {
   /// A hatch in the front wall where drivers are served from the street. An
   /// operator stands behind it.
   window,
+
+  /// Where cooks put finished dishes for the servers to carry out.
+  pass,
 
   /// Looks nice; does nothing.
   decor,
@@ -202,9 +257,15 @@ class FixtureDef {
   /// What it does for the seats near it, if anything.
   final Aura? aura;
 
+  /// Whether the Rotate button does anything to it.
+  bool get rotates => turns;
+
   /// Whether it has a front that matters.
   bool get turns =>
-      hung || (role != Role.decor && role != Role.table && role != Role.window);
+      hung ||
+      (role != Role.decor && role != Role.table && role != Role.window) ||
+      // A table two tiles long lies one way or the other.
+      (role == Role.table && w != h);
 
   int get refund => cost ~/ 2;
 }
@@ -290,6 +351,17 @@ const Map<Kind, FixtureDef> fixtureDefs = {
     Role.table,
     info: 'Guests eat here. It needs a chair or bench facing it.',
   ),
+  Kind.longTable: FixtureDef(
+    Kind.longTable,
+    'Long table',
+    50,
+    Role.table,
+    w: 2,
+    unlock: 2,
+    info:
+        'Two tiles long, for a bench: every guest on the bench has table '
+        'in front of them. Turn it to lie beside the bench.',
+  ),
   Kind.chair: FixtureDef(
     Kind.chair,
     'Chair',
@@ -343,6 +415,30 @@ const Map<Kind, FixtureDef> fixtureDefs = {
     Role.decor,
     floor: true,
     info: 'Just for looks.',
+  ),
+  Kind.wall: FixtureDef(
+    Kind.wall,
+    'Low wall',
+    6,
+    Role.decor,
+    unlock: 2,
+    info:
+        'A low wall on the edge between two tiles, so it takes no floor '
+        'space. Tap near an edge to aim it, and Rotate to put it on the '
+        'other side of the tile. People walk around it, and you can see '
+        'over it. Leave a gap for a door.',
+  ),
+  Kind.pass: FixtureDef(
+    Kind.pass,
+    'Pass',
+    60,
+    Role.pass,
+    unlock: 3,
+    info:
+        'A serving hatch on the edge between two tiles, with a shelf on both '
+        'sides. Cooks leave finished dishes on it, and servers carry them '
+        'out, so cooks need not leave their machines. It holds four dishes. '
+        'Put it where a wall would go, with a free tile on a side.',
   ),
 };
 
@@ -487,6 +583,7 @@ enum PlaceResult {
   wall,
   noRoad,
   onlyOne,
+  noRoom,
   hang;
 
   /// What to tell the player when a placement is refused.
@@ -502,18 +599,27 @@ enum PlaceResult {
     wall => 'Goes in the right-hand wall',
     noRoad => 'Needs the room to the right first',
     onlyOne => 'One window is enough',
+    noRoom => 'Needs a free tile beside it',
     hang => 'Hangs on the back or left wall',
   };
 }
 
 /// What the room looked like before a change, so the change can be undone.
 class LayoutStep {
-  const LayoutStep(this.label, this.coins, this.items);
+  const LayoutStep(
+    this.label,
+    this.coins,
+    this.items, [
+    this.walls = const [],
+    this.hatches = const [],
+  ]);
 
   /// What was done, in a few words: "Placed grill".
   final String label;
   final int coins;
   final List<({int id, Kind kind, Cell at, Dir facing})> items;
+  final List<Edge> walls;
+  final List<Edge> hatches;
 }
 
 class Diner {
@@ -796,10 +902,16 @@ class Diner {
   /// Notes the layout as it is now, before a change called [label].
   void remember(String label) {
     _undo.add(
-      LayoutStep(label, coins, [
-        for (final p in items)
-          (id: p.id, kind: p.kind, at: p.at, facing: p.facing),
-      ]),
+      LayoutStep(
+        label,
+        coins,
+        [
+          for (final p in items)
+            (id: p.id, kind: p.kind, at: p.at, facing: p.facing),
+        ],
+        walls.toList(),
+        hatches.toList(),
+      ),
     );
     if (_undo.length > undoLimit) _undo.removeAt(0);
   }
@@ -821,6 +933,12 @@ class Diner {
       ..addAll([
         for (final i in step.items) Placed(i.id, i.kind, i.at, i.facing),
       ]);
+    walls
+      ..clear()
+      ..addAll(step.walls);
+    hatches
+      ..clear()
+      ..addAll(step.hatches);
     coins = step.coins;
     return step.label;
   }
@@ -1011,10 +1129,34 @@ class Diner {
 
   bool walkable(Cell c) => isInside(c) && objectAt(c) == null;
 
-  /// Cells next to [c] a person can stand on.
+  /// The walls between tiles. Nobody steps across one, and nobody uses a
+  /// machine, counter, table or seat from the far side of one.
+  final Set<Edge> walls = {};
+
+  /// The walls that have a serving hatch in them. Each is one of [walls]: a
+  /// hatch blocks walking like any wall, and plates are passed through it.
+  final Set<Edge> hatches = {};
+
+  /// The tiles beside a hatch where someone can stand to use it.
+  List<Cell> hatchSides(Edge e) => [
+    for (final c in [e.a, e.b])
+      if (walkable(c)) c,
+  ];
+
+  /// Whether a wall stands between the touching cells [a] and [b].
+  bool wallBetween(Cell a, Cell b) {
+    final e = Edge.between(a, b);
+    return e != null && walls.contains(e);
+  }
+
+  /// Whether someone standing on [from] can step to the touching cell [to]:
+  /// it is somewhere to stand, with no wall between.
+  bool canWalk(Cell from, Cell to) => walkable(to) && !wallBetween(from, to);
+
+  /// Cells next to [c] a person can stand on, and walk to from it.
   List<Cell> approaches(Cell c) => [
     for (final n in c.neighbors)
-      if (walkable(n)) n,
+      if (canWalk(c, n)) n,
   ];
 
   /// The takeaway window, if there is one.
@@ -1031,7 +1173,7 @@ class Diner {
     if (w == null) return const [];
     return [
       for (var dy = 0; dy < w.h; dy++)
-        if (walkable(Cell(w.at.x - 1, w.at.y + dy)))
+        if (canWalk(Cell(w.at.x, w.at.y + dy), Cell(w.at.x - 1, w.at.y + dy)))
           Cell(w.at.x - 1, w.at.y + dy),
     ];
   }
@@ -1109,10 +1251,14 @@ class Diner {
   Iterable<Placed> ofRole(Role r) => items.where((p) => p.def.role == r);
 
   /// The walkable cells in front of a fixture, where it is used from.
-  List<Cell> useCells(Placed p) => [
-    for (final c in p.fronts)
-      if (walkable(c)) c,
-  ];
+  List<Cell> useCells(Placed p) {
+    final own = p.cells.toSet();
+    return [
+      for (final c in p.cells)
+        if (!own.contains(p.frontOf(c)) && canWalk(c, p.frontOf(c)))
+          p.frontOf(c),
+    ];
+  }
 
   /// Every walkable cell reachable from the door.
   Set<Cell> reachable() {
@@ -1121,7 +1267,7 @@ class Diner {
     while (todo.isNotEmpty) {
       final c = todo.removeLast();
       for (final n in c.neighbors) {
-        if (walkable(n) && seen.add(n)) todo.add(n);
+        if (canWalk(c, n) && seen.add(n)) todo.add(n);
       }
     }
     return seen;
@@ -1135,6 +1281,8 @@ class Diner {
       for (final c in p.cells) {
         final front = p.frontOf(c);
         if (objectAt(front)?.def.role != Role.table) continue;
+        // A wall between the seat and the table keeps them apart.
+        if (wallBetween(c, front)) continue;
         if (approaches(c).isEmpty) continue;
         out.add(Seat(c, front, p.facing));
       }
@@ -1156,6 +1304,17 @@ class Diner {
     }
     return t;
   }
+
+  /// The kinds of machine in the restaurant that nobody on the team is set
+  /// to cook at. Whoever is free and able cooks there anyway, so this is a
+  /// thing to know, not a fault.
+  List<Kind> get uncoveredMachines => [
+    for (final k in Kind.values)
+      if (ofRole(Role.station).any((p) => p.kind == k) &&
+          roster.employees.isNotEmpty &&
+          !roster.employees.any((e) => e.cooksAtKind(k)))
+        k,
+  ];
 
   /// Whether there is a machine in working order that makes [d].
   bool hasMachineFor(Dish d) => ofRole(
@@ -1284,6 +1443,7 @@ class Diner {
           if (operatorSpots.isEmpty) {
             problems.add(Problem(p, 'Keep a tile behind the window free'));
           }
+        case Role.pass:
         case Role.decor:
       }
     }
@@ -1313,6 +1473,24 @@ class Diner {
           : Dir.se;
     }
     if (!def.turns) return Dir.sw;
+    if (def.role == Role.table) {
+      // Lie along the seats that already face it, if there are any.
+      var best = Dir.sw;
+      var most = 0;
+      for (final d in [Dir.sw, Dir.se]) {
+        final t = Placed(0, kind, at, d);
+        final n = [
+          for (final s in ofRole(Role.seat))
+            for (final c in s.cells)
+              if (t.cells.contains(s.frontOf(c))) c,
+        ].length;
+        if (n > most) {
+          most = n;
+          best = d;
+        }
+      }
+      return best;
+    }
     final probe = Placed(0, kind, at);
     for (final d in [Dir.sw, Dir.se, Dir.nw, Dir.ne]) {
       probe.facing = d;
@@ -1340,6 +1518,8 @@ class Diner {
     bool free = false,
   }) {
     final def = fixtureDefs[kind]!;
+    // Walls and passes stand between tiles now, not on one.
+    if (kind == Kind.wall || kind == Kind.pass) return PlaceResult.taken;
     if (def.unlock > progress.level && !free) return PlaceResult.locked;
     final probe = Placed(0, kind, at, kind == Kind.window ? Dir.se : facing);
     for (final c in probe.cells) {
@@ -1381,15 +1561,26 @@ class Diner {
     return PlaceResult.ok;
   }
 
-  /// The floor tiles nobody could walk to from the door if [probe] stood
-  /// where it is, with [ignore] (a fixture being moved) taken away.
-  List<Cell> _shutIn(Placed probe, Placed? ignore) {
-    final had = ignore != null && items.remove(ignore);
-    items.add(probe);
+  /// The floor tiles nobody can walk to from the door as things stand.
+  List<Cell> _shutNow() {
     final open = reachable();
-    final shut = [
+    return [
       for (final c in insideCells())
         if (walkable(c) && !open.contains(c)) c,
+    ];
+  }
+
+  /// The floor tiles that [probe] standing where it is would newly cut off
+  /// from the door, with [ignore] (a fixture being moved or turned) taken
+  /// away. A pocket that was already shut in before does not count, so a
+  /// piece can still be turned or moved beside one.
+  List<Cell> _shutIn(Placed probe, Placed? ignore) {
+    final before = _shutNow().toSet();
+    final had = ignore != null && items.remove(ignore);
+    items.add(probe);
+    final shut = [
+      for (final c in _shutNow())
+        if (!before.contains(c)) c,
     ];
     items.remove(probe);
     if (had) items.add(ignore);
@@ -1404,6 +1595,116 @@ class Diner {
     final probe = Placed(0, kind, at, kind == Kind.window ? Dir.se : facing);
     if (probe.cells.any((c) => !isInside(c))) return const [];
     return _shutIn(probe, ignore);
+  }
+
+  // ----------------------------------------------------------- walls
+
+  /// The tiles a wall on [e] would newly cut off from the door.
+  List<Cell> cutOffByWall(Edge e) {
+    if (walls.contains(e) || !isInside(e.a) || !isInside(e.b)) {
+      return const [];
+    }
+    final before = _shutNow().toSet();
+    walls.add(e);
+    final after = _shutNow();
+    walls.remove(e);
+    return [
+      for (final c in after)
+        if (!before.contains(c)) c,
+    ];
+  }
+
+  /// Whether a wall can go on [e]: between two tiles of the restaurant, with
+  /// none there already, enough coins, and no tile shut in by it. With [free]
+  /// the price and the level do not count.
+  PlaceResult checkWall(Edge e, {bool free = false}) {
+    final def = fixtureDefs[Kind.wall]!;
+    if (def.unlock > progress.level && !free) return PlaceResult.locked;
+    if (!isInside(e.a) || !isInside(e.b)) return PlaceResult.outside;
+    if (walls.contains(e)) return PlaceResult.taken;
+    if (!free && coins < def.cost) return PlaceResult.broke;
+    if (cutOffByWall(e).isNotEmpty) return PlaceResult.blocksWay;
+    return PlaceResult.ok;
+  }
+
+  /// Puts a wall on [e], if it can go there.
+  PlaceResult placeWall(Edge e) {
+    final r = checkWall(e);
+    if (r != PlaceResult.ok) return r;
+    remember('Placed wall');
+    coins -= fixtureDefs[Kind.wall]!.cost;
+    walls.add(e);
+    return r;
+  }
+
+  /// Takes down the wall on [e] and gives back half its price. False if there
+  /// was none.
+  bool sellWall(Edge e) {
+    if (!walls.contains(e)) return false;
+    final hatch = hatches.contains(e);
+    remember(hatch ? 'Sold pass' : 'Sold wall');
+    walls.remove(e);
+    hatches.remove(e);
+    coins += fixtureDefs[hatch ? Kind.pass : Kind.wall]!.refund;
+    return true;
+  }
+
+  /// Whether a serving hatch can go on [e]: a wall edge, or one that could be.
+  /// A wall already there is taken in, and its price comes off. It needs a
+  /// tile to stand on at one side at least.
+  PlaceResult checkHatch(Edge e, {bool free = false}) {
+    final def = fixtureDefs[Kind.pass]!;
+    if (def.unlock > progress.level && !free) return PlaceResult.locked;
+    if (!isInside(e.a) || !isInside(e.b)) return PlaceResult.outside;
+    if (hatches.contains(e)) return PlaceResult.taken;
+    final wall = walls.contains(e) ? fixtureDefs[Kind.wall]!.refund : 0;
+    if (!free && coins < def.cost - wall) return PlaceResult.broke;
+    if (hatchSides(e).isEmpty) return PlaceResult.noRoom;
+    if (!walls.contains(e) && cutOffByWall(e).isNotEmpty) {
+      return PlaceResult.blocksWay;
+    }
+    return PlaceResult.ok;
+  }
+
+  /// Whether the wall on [from] (and its hatch, if it has one) can move to
+  /// [to]: not outside the room, onto another wall, or so it shuts a tile in.
+  /// Changes nothing.
+  PlaceResult checkMove(Edge from, Edge to) {
+    if (!walls.contains(from)) return PlaceResult.taken;
+    // Put back where it was: nothing to do.
+    if (from == to) return PlaceResult.ok;
+    final hatch = hatches.contains(from);
+    if (!isInside(to.a) || !isInside(to.b)) return PlaceResult.outside;
+    if (walls.contains(to)) return PlaceResult.taken;
+    if (hatch && hatchSides(to).isEmpty) return PlaceResult.noRoom;
+    walls.remove(from);
+    final shut = cutOffByWall(to).isNotEmpty;
+    walls.add(from);
+    return shut ? PlaceResult.blocksWay : PlaceResult.ok;
+  }
+
+  PlaceResult moveWall(Edge from, Edge to) {
+    final r = checkMove(from, to);
+    if (r != PlaceResult.ok || from == to) return r;
+    final hatch = hatches.contains(from);
+    remember(hatch ? 'Moved pass' : 'Moved wall');
+    walls.remove(from);
+    hatches.remove(from);
+    walls.add(to);
+    if (hatch) hatches.add(to);
+    return PlaceResult.ok;
+  }
+
+  /// Puts a serving hatch on [e], if it can go there.
+  PlaceResult placeHatch(Edge e) {
+    final r = checkHatch(e);
+    if (r != PlaceResult.ok) return r;
+    remember('Placed pass');
+    if (walls.contains(e)) coins += fixtureDefs[Kind.wall]!.refund;
+    coins -= fixtureDefs[Kind.pass]!.cost;
+    walls.add(e);
+    hatches.add(e);
+    return r;
   }
 
   PlaceResult place(Kind kind, Cell at, [Dir? facing]) {
@@ -1425,7 +1726,8 @@ class Diner {
   /// Turns [p] a quarter turn clockwise, if it still fits.
   PlaceResult rotate(Placed p) {
     if (p.kind == Kind.window) return PlaceResult.ok;
-    // Something hung turns to the other wall, if it is in the corner.
+    // Something hung turns to the other wall, if it is in the corner; a wall
+    // piece turns to run the other way.
     final next = p.def.hung
         ? (p.facing == Dir.sw ? Dir.se : Dir.sw)
         : p.facing.cw;
@@ -1646,7 +1948,50 @@ class Diner {
       for (final p in items)
         {'k': p.kind.name, 'x': p.at.x, 'y': p.at.y, 'f': p.facing.name},
     ],
+    if (walls.isNotEmpty)
+      'walls': [for (final e in walls.toList()..sort(_byPlace)) e.toJson()],
+    if (hatches.isNotEmpty)
+      'hatches': [for (final e in hatches.toList()..sort(_byPlace)) e.toJson()],
   };
+
+  /// Turns the walls and passes an older save stood on tiles into edges. A
+  /// wall on a tile with neighbours in a row becomes the edge on the tile's
+  /// north side (a run along x) or west side (a run along y), and one that
+  /// joined both ways gets both, so a corner stays a corner. A pass becomes a
+  /// hatch on the edge it faced along.
+  void _convertTileWalls(List<(Kind, Cell, Dir)> tiles) {
+    final at = {for (final t in tiles) t.$2};
+    void add(Edge e, {bool hatch = false}) {
+      if (!isInside(e.a) || !isInside(e.b)) return;
+      walls.add(e);
+      if (hatch) hatches.add(e);
+    }
+
+    for (final (kind, c, facing) in tiles) {
+      final alongX = !(facing == Dir.se || facing == Dir.nw);
+      if (kind == Kind.pass) {
+        add(Edge(c.x, c.y, alongX), hatch: true);
+        continue;
+      }
+      var horizontal =
+          at.contains(Cell(c.x + 1, c.y)) || at.contains(Cell(c.x - 1, c.y));
+      var vertical =
+          at.contains(Cell(c.x, c.y + 1)) || at.contains(Cell(c.x, c.y - 1));
+      if (!horizontal && !vertical) {
+        horizontal = alongX;
+        vertical = !alongX;
+      }
+      if (horizontal) add(Edge(c.x, c.y, true));
+      if (vertical) add(Edge(c.x, c.y, false));
+    }
+  }
+
+  static int _byPlace(Edge a, Edge b) {
+    final y = a.y.compareTo(b.y);
+    if (y != 0) return y;
+    final x = a.x.compareTo(b.x);
+    return x != 0 ? x : (a.alongX ? 1 : 0).compareTo(b.alongX ? 1 : 0);
+  }
 
   static Diner fromJson(Map<String, Object?> j) {
     final d = Diner(
@@ -1761,6 +2106,8 @@ class Diner {
         }
       }
     }
+    // Walls and passes used to stand on a tile; they stand between tiles now.
+    final legacy = <(Kind, Cell, Dir)>[];
     for (final raw in (j['items'] as List?) ?? const []) {
       final m = raw as Map;
       final kind = Kind.values.where((k) => k.name == m['k']).firstOrNull;
@@ -1768,6 +2115,10 @@ class Diner {
       final at = Cell(m['x'] as int, m['y'] as int);
       var facing =
           Dir.values.where((f) => f.name == m['f']).firstOrNull ?? Dir.sw;
+      if (kind == Kind.wall || kind == Kind.pass) {
+        legacy.add((kind, at, facing));
+        continue;
+      }
       if (kind == Kind.window) facing = Dir.se;
       // Re-validate so a bad save can't put things outside the room. Whatever
       // no longer fits is sold back at full price.
@@ -1782,6 +2133,16 @@ class Diner {
       } else {
         d.coins += fixtureDefs[kind]!.cost;
       }
+    }
+    d._convertTileWalls(legacy);
+    // Walls between tiles: only those still between two tiles of the room.
+    for (final raw in (j['walls'] as List?) ?? const []) {
+      final e = Edge.fromJson(raw);
+      if (e != null && d.isInside(e.a) && d.isInside(e.b)) d.walls.add(e);
+    }
+    for (final raw in (j['hatches'] as List?) ?? const []) {
+      final e = Edge.fromJson(raw);
+      if (e != null && d.walls.contains(e)) d.hatches.add(e);
     }
     return d;
   }

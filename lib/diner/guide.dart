@@ -53,7 +53,7 @@ const guidePages = [
   GuidePage(GuidePicture.seats, 'Tables and chairs', [
     'A chair next to a table, facing it, is one seat.',
     'A table with no chair beside it seats nobody.',
-    'More seats means more guests fed at once.',
+    'A bench seats two. Give it a long table, lying the same way.',
   ]),
   GuidePage(GuidePicture.counter, 'The counter', [
     'Guests pay at the counter, one at a time.',
@@ -61,14 +61,14 @@ const guidePages = [
     'Near the door means a shorter queue.',
   ]),
   GuidePage(GuidePicture.machines, 'The kitchen', [
-    'Grills, fryers and other machines each cook certain dishes.',
-    'Staff work from the tile in front of a machine. Keep it free.',
-    'Put them near the tables, so food has a short walk.',
+    'Machines cook from the tile in front. Keep it free.',
+    'A pass is a hatch in a wall. Cooks leave dishes there for servers.',
+    'Low walls go between tiles and split the room. Leave a gap for a door.',
   ]),
   GuidePage(GuidePicture.staff, 'Staff and duties', [
     'Open Staff to hire people. A dearer advert finds better ones.',
-    'Open a person to give them a duty: a machine, clearing tables, '
-        'or anywhere.',
+    'Open a person to set their duty: the machines they cook at, serving, '
+        'clearing tables.',
     'Wages are paid at the end of each day.',
   ]),
   GuidePage(GuidePicture.menu, 'Menu and ingredients', [
@@ -401,21 +401,37 @@ class _StaffPicture extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 8),
-              const Eyebrow('Works'),
+              const PxText(
+                'Cooks at',
+                style: TextStyle(color: Pal.dim, fontSize: 14),
+              ),
+              const SizedBox(height: 4),
               Wrap(
                 spacing: 6,
                 runSpacing: 6,
                 children: [
-                  Choice(label: 'Anywhere', selected: false, onTap: null),
+                  Choice(label: 'All machines', selected: false, onTap: null),
                   Choice(label: 'Grill', selected: true, onTap: null),
                   Choice(label: 'Fryer', selected: false, onTap: null),
+                ],
+              ),
+              const SizedBox(height: 8),
+              const PxText(
+                'Also',
+                style: TextStyle(color: Pal.dim, fontSize: 14),
+              ),
+              const SizedBox(height: 4),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  Choice(label: 'Serves food', selected: true, onTap: null),
                   Choice(label: 'Clears tables', selected: false, onTap: null),
                 ],
               ),
               const SizedBox(height: 8),
               const PxText(
-                'Sam looks after the grill first, and helps elsewhere when it '
-                'needs nothing.',
+                'Sam cooks at the grill and carries food out to the tables.',
                 style: TextStyle(color: Pal.dim, fontSize: 14),
               ),
             ],

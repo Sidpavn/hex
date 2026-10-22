@@ -38,6 +38,12 @@ class _StaffScreenState extends State<StaffScreen> {
     if (mounted) setState(() {});
   }
 
+  String _names(List<Kind> kinds) {
+    final list = [for (final k in kinds) fixtureDefs[k]!.name.toLowerCase()];
+    if (list.length <= 1) return list.join();
+    return '${list.sublist(0, list.length - 1).join(', ')} and ${list.last}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final limit = diner.progress.staffLimit;
@@ -67,6 +73,15 @@ class _StaffScreenState extends State<StaffScreen> {
                     fontSize: 14,
                   ),
                 ),
+                if (diner.uncoveredMachines.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  PxText(
+                    'Nobody is set to the ${_names(diner.uncoveredMachines)}. '
+                    'Whoever is free will cook there.',
+                    key: const ValueKey('uncovered'),
+                    style: const TextStyle(color: Pal.gold, fontSize: 14),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 if (roster.employees.isEmpty)
                   const PxText(

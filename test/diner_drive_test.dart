@@ -689,7 +689,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(ValueKey('team-${s.id}')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(ValueKey('duty-${s.id}-window')));
+      await tester.tap(find.byKey(ValueKey('task-${s.id}-window')));
       await tester.pump();
       expect(s.duty, Kind.window);
       expect(find.textContaining('takeaway window'), findsWidgets);

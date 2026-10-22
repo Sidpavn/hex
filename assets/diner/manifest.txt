@@ -192,6 +192,8 @@ ico_soda 13 13 6 6 3 0 7 10
 ico_sundae 13 13 6 6 2 1 8 10
 jukebox 32 66 16 46 3 16 26 44
 lamp 32 74 16 54 10 11 13 52
+longTable_se 48 86 32 34 3 24 43 28
+longTable_sw 64 54 16 34 3 24 43 28
 lot 32 20 16 0 1 0 30 16
 low_back 32 35 16 15 13 4 19 20
 mat 32 20 16 0 6 2 20 11
@@ -207,6 +209,8 @@ oven_se 32 66 16 46 2 12 29 49
 oven_sw 32 66 16 46 2 12 29 49
 park_a 32 20 16 0 1 0 30 16
 park_b 32 20 16 0 1 0 30 16
+pass_edge_x 48 52 24 38 23 12 18 34
+pass_edge_y 48 52 24 38 7 12 18 34
 plant 32 60 16 40 5 8 22 43
 plate_baconBurger 16 14 8 8 1 0 14 12
 plate_burger 16 14 8 8 1 3 14 9
@@ -270,6 +274,9 @@ wall_a_window 32 66 16 46 0 12 20 50
 wall_b 32 66 16 46 12 12 20 50
 wall_b_window 32 66 16 46 12 12 20 50
 wall_corner 32 68 16 48 8 12 17 52
+wall_edge_x 48 34 24 20 24 6 16 22
+wall_edge_y 48 34 24 20 8 6 16 22
+wall_post 48 34 24 20 20 4 8 18
 warehouse 184 128 84 36 4 7 177 117
 warn 11 11 5 5 0 0 10 10
 window_se 48 82 32 30 2 18 46 34

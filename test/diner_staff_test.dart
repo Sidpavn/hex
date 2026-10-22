@@ -932,14 +932,18 @@ void main() {
       final d = await open(tester);
       final sam = d.roster.employees.single;
       await openPerson(tester, sam);
-      expect(find.byKey(ValueKey('duty-${sam.id}-anywhere')), findsOneWidget);
-      await tester.tap(find.byKey(ValueKey('duty-${sam.id}-grill')));
+      expect(find.byKey(ValueKey('cook-${sam.id}-all')), findsOneWidget);
+      expect(sam.cooksAt, isNull, reason: 'everyone cooks everywhere to start');
+      await tester.tap(find.byKey(ValueKey('cook-${sam.id}-grill')));
       await tester.pump();
-      expect(sam.duty, Kind.grill);
-      expect(find.textContaining('looks after the grill'), findsOneWidget);
-      await tester.tap(find.byKey(ValueKey('duty-${sam.id}-anywhere')));
+      // The grill is off now, and the other machines are still on.
+      expect(sam.cooksAtKind(Kind.grill), isFalse);
+      await tester.tap(find.byKey(ValueKey('cook-${sam.id}-grill')));
       await tester.pump();
-      expect(sam.duty, isNull);
+      expect(sam.cooksAt, isNull, reason: 'every machine again is just all');
+      await tester.tap(find.byKey(ValueKey('cook-${sam.id}-all')));
+      await tester.pump();
+      expect(sam.cooksAt, isEmpty);
     });
 
     testWidgets('the day opens only with someone to work', (tester) async {

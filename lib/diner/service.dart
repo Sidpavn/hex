@@ -116,6 +116,9 @@ enum ItemState {
   cooking,
   ready,
 
+  /// Left on the pass by a cook, for a server to carry out.
+  onPass,
+
   /// On a tray, on its way to the table.
   carried,
   delivered,
@@ -133,6 +136,10 @@ class OrderItem {
   final Dish dish;
   final Tier tier;
   ItemState state = ItemState.pending;
+
+  /// The tick it was put on the pass, and the server on their way for it.
+  int onPassSince = 0;
+  Worker? takenBy;
 
   /// What the guest will pay for it, as a multiple of the menu price: the
   /// cook's skill and mastery, and the ingredients.
@@ -245,10 +252,31 @@ class Machine {
   int total = 1;
   bool ready = false;
 
+  /// How many ticks the finished dish has sat there.
+  int waited = 0;
+
   /// A member of staff is on their way to use it.
   bool claimed = false;
 
   bool get free => item == null && !claimed;
+}
+
+/// The pass: where cooks leave finished dishes for the servers.
+class PassShelf {
+  PassShelf(this.edge);
+
+  /// The wall it is set in.
+  final Edge edge;
+
+  /// How many dishes it holds.
+  static const capacity = 4;
+
+  final List<OrderItem> plates = [];
+
+  /// Places a cook is on their way to fill.
+  int reserved = 0;
+
+  int get room => capacity - plates.length - reserved;
 }
 
 class CounterState {
@@ -259,7 +287,17 @@ class CounterState {
   int timer = 0;
 }
 
-enum WorkState { idle, toPickup, toLoad, toDeliver, toClean }
+enum WorkState {
+  idle,
+  toPickup,
+  toLoad,
+  toDeliver,
+  toClean,
+
+  /// On the way to leave dishes on the pass, and to collect them.
+  toShelf,
+  fromShelf,
+}
 
 class Worker extends Person {
   Worker(this.staff, super.cell);
@@ -277,6 +315,9 @@ class Worker extends Person {
 
   /// The seat they are on their way to clear.
   Seat? cleaning;
+
+  /// The pass they are on their way to leave dishes on, or collect from.
+  PassShelf? shelf;
 
   /// Ticks left on whatever they are doing with their hands.
   int busy = 0;
@@ -510,6 +551,9 @@ class DinerSim {
   final List<Guest> guests = [];
   final List<Machine> machines = [];
   final List<CounterState> counters = [];
+
+  /// The passes, where cooks leave dishes for servers.
+  final List<PassShelf> passes = [];
   final List<Pop> pops = [];
   final List<Guest> _queue = [];
 
@@ -905,9 +949,56 @@ class DinerSim {
     return n;
   }
 
-  /// Whether [w] is kept for clearing tables rather than cooking or serving.
+  /// Whether [w] clears tables, and there are tables to clear.
   bool _isCleaner(Worker w) =>
-      w.staff.duty == Kind.table && diner.ofRole(Role.table).isNotEmpty;
+      !_isCrew(w) &&
+      w.staff.does(Task.clear) &&
+      diner.ofRole(Role.table).isNotEmpty;
+
+  /// Whether [w] does nothing but clear tables, and somebody else is there to
+  /// cook and carry. If not, they work like anyone, so a day never has food
+  /// nobody makes.
+  bool _onlyCleans(Worker w) =>
+      _cleansOnly(w) && workers.any((o) => o != w && !_cleansOnly(o));
+
+  bool _cleansOnly(Worker w) =>
+      w.staff.tasks.length == 1 &&
+      w.staff.does(Task.clear) &&
+      !w.staff.cooks &&
+      diner.ofRole(Role.table).isNotEmpty;
+
+  /// Whether nobody on the team is set to carry food out, in which case
+  /// everyone does, so nothing is left sitting.
+  bool get _nobodyServes => !workers.any(
+    (o) => !_isCrew(o) && !_isOperator(o) && o.staff.does(Task.serve),
+  );
+
+  /// Whether [w] carries food out to the tables.
+  bool _carries(Worker w) =>
+      _isCrew(w) || _isOperator(w) || w.staff.does(Task.serve) || _nobodyServes;
+
+  /// Whether [w] cooks at a machine of [kind]. Someone set to other machines
+  /// does not, unless nobody is set to this one: then whoever is free and
+  /// able makes the dish, so it is never left unmade.
+  bool _mayCookAt(Worker w, Kind kind) {
+    if (w.staff.cooksAtKind(kind)) return true;
+    return !workers.any(
+      (o) =>
+          !_isCrew(o) &&
+          !_isOperator(o) &&
+          !_cleansOnly(o) &&
+          o.staff.cooksAtKind(kind),
+    );
+  }
+
+  /// Whether [w] cooks and brings dishes to the pass, not carries them: a
+  /// cook by assignment, or by trade if they do both.
+  bool _isCook(Worker w) =>
+      w.staff.cooks && (!w.staff.does(Task.serve) || w.staff.kitchen);
+
+  /// How long a dish may sit at a machine before someone who is not set to
+  /// carry food goes for it, rather than let it go cold.
+  static const _stale = 10;
 
   /// How many more guests can be rushed today.
   int rushLeft = Pace.rushPerDay;
@@ -1123,6 +1214,12 @@ class DinerSim {
         for (final p in diner.ofRole(Role.counter))
           if (diner.useCells(p).isNotEmpty) CounterState(p),
       ]);
+    passes
+      ..clear()
+      ..addAll([
+        for (final e in diner.hatches)
+          if (diner.hatchSides(e).isNotEmpty) PassShelf(e),
+      ]);
     guests.clear();
     _queue.clear();
     // Staff start at the first machine, or just inside the door.
@@ -1176,6 +1273,7 @@ class DinerSim {
       _guest(g);
     }
     _machines();
+    _tidyPasses();
     _checkout();
     for (final w in workers) {
       _work(w);
@@ -1394,8 +1492,7 @@ class DinerSim {
     return car;
   }
 
-  bool _isOperator(Worker w) =>
-      diner.driveThrough && w.staff.duty == Kind.window;
+  bool _isOperator(Worker w) => diner.driveThrough && w.staff.does(Task.window);
 
   /// Cars shuffle up to the window as the one in front drives off. The one
   /// next in line waits until the bay is clear.
@@ -2110,9 +2207,13 @@ class DinerSim {
         wasted++;
         continue;
       }
-      if (m.ready) continue;
+      if (m.ready) {
+        m.waited++;
+        continue;
+      }
       if (--m.left <= 0) {
         m.ready = true;
+        m.waited = 0;
         item.state = ItemState.ready;
         cues.add(Cue.dishReady);
       }
@@ -2162,6 +2263,7 @@ class DinerSim {
           m
             ..item = null
             ..ready = false;
+          _sendToShelf(w, item);
         }
       case WorkState.toLoad:
         w.walk();
@@ -2194,6 +2296,47 @@ class DinerSim {
         if (seat != null && dirty.remove(seat.cell)) {
           cleaned++;
           w.face(seat.cell);
+        }
+      case WorkState.toShelf:
+        w.walk();
+        if (w.path.isNotEmpty) return;
+        final p = w.shelf;
+        // Setting a plate down on the pass takes no more than a moment.
+        w
+          ..state = WorkState.idle
+          ..shelf = null;
+        if (p == null) return;
+        p.reserved = math.max(0, p.reserved - 1);
+        w.face(_acrossFrom(w.cell, p.edge));
+        for (final i in List.of(w.carrying)) {
+          if (p.plates.length >= PassShelf.capacity) break;
+          if (i.guest.state != GuestState.waiting || !_viaShelf(i, any: true)) {
+            continue;
+          }
+          w.carrying.remove(i);
+          i
+            ..state = ItemState.onPass
+            ..onPassSince = ticks
+            ..takenBy = null;
+          p.plates.add(i);
+        }
+      case WorkState.fromShelf:
+        w.walk();
+        if (w.path.isNotEmpty) return;
+        final p = w.shelf;
+        w
+          ..state = WorkState.idle
+          ..shelf = null;
+        if (p == null) return;
+        w.face(_acrossFrom(w.cell, p.edge));
+        for (final i in List.of(p.plates)) {
+          if (i.takenBy != w) continue;
+          i.takenBy = null;
+          if (w.carrying.length >= _capacity) continue;
+          if (i.guest.gone || i.guest.state != GuestState.waiting) continue;
+          p.plates.remove(i);
+          i.state = ItemState.carried;
+          w.carrying.add(i);
         }
       case WorkState.toDeliver:
         w.walk();
@@ -2494,6 +2637,9 @@ class DinerSim {
     }
   }
 
+  /// The tile on the far side of [e] from [from], to face through the hatch.
+  Cell _acrossFrom(Cell from, Edge e) => from == e.a ? e.b : e.a;
+
   Cell _nearestCell(Cell from, Placed p) {
     Cell best = p.at;
     var bd = 1 << 30;
@@ -2527,8 +2673,11 @@ class DinerSim {
       return;
     }
     if (_isCleaner(w)) {
-      _clear(w);
-      return;
+      if (_clear(w)) return;
+      if (_onlyCleans(w)) {
+        w.prev = w.cell;
+        return;
+      }
     }
     if (_holdAtWindow(w)) return;
     if (_pickUp(w)) return;
@@ -2632,7 +2781,7 @@ class DinerSim {
   }
 
   /// A worker kept for the tables walks to the nearest mess and clears it.
-  void _clear(Worker w) {
+  bool _clear(Worker w) {
     w.prev = w.cell;
     // Not one somebody else is already on their way to.
     final taken = {
@@ -2646,11 +2795,12 @@ class DinerSim {
       if (r == null) continue;
       if (best == null || r.$2.length < best.$2.length) best = (seat, r.$2);
     }
-    if (best == null) return;
+    if (best == null) return false;
     w
       ..cleaning = best.$1
       ..path = best.$2
       ..state = WorkState.toClean;
+    return true;
   }
 
   /// Whoever has just reached the window stays until the car has given its
@@ -2706,17 +2856,27 @@ class DinerSim {
   /// The machine [w] looks after first. A station only makes sense when
   /// someone else is there to cover the rest, so a lone worker has none.
   Kind? _duty(Worker w) =>
-      workers.length > 1 && !_isCrew(w) ? w.staff.duty : null;
+      workers.length > 1 && !_isCrew(w) ? w.staff.focus : null;
 
   /// Goes to collect a finished dish, if there is one and room to carry it.
   bool _pickUp(Worker w) {
     if (w.carrying.length >= _capacity) return false;
+    if (_takeFromShelf(w)) return true;
     final ready = machines.where(
       (m) =>
           m.ready &&
           !m.claimed &&
           m.item != null &&
           m.item!.guest.state == GuestState.waiting &&
+          // With a pass, the cooks bring dishes to it and servers fetch them
+          // from there. A server only goes to a machine for one that has
+          // sat a while, or when the pass is full.
+          (passes.isEmpty ||
+              _isCook(w) ||
+              !_viaShelf(m.item!) ||
+              m.waited >= _machineWait) &&
+          // Someone not set to carry food only goes for a dish that has sat.
+          (_carries(w) || m.waited >= _stale) &&
           // The crew take only the order's dishes, and no one else does.
           _isCrew(w) == (m.item!.guest == _job) &&
           (!_isOperator(w) || m.item!.guest.car),
@@ -2737,6 +2897,148 @@ class DinerSim {
     return true;
   }
 
+  /// How long a dish may sit at a machine, or on the pass, before the staff
+  /// who would not usually carry it go for it: a server for a dish at a
+  /// machine, a cook for one on the pass.
+  static const _machineWait = 9;
+
+  /// Which side of [p] is the kitchen: the one nearer the machines. Null when
+  /// there is nothing to tell them apart by.
+  Cell? _kitchenSide(PassShelf p) {
+    final sides = diner.hatchSides(p.edge);
+    if (sides.length < 2 || machines.isEmpty) return null;
+    int far(Cell c) => machines
+        .map((m) => (m.at.at.x - c.x).abs() + (m.at.at.y - c.y).abs())
+        .reduce(math.min);
+    final a = far(sides[0]);
+    final b = far(sides[1]);
+    if (a == b) return null;
+    return a < b ? sides[0] : sides[1];
+  }
+
+  /// Where [w] stands to use [p], and the way there: the kitchen side for
+  /// cooks, the dining side for everyone else, so a cook does not walk out
+  /// into the room and a server does not walk into the kitchen. Either side
+  /// if the proper one cannot be reached.
+  (Cell, List<Cell>)? _reachSide(
+    Worker w,
+    PassShelf p, {
+    required bool kitchen,
+  }) {
+    final k = _kitchenSide(p);
+    if (k != null) {
+      final side = [
+        for (final c in diner.hatchSides(p.edge))
+          if ((c == k) == kitchen) c,
+      ];
+      final spot = nearest(diner, w.cell, side);
+      if (spot != null) return spot;
+    }
+    return nearest(diner, w.cell, diner.hatchSides(p.edge));
+  }
+
+  /// Whether [item] would go through a pass: it is for a guest at a table,
+  /// not a car or a catering order, and a pass has room. [any] ignores the
+  /// room, for a dish already on its way.
+  bool _viaShelf(OrderItem item, {bool any = false}) =>
+      passes.isNotEmpty &&
+      !item.guest.car &&
+      item.guest != _job &&
+      (any || passes.any((p) => p.room > 0));
+
+  /// A cook who has just taken a dish off a machine takes it to the pass, if
+  /// there is one with room, instead of out to the table.
+  void _sendToShelf(Worker w, OrderItem item) {
+    if (!_isCook(w) || !_viaShelf(item)) return;
+    (PassShelf, List<Cell>)? best;
+    for (final p in passes.where((p) => p.room > 0)) {
+      final spot = _reachSide(w, p, kitchen: true);
+      if (spot == null) continue;
+      if (best == null || spot.$2.length < best.$2.length) {
+        best = (p, spot.$2);
+      }
+    }
+    if (best == null) return;
+    best.$1.reserved++;
+    w
+      ..shelf = best.$1
+      ..path = best.$2
+      ..state = WorkState.toShelf;
+  }
+
+  /// A server (or, when there are none, or the dish has waited, a cook) goes
+  /// to collect dishes from the pass.
+  bool _takeFromShelf(Worker w) {
+    if (passes.isEmpty || _isCrew(w) || _isOperator(w)) return false;
+    final room = _capacity - w.carrying.length;
+    if (room <= 0) return false;
+    final floorStaff = workers.any(
+      (o) =>
+          !_isCook(o) &&
+          !_isCrew(o) &&
+          !_isOperator(o) &&
+          o.staff.does(Task.serve),
+    );
+    (PassShelf, List<OrderItem>, List<Cell>)? best;
+    for (final p in passes) {
+      final plates = [
+        for (final i in p.plates)
+          if (i.takenBy == null &&
+              !i.guest.gone &&
+              i.guest.state == GuestState.waiting &&
+              (!_isCook(w) ||
+                  !floorStaff ||
+                  ticks - i.onPassSince >= _machineWait))
+            i,
+      ];
+      if (plates.isEmpty) continue;
+      final spot = _reachSide(w, p, kitchen: _isCook(w));
+      if (spot == null) continue;
+      if (best == null || spot.$2.length < best.$3.length) {
+        best = (p, plates, spot.$2);
+      }
+    }
+    if (best == null) return false;
+    final plates = best.$2
+      ..sort((a, b) {
+        final r = (b.guest.rushed ? 1 : 0).compareTo(a.guest.rushed ? 1 : 0);
+        return r != 0 ? r : a.guest.patience.compareTo(b.guest.patience);
+      });
+    // One guest's dishes together first, then whatever else fits.
+    final first = plates.first.guest;
+    final take = [
+      ...plates.where((i) => i.guest == first),
+      ...plates.where((i) => i.guest != first),
+    ].take(room);
+    for (final i in take) {
+      i.takenBy = w;
+    }
+    w
+      ..shelf = best.$1
+      ..path = best.$3
+      ..state = WorkState.fromShelf;
+    return true;
+  }
+
+  /// Dishes left on the pass for someone who has gone are thrown away.
+  void _tidyPasses() {
+    for (final p in passes) {
+      p.plates.removeWhere((i) {
+        final gone =
+            i.state == ItemState.lost ||
+            i.guest.gone ||
+            i.guest.state != GuestState.waiting;
+        if (gone) {
+          i
+            ..state = ItemState.lost
+            ..takenBy = null;
+          wasted++;
+        }
+        return gone;
+      });
+    }
+  }
+
   /// Picks the next dish to start and a free machine for it, and sets off.
   /// [within] limits how far they will walk to do it. False if there is
   /// nothing to do.
@@ -2752,6 +3054,7 @@ class DinerSim {
             if (g.state == GuestState.waiting)
               for (final i in g.toStart)
                 if (w.staff.canCook(i.dish) &&
+                    _mayCookAt(w, recipes[i.dish]!.station) &&
                     g.patience > progress.cookTicks(i.dish) + _walkAllowance)
                   i,
         ]..sort((a, b) {
@@ -3334,6 +3637,22 @@ class DinerSim {
         );
       } else if (m.ready) {
         out.add(Actor('plate_${m.item!.dish.name}', x, y, lift: 30, row: 999));
+      }
+    }
+    for (final p in passes) {
+      // Along the ledge, whichever way the wall runs.
+      final e = p.edge;
+      const spots = [-0.33, -0.11, 0.11, 0.33];
+      for (var k = 0; k < p.plates.length && k < spots.length; k++) {
+        out.add(
+          Actor(
+            'plate_${p.plates[k].dish.name}',
+            e.x + (e.alongX ? 0.5 + spots[k] : 0),
+            e.y + (e.alongX ? 0 : 0.5 + spots[k]),
+            lift: 9,
+            row: 999,
+          ),
+        );
       }
     }
     for (final p in pops) {

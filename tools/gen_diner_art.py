@@ -731,6 +731,38 @@ def bench(f):
     add(f'bench_{f}', img, 0.55)
 
 
+def long_table(f):
+    """A table two tiles long, with the same red check cloth and a vase at
+    each end of the cloth's middle. 'sw' lies along x, 'se' along y."""
+    along_y = f == 'se'
+    img = cell_img(34, extra_w=32)
+    img.ox = 16
+    if along_y:
+        img = Img(32 + 16, 34 + 36 + 16, 32, 34)
+    leg = ramp('#5b5266')
+    L = 32
+
+    def check(u, v):
+        su, sv = int(u // 5) % 2, int(v // 5) % 2
+        if su and sv:
+            return RED.top
+        if su or sv:
+            return hexc('#f7b3aa')
+        return hexc('#fff6e8')
+
+    if not along_y:
+        for cu in (8, 24):
+            box(img, cu - 2, 6, cu + 2, 10, 0, 9, leg, edge=False)
+        box(img, 1, 2, L - 1, 14, 9, 11, RED, top=check)
+        box(img, 14, 6, 18, 10, 11, 14, ramp('#9ccbe8'))
+    else:
+        for cv in (8, 24):
+            box(img, 6, cv - 2, 10, cv + 2, 0, 9, leg, edge=False)
+        box(img, 2, 1, 14, L - 1, 9, 11, RED, top=check)
+        box(img, 6, 14, 10, 18, 11, 14, ramp('#9ccbe8'))
+    add(f'longTable_{f}', img, 0.55)
+
+
 # ------------------------------------------------------------------ people
 import people  # noqa: E402
 
@@ -1584,6 +1616,116 @@ def front_walls():
     add('front_r', img, 0.5)
 
 
+def edge_walls():
+    """Walls that stand on the border between two tiles, in the brown
+    panelling of the room's own walls: a slab for the stretch between two
+    grid points, and a post for each grid point where a wall starts, ends or
+    turns. Slabs and posts are the same height and the same thickness, so a
+    run is one unbroken wall, and corners, tees and crosses are just posts
+    with slabs reaching them. A sprite's origin is the grid point at the top
+    of its tile, so the slab 'x' runs from there along x, 'y' along y."""
+    H = 14
+
+    def boards(a, z):
+        if z < 2:
+            return WOOD_D.left
+        if z >= H - 2:
+            return WOOD.hi
+        return WOOD.left if int(a) % 8 else WOOD.right
+
+    def boards_right(a, z):
+        if z < 2:
+            return WOOD_D.lo
+        if z >= H - 2:
+            return WOOD.left
+        return WOOD.right if int(a) % 8 else WOOD.lo
+
+    def canvas():
+        return Img(48, 34, 24, 20)
+
+    img = canvas()
+    box(img, 2, -2, 14, 2, 0, H, WOOD, edge=False,
+        left=lambda u, z: boards(u, z),
+        right=lambda v, z: boards_right(v, z), top=WOOD.top)
+    add('wall_edge_x', img, 0.5)
+
+    img = canvas()
+    box(img, -2, 2, 2, 14, 0, H, WOOD, edge=False,
+        left=lambda u, z: boards(u + 3, z),
+        right=lambda v, z: boards_right(v, z), top=WOOD.top)
+    add('wall_edge_y', img, 0.5)
+
+    img = canvas()
+    box(img, -2, -2, 2, 2, 0, H, WOOD, edge=False,
+        left=lambda u, z: boards(1, z),
+        right=lambda v, z: boards_right(1, z), top=WOOD.top)
+    add('wall_post', img, 0.5)
+
+
+def pass_edge():
+    """The serving hatch, set in a wall on the border between two tiles: the
+    same panelled slab as the wall, a steel ledge across it where plates are
+    set down from either side, a steel frame over the ledge and a warming
+    lamp. Two sprites, for a hatch along x and one along y. Posts stand at its
+    ends, as at the ends of any wall."""
+    H = 14
+    steel = ramp('#b4bccb')
+    dark = ramp('#8a93a6')
+    lamp = ramp('#f2c338')
+
+    def boards(a, z):
+        if z < 2:
+            return WOOD_D.left
+        if z >= H - 2:
+            return WOOD.hi
+        return WOOD.left if int(a) % 8 else WOOD.right
+
+    def boards_right(a, z):
+        if z < 2:
+            return WOOD_D.lo
+        if z >= H - 2:
+            return WOOD.left
+        return WOOD.right if int(a) % 8 else WOOD.lo
+
+    def build(name, along_x):
+        img = Img(48, 52, 24, 38)
+
+        def B(u0, v0, u1, v1, z0, z1, r, **kw):
+            if along_x:
+                box(img, u0, v0, u1, v1, z0, z1, r, **kw)
+            else:
+                box(img, v0, u0, v1, u1, z0, z1, r, **kw)
+
+        wl = lambda u, z: boards(u, z)
+        wr = lambda v, z: boards_right(v, z)
+        trim = WOOD_D
+        T = 26   # the frame stands well above the low wall beside it
+
+        def W(u0, v0, u1, v1, z0, z1):
+            B(u0, v0, u1, v1, z0, z1, WOOD, edge=False, left=wl, right=wr,
+              top=WOOD.top)
+
+        # the wall under the opening, two uprights and a beam over it, a dark
+        # trim round the opening, a steel counter reaching out on both sides
+        # with a lip, and a warm lamp under the beam: a serving window that
+        # stands taller than the wall it is set in
+        W(2, -2, 14, 2, 0, 8)
+        W(2, -2, 4, 2, 8, T)
+        W(12, -2, 14, 2, 8, T)
+        W(2, -2, 14, 2, 22, T)
+        B(4, -2, 5, 2, 8, 22, trim, edge=False)
+        B(11, -2, 12, 2, 8, 22, trim, edge=False)
+        B(4, -2, 12, 2, 21, 22, trim, edge=False)
+        B(4, -4, 12, 4, 8, 9, steel)
+        B(4, -5, 12, -4, 7, 9, dark, edge=False)
+        B(4, 4, 12, 5, 7, 9, dark, edge=False)
+        B(6, -1, 10, 1, 18, 21, lamp, edge=False)
+        add(name, img, 0.5)
+
+    build('pass_edge_x', True)
+    build('pass_edge_y', False)
+
+
 def doorway(name, open_):
     img = cell_img(40)
     frame = ramp('#6b3f26')
@@ -1634,6 +1776,8 @@ def city():
     emotes()
     moods()
     front_walls()
+    edge_walls()
+    pass_edge()
     doorway('door_open', True)
     doorway('door_closed', False)
 
@@ -1843,6 +1987,8 @@ def build():
     window_ledge()
     window_front()
     table()
+    long_table('sw')
+    long_table('se')
     chair('chair_se', 'su')
     chair('chair_sw', 'sv')
     chair('chair_nw', 'nu')

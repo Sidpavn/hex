@@ -78,7 +78,7 @@ extension GroupEditing on Diner {
           cells.map((c) => c.x).reduce(math.min),
           cells.map((c) => c.y).reduce(math.min),
         );
-        final facing = p.def.turns ? m.face(p.facing) : p.facing;
+        final facing = p.def.rotates ? m.face(p.facing) : p.facing;
         return Moved(p, at, facing, cells);
       }(),
   ];

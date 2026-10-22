@@ -4,6 +4,7 @@ import 'diner.dart';
 /// and the room are only joined at the door: the pavement cell outside it and
 /// the entrance cell inside.
 bool canStep(Diner d, Cell a, Cell b) {
+  if (d.wallBetween(a, b)) return false;
   final aOut = d.isSidewalk(a);
   final bOut = d.isSidewalk(b);
   if (aOut == bOut) return true;

@@ -23,9 +23,24 @@ String spriteName(Kind kind, Dir facing) => switch (kind) {
   Kind.freezer ||
   Kind.chair ||
   Kind.bench => '${kind.name}_${facing.name}',
+  Kind.longTable =>
+    facing == Dir.se || facing == Dir.nw ? 'longTable_se' : 'longTable_sw',
   Kind.window => 'window_se',
   Kind.tv => 'tv_${facing == Dir.se ? 'se' : 'sw'}',
+  // Walls and passes stand between tiles: this is their picture on the shelf.
+  Kind.wall => 'wall_edge_x',
+  Kind.pass => 'pass_edge_x',
   _ => kind.name,
+};
+
+/// The grid points where a post stands for [walls]: every point a wall
+/// starts, ends or turns at. A point is named by the tile it is the top
+/// corner of.
+Set<Cell> wallPosts(Iterable<Edge> walls) => {
+  for (final e in walls) ...[
+    Cell(e.x, e.y),
+    e.alongX ? Cell(e.x + 1, e.y) : Cell(e.x, e.y + 1),
+  ],
 };
 
 /// Draws the diner in isometric. [s] is the logical size of one art pixel and
@@ -46,6 +61,8 @@ class DinerPainter extends CustomPainter {
     this.moving,
     this.grid = false,
     this.placeOk,
+    this.hoverEdge,
+    this.selectedEdge,
     this.guestSel,
     this.group = const [],
     this.groupMoving = false,
@@ -98,6 +115,10 @@ class DinerPainter extends CustomPainter {
   /// Whether the ghost can be put down where it is, if the screen has worked
   /// that out (it knows the facing and what is being moved).
   final bool? placeOk;
+
+  /// The edge a wall being placed is aimed at, and the wall picked.
+  final Edge? hoverEdge;
+  final Edge? selectedEdge;
 
   /// The guest the player has tapped during service: outlined where they are.
   final Guest? guestSel;
@@ -281,6 +302,7 @@ class DinerPainter extends CustomPainter {
         ),
       ..._walls(canvas),
       ..._front(canvas),
+      ..._edgeWalls(canvas),
       for (final (name, c) in streetProps(diner))
         _Drawn((c.x + c.y).toDouble(), true, () => _cell(canvas, name, c)),
       for (final a in live) _Drawn(a.depth, false, () => _actor(canvas, a)),
@@ -509,6 +531,44 @@ class DinerPainter extends CustomPainter {
     return out;
   }
 
+  /// The slab for [e]: a hatch has a ledge and a frame.
+  String _edgeSprite(Edge e) {
+    final hatch = diner.hatches.contains(e);
+    return '${hatch ? 'pass_edge' : 'wall_edge'}_${e.alongX ? 'x' : 'y'}';
+  }
+
+  /// The walls between tiles: a slab for each, and a post at every grid point
+  /// where one starts, ends or turns, sorted in with everything else.
+  List<_Drawn> _edgeWalls(Canvas canvas) {
+    if (diner.walls.isEmpty) return const [];
+    // A wall is on the line between two tiles: after anyone standing behind
+    // it and before any fixture in front. A fixture on the tile in front has
+    // the same depth, and a person behind it too, so a wall ranks between
+    // them (see [_Drawn.rank]). Posts are drawn first, so the slab they hold
+    // up is on top of the post at its far end.
+    final out = <_Drawn>[
+      for (final v in wallPosts(diner.walls))
+        _Drawn(
+          (v.x + v.y).toDouble(),
+          true,
+          () => _cell(canvas, 'wall_post', v),
+          wall: true,
+        ),
+    ];
+    for (final e in diner.walls) {
+      final at = Cell(e.x, e.y);
+      out.add(
+        _Drawn(
+          (e.x + e.y).toDouble(),
+          true,
+          () => _cell(canvas, _edgeSprite(e), at),
+          wall: true,
+        ),
+      );
+    }
+    return out;
+  }
+
   /// A red mark over every fixture the layout check complains about.
   void _warnings(Canvas canvas) {
     if (!showProblems) return;
@@ -711,8 +771,20 @@ class DinerPainter extends CustomPainter {
       _stroke(canvas, path, Pal.gold);
     }
     if (ghostGroup.isNotEmpty) _groupGhost(canvas);
+    final picked = selectedEdge;
+    if (picked != null) {
+      final path = Path();
+      _edgeLine(path, picked);
+      // And along the top of the wall, so it shows against the floor.
+      _edgeLine(path, picked, lift: 14);
+      _stroke(canvas, path, Pal.gold);
+    }
     final kind = placing;
     final at = hover;
+    if ((kind == Kind.wall || kind == Kind.pass) && hoverEdge != null) {
+      _wallGhost(canvas, hoverEdge!, hatch: kind == Kind.pass);
+      return;
+    }
     if (kind == Kind.window) _windowSpots(canvas, at);
     if (kind == null || at == null) return;
     final ghost = Placed(0, kind, at, kind == Kind.window ? Dir.se : facing);
@@ -731,6 +803,54 @@ class DinerPainter extends CustomPainter {
       _frontMarker(canvas, ghost);
     } else {
       _shutInTiles(canvas, kind, at);
+    }
+  }
+
+  /// A line along [e] on the floor, two pixels thick.
+  void _edgeLine(Path path, Edge e, {double lift = 0}) {
+    final a = view.vertex(e.x, e.y).translate(0, -lift);
+    final b = view
+        .vertex(e.alongX ? e.x + 1 : e.x, e.alongX ? e.y : e.y + 1)
+        .translate(0, -lift);
+    _line(path, a, b);
+    _line(path, a.translate(0, 1), b.translate(0, 1));
+  }
+
+  /// The wall being aimed: drawn as it would stand when it can go there,
+  /// with a green line along it, and a red one, with the tiles it would shut
+  /// in marked, when it cannot.
+  void _wallGhost(Canvas canvas, Edge e, {bool hatch = false}) {
+    final ok =
+        placeOk ??
+        (hatch ? diner.checkHatch(e) : diner.checkWall(e)) == PlaceResult.ok;
+    if (ok) {
+      final at = Cell(e.x, e.y);
+      // Faded, so it reads as not there yet.
+      _cell(canvas, e.alongX ? 'wall_edge_x' : 'wall_edge_y', at, faded: true);
+      for (final v in wallPosts([e])) {
+        _cell(canvas, 'wall_post', v, faded: true);
+      }
+    }
+    final path = Path();
+    _edgeLine(path, e);
+    if (!ok) {
+      final m = view.vertex(
+        e.x + (e.alongX ? 0.5 : 0),
+        e.y + (e.alongX ? 0 : 0.5),
+      );
+      _line(path, m.translate(-6, -3), m.translate(6, 3));
+      _line(path, m.translate(-6, 3), m.translate(6, -3));
+    }
+    _stroke(canvas, path, ok ? _ok : _bad);
+    if (!ok) {
+      final shut = diner.cutOffByWall(e);
+      if (shut.isNotEmpty) {
+        final marks = Path();
+        for (final c in shut) {
+          _outline(marks, c, 1, 1);
+        }
+        _stroke(canvas, marks, _bad);
+      }
     }
   }
 
@@ -778,7 +898,7 @@ class DinerPainter extends CustomPainter {
   /// A small chevron on the tile in front of a fixture being placed, so it is
   /// clear which way it faces.
   void _frontMarker(Canvas canvas, Placed g) {
-    if (!g.def.turns) return;
+    if (!g.def.turns || g.def.role == Role.table) return;
     final path = Path();
     for (final f in g.fronts) {
       final c = view.vertex(f.x + 0.5, f.y + 0.5);
@@ -824,12 +944,15 @@ class DinerPainter extends CustomPainter {
 }
 
 class _Drawn implements Comparable<_Drawn> {
-  _Drawn(this.depth, this.fixture, this.draw);
+  _Drawn(this.depth, bool fixture, this.draw, {bool wall = false})
+    : rank = wall ? 1 : (fixture ? 2 : 0);
 
   final double depth;
 
-  /// Fixtures draw after people at the same depth: they are in front.
-  final bool fixture;
+  /// At the same depth people draw first, then walls, then fixtures: a fixture
+  /// is in front of the wall beside it, and a person behind a wall is hidden
+  /// by it.
+  final int rank;
   final VoidCallback draw;
 
   /// Where it was added, to settle ties.
@@ -839,7 +962,7 @@ class _Drawn implements Comparable<_Drawn> {
   int compareTo(_Drawn o) {
     final r = depth.compareTo(o.depth);
     if (r != 0) return r;
-    if (fixture != o.fixture) return fixture ? 1 : -1;
+    if (rank != o.rank) return rank.compareTo(o.rank);
     return seq.compareTo(o.seq);
   }
 }
