@@ -306,9 +306,10 @@ class DinerPainter extends CustomPainter {
     final things = <_Drawn>[
       for (final p in diner.items.where((p) => !p.def.floor))
         _Drawn(
-          // Hung things are on the wall behind whatever stands in the cell.
+          // Hung things (TV) sit on the wall one tile behind the floor cell
+          // they cover, so subtract a full tile unit rather than a hair.
           (p.at.x + p.def.w - 1 + p.at.y + p.def.h - 1) -
-              (p.def.hung ? 0.1 : 0),
+              (p.def.hung ? 1.0 : 0),
           true,
           () => _fixture(canvas, p),
         ),
@@ -946,7 +947,7 @@ class DinerPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant DinerPainter old) =>
       old.revision != revision ||
-      old.fit != fit ||
+      old.fit.key != fit.key ||
       old.gesturing != gesturing ||
       old.placing != placing ||
       old.hover != hover ||
@@ -969,13 +970,14 @@ class DinerPainter extends CustomPainter {
 
 class _Drawn implements Comparable<_Drawn> {
   _Drawn(this.depth, bool fixture, this.draw, {bool wall = false})
-    : rank = wall ? 1 : (fixture ? 2 : 0);
+    : rank = wall ? 1 : (fixture ? 0 : 2);
 
   final double depth;
 
-  /// At the same depth people draw first, then walls, then fixtures: a fixture
-  /// is in front of the wall beside it, and a person behind a wall is hidden
-  /// by it.
+  /// At the same depth: fixtures draw first (rank 0), edge walls next (rank 1),
+  /// then actors last (rank 2). This lets walking actors appear in front of
+  /// a fixture when they reach its front-face diagonal, while seated actors
+  /// stay behind their chair because the service layer gives them a lower row.
   final int rank;
   final VoidCallback draw;
 
