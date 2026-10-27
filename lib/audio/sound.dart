@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
+import 'package:audio_session/audio_session.dart' as as_;
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
@@ -119,15 +120,8 @@ class AudioplayersBackend implements SoundBackend {
   void _quietly(Future<void> f) =>
       f.catchError((Object e) => debugPrint('Sound failed: $e'));
 
-  /// Mix with whatever else the phone is playing, and take no audio focus, so
-  /// the game never stops someone's music. Set on each player, before it plays.
-  static final _context = AudioContextConfig(
-    focus: AudioContextConfigFocus.mixWithOthers,
-  ).build();
-
   AudioPlayer _newPlayer(ReleaseMode release, {PlayerMode? mode}) {
     final p = AudioPlayer();
-    _quietly(p.setAudioContext(_context));
     _quietly(p.setReleaseMode(release));
     if (mode != null) _quietly(p.setPlayerMode(mode));
     return p;
@@ -293,10 +287,41 @@ class Sound {
 
   /// Holds the sound whenever the app is out of sight, on any screen, and
   /// carries on when it comes back. Call once, at start-up.
-  void watchLifecycle() {
+  Future<void> watchLifecycle() async {
     if (_watcher != null) return;
     _watcher = _Lifecycle(this);
     WidgetsBinding.instance.addObserver(_watcher!);
+
+    // Configure the platform audio session so the game's audio:
+    //   iOS  — ambient category: mixes with others, stops when screen locks.
+    //   Android — game usage: not treated as background media.
+    // Also handle system interruptions (phone calls, other apps taking focus).
+    final session = await as_.AudioSession.instance;
+    await session.configure(as_.AudioSessionConfiguration(
+      avAudioSessionCategory: as_.AVAudioSessionCategory.ambient,
+      avAudioSessionCategoryOptions:
+          as_.AVAudioSessionCategoryOptions.mixWithOthers,
+      avAudioSessionMode: as_.AVAudioSessionMode.defaultMode,
+      androidAudioAttributes: const as_.AndroidAudioAttributes(
+        contentType: as_.AndroidAudioContentType.music,
+        usage: as_.AndroidAudioUsage.game,
+        flags: as_.AndroidAudioFlags.none,
+      ),
+      androidAudioFocusGainType:
+          as_.AndroidAudioFocusGainType.gainTransientMayDuck,
+    ));
+    session.interruptionEventStream.listen((event) {
+      if (event.begin) {
+        pause();
+      } else {
+        if (event.type == as_.AudioInterruptionType.pause ||
+            event.type == as_.AudioInterruptionType.duck) {
+          resume();
+        }
+      }
+    });
+    // Pause when headphones are unplugged or Bluetooth disconnects.
+    session.becomingNoisyEventStream.listen((_) => pause());
   }
 
   /// What the lifecycle observer does with a change of state.

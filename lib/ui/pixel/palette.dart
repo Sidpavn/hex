@@ -22,4 +22,12 @@ class Pal {
   static const red = Color(0xFFE86A5A);
   static const green = Color(0xFF6EDC82);
   static const purple = Color(0xFFC090F0);
+
+  // The home screen's menu card: a warm diner surface against the usual
+  // slate chrome, used nowhere else so it stays a deliberate, bounded choice.
+  static const cream = Color(0xFFE8F2EE);
+  static const creamDark = Color(0xFFB8D0C8);
+  static const inkWarm = Color(0xFF123331);
+  static const teal = Color(0xFF1A4A48);
+  static const tealDark = Color(0xFF0E2E2C);
 }

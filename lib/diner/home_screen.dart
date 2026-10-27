@@ -13,6 +13,7 @@ import 'diner.dart';
 import 'diner_art.dart';
 import 'diner_painter.dart';
 import 'guide.dart';
+import 'home_card.dart';
 import 'iso.dart';
 import 'save_panel.dart';
 import 'settings_screen.dart';
@@ -133,152 +134,240 @@ class _HomeScreenState extends State<HomeScreen> {
     final game = gameToContinue();
     final info = game == null ? null : Storage.slotInfo(game);
     final shown = game == null ? null : Storage.slotDiner(game);
+    final hasGame = game != null && info != null;
+
     return Scaffold(
       backgroundColor: Pal.bgTop,
       body: Backdrop(
         child: SafeArea(
           child: Column(
             children: [
+              const CheckerBand(colorA: Pal.tealDark, colorB: Pal.cream),
               Expanded(
                 child: _Scene(
                   key: const ValueKey('title-scene'),
                   diner: shown ?? Diner.starter(),
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const TitleSign(
-                      title: 'Tiny Diner Tycoon',
-                      line: 'Lay out the floor, hire the crew.',
-                    ),
-                    const SizedBox(height: 16),
-                    if (game != null && info != null) ...[
-                      GoldButton(
-                        key: const ValueKey('continue'),
-                        label: ':play: Continue',
-                        tall: true,
-                        onTap: () => _continue(game),
-                      ),
-                      const SizedBox(height: 4),
-                      PxText(
-                        'Game $game: ${info.summary}',
-                        key: const ValueKey('continue-summary'),
-                        style: const TextStyle(color: Pal.dim, fontSize: 14),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: GoldButton(
-                              key: const ValueKey('new-game'),
-                              label: ':plus: New game',
-                              filled: false,
-                              color: Pal.text,
-                              onTap: _newGame,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: GoldButton(
-                              key: const ValueKey('saved-games'),
-                              label: ':files: Saved games',
-                              filled: false,
-                              color: Pal.text,
-                              onTap: _saves,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ] else ...[
-                      GoldButton(
-                        key: const ValueKey('new-game'),
-                        label: ':plus: New game',
-                        tall: true,
-                        onTap: _newGame,
-                      ),
-                      const SizedBox(height: 8),
-                      GoldButton(
-                        key: const ValueKey('saved-games'),
-                        label: ':files: Load a game',
-                        filled: false,
-                        color: Pal.text,
-                        onTap: _saves,
-                      ),
-                    ],
-                    if (game == null && widget.cloudFor(1) != null) ...[
-                      const SizedBox(height: 12),
-                      // A fresh install: any backups are offered for restoring.
-                      for (var n = 1; n <= Storage.slots; n++)
-                        CloudLine(
-                          key: ValueKey('found-backup-$n'),
-                          store: widget.cloudFor(n)!,
-                          diner: null,
-                          prefix: 'Game $n: ',
-                          quiet: n > 1,
-                          onRestore: (d) {
-                            Storage.saveSlot(n, d);
-                            setState(() {});
-                          },
+              const PerfBand(),
+              const AwningBand(colorA: Pal.teal, colorB: Pal.cream),
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ColoredBox(
+                        color: Pal.cream,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(14, 22, 14, 14),
+                          child: _card(hasGame, game, info, shown),
                         ),
-                    ],
-                    if (game != null && widget.cloudFor(game) != null) ...[
-                      const SizedBox(height: 12),
-                      CloudLine(
-                        key: ValueKey('cloud-line-$game-${info?.savedAt}'),
-                        store: widget.cloudFor(game)!,
-                        diner: shown,
-                        onRestore: (d) {
-                          Storage.saveSlot(game, d);
-                          setState(() {});
-                        },
                       ),
+                      const CheckerBand(colorA: Pal.teal, colorB: Pal.cream),
                     ],
-                    const SizedBox(height: 8),
-                    Builder(
-                      builder: (context) {
-                        final scores = widget.scores ?? defaultScoreBoard();
-                        final settings = GoldButton(
-                          key: const ValueKey('settings'),
-                          label: ':gear: Settings',
-                          filled: false,
-                          color: Pal.dim,
-                          onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => SettingsScreen(
-                                cloudFor: widget.cloudFor,
-                                scores: scores,
-                              ),
-                            ),
+                  ),
+                  if (hasGame)
+                    Positioned(
+                      top: -22,
+                      right: 9,
+                      child: HexSeal(
+                        child: PxText(
+                          '${info.level}',
+                          style: const TextStyle(
+                            color: Pal.cream,
+                            fontSize: 20,
                           ),
-                        );
-                        if (scores == null || !scores.any) return settings;
-                        return Row(
-                          children: [
-                            Expanded(
-                              child: GoldButton(
-                                key: const ValueKey('leaderboards'),
-                                label: ':trophy: Leaderboards',
-                                filled: false,
-                                color: Pal.dim,
-                                onTap: () => scores.show(),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(child: settings),
-                          ],
-                        );
-                      },
+                        ),
+                      ),
                     ),
-                  ],
-                ),
+                ],
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+                child: _belowCard(hasGame, game, info, shown),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  /// The cream menu card: the game's name, today's state, and the one
+  /// primary action — everything else is quieter, below.
+  Widget _card(bool hasGame, int? game, SaveInfo? info, Diner? shown) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const PxText(
+          'Tiny Diner Tycoon',
+          key: ValueKey('title'),
+          style: TextStyle(color: Pal.inkWarm, fontSize: 26, height: 0.95),
+        ),
+        if (hasGame)
+          PxText(
+            'Day ${info!.day}',
+            style: const TextStyle(color: Pal.teal, fontSize: 14),
+          ),
+        const SizedBox(height: 8),
+        Container(height: 1, color: Pal.creamDark),
+        const SizedBox(height: 8),
+        if (hasGame) ...[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              PxText(
+                '${info!.coins}',
+                style: const TextStyle(
+                  color: Pal.teal,
+                  fontSize: 30,
+                  height: 0.85,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: PxText(
+                  'coins in the till',
+                  style: const TextStyle(color: Pal.teal, fontSize: 13),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Container(height: 1, color: Pal.creamDark),
+          LedgerLine(
+            label: 'Lifetime earned',
+            value: '${(shown ?? Diner.starter()).totalEarned}',
+          ),
+          Container(height: 1, color: Pal.creamDark),
+        ],
+        const SizedBox(height: 14),
+        DinerButton(
+          key: ValueKey(hasGame ? 'continue' : 'new-game'),
+          label: hasGame
+              ? 'Open for business — Day ${info!.day + 1}'
+              : 'New game',
+          tall: true,
+          fontSize: 15,
+          onTap: hasGame ? () => _continue(game!) : _newGame,
+        ),
+      ],
+    );
+  }
+
+  /// Backup status, the exact game, and the quieter secondary actions — all
+  /// on the usual dark chrome, below the card.
+  Widget _belowCard(bool hasGame, int? game, SaveInfo? info, Diner? shown) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (hasGame) ...[
+          PxText(
+            'Game $game: ${info!.summary}',
+            key: const ValueKey('continue-summary'),
+            style: const TextStyle(color: Pal.dim, fontSize: 14),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: GoldButton(
+                  key: const ValueKey('new-game'),
+                  label: ':plus: New game',
+                  filled: false,
+                  color: Pal.text,
+                  onTap: _newGame,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: GoldButton(
+                  key: const ValueKey('saved-games'),
+                  label: ':files: Saved games',
+                  filled: false,
+                  color: Pal.text,
+                  onTap: _saves,
+                ),
+              ),
+            ],
+          ),
+        ] else ...[
+          GoldButton(
+            key: const ValueKey('saved-games'),
+            label: ':files: Load a game',
+            filled: false,
+            color: Pal.text,
+            onTap: _saves,
+          ),
+        ],
+        if (!hasGame && widget.cloudFor(1) != null) ...[
+          const SizedBox(height: 12),
+          // A fresh install: any backups are offered for restoring.
+          for (var n = 1; n <= Storage.slots; n++)
+            CloudLine(
+              key: ValueKey('found-backup-$n'),
+              store: widget.cloudFor(n)!,
+              diner: null,
+              prefix: 'Game $n: ',
+              quiet: n > 1,
+              onRestore: (d) {
+                Storage.saveSlot(n, d);
+                setState(() {});
+              },
+            ),
+        ],
+        if (game != null && widget.cloudFor(game) != null) ...[
+          const SizedBox(height: 12),
+          CloudLine(
+            key: ValueKey('cloud-line-$game-${info?.savedAt}'),
+            store: widget.cloudFor(game)!,
+            diner: shown,
+            onRestore: (d) {
+              Storage.saveSlot(game, d);
+              setState(() {});
+            },
+          ),
+        ],
+        const SizedBox(height: 8),
+        Builder(
+          builder: (context) {
+            final scores = widget.scores ?? defaultScoreBoard();
+            final settings = GoldButton(
+              key: const ValueKey('settings'),
+              label: ':gear: Settings',
+              filled: false,
+              color: Pal.dim,
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => SettingsScreen(
+                    cloudFor: widget.cloudFor,
+                    scores: scores,
+                  ),
+                ),
+              ),
+            );
+            if (scores == null || !scores.any) return settings;
+            return Row(
+              children: [
+                Expanded(
+                  child: GoldButton(
+                    key: const ValueKey('leaderboards'),
+                    label: ':trophy: Leaderboards',
+                    filled: false,
+                    color: Pal.dim,
+                    onTap: () => scores.show(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(child: settings),
+              ],
+            );
+          },
+        ),
+      ],
     );
   }
 }

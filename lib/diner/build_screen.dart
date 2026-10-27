@@ -23,6 +23,7 @@ import 'pause_menu.dart';
 import 'vending_dialog.dart';
 import 'advice.dart';
 import 'events.dart';
+import 'challenge.dart';
 import 'goals.dart';
 import 'goals_screen.dart';
 import 'diner_art.dart';
@@ -481,6 +482,17 @@ class _BuildScreenState extends State<BuildScreen>
     _dayEndSounds(report);
     _postScores(report);
     diner.gems += report.levelsGained * Diner.levelGems;
+    final challenge = DailyChallenge.forDay(
+      report.day,
+      diner.progress.level,
+      hasWindow: diner.window != null,
+    );
+    if (challenge != null &&
+        diner.challengeDayDone != report.day &&
+        challenge.met(report)) {
+      diner.challengeDayDone = report.day;
+      diner.coins += challenge.reward;
+    }
     setState(() {
       _checkGoals(report);
       _save(_savedAt);
@@ -1632,6 +1644,10 @@ class _BuildScreenState extends State<BuildScreen>
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (!_selecting && !editing && _challengeCard() != null) ...[
+          _challengeCard()!,
+          const SizedBox(height: 8),
+        ],
         if (!_selecting && !editing && _orderCard() != null) ...[
           _orderCard()!,
           const SizedBox(height: 12),
@@ -1653,6 +1669,37 @@ class _BuildScreenState extends State<BuildScreen>
           _bottomRow(),
         ],
       ],
+    );
+  }
+
+  /// Today's daily challenge, shown before service starts.
+  Widget? _challengeCard() {
+    final c = DailyChallenge.forDay(
+      diner.progress.day,
+      diner.progress.level,
+      hasWindow: diner.window != null && diner.windowOn,
+    );
+    if (c == null) return null;
+    final done = diner.challengeDayDone == diner.progress.day;
+    return Panel(
+      key: const ValueKey('challenge-card'),
+      padding: const EdgeInsets.all(8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          PxText(
+            done ? 'Challenge done' : 'Challenge',
+            style: TextStyle(
+              color: done ? Pal.green : Pal.gold,
+              fontSize: 16,
+            ),
+          ),
+          PxText(
+            '${c.description}. +${c.reward}',
+            style: const TextStyle(color: Pal.dim, fontSize: 14),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1699,6 +1746,11 @@ class _BuildScreenState extends State<BuildScreen>
       }
     }
     return false;
+  }
+
+  void _toggleWindow() {
+    setState(() => diner.windowOn = !diner.windowOn);
+    Storage.saveDiner(diner);
   }
 
   Future<void> _openVending() async {
@@ -1926,6 +1978,18 @@ class _BuildScreenState extends State<BuildScreen>
 
   Widget _selectedRow(Placed sel) => Row(
     children: [
+      if (sel.kind == Kind.window) ...[
+        Expanded(
+          child: GoldButton(
+            key: const ValueKey('window-toggle'),
+            label: diner.windowOn ? 'Close window' : 'Open window',
+            filled: !diner.windowOn,
+            color: diner.windowOn ? Pal.text : Pal.gold,
+            onTap: _toggleWindow,
+          ),
+        ),
+        const SizedBox(width: 8),
+      ],
       if (sel.def.rotates) ...[
         Expanded(
           child: GoldButton(
@@ -2405,6 +2469,26 @@ class _BuildScreenState extends State<BuildScreen>
             ),
           ],
         ),
+        const SizedBox(height: 8),
+        () {
+          final c = DailyChallenge.forDay(
+            r.day,
+            progress.level,
+            hasWindow: diner.window != null,
+          );
+          if (c == null) return const SizedBox.shrink();
+          final done = diner.challengeDayDone == r.day;
+          return PxText(
+            done
+                ? 'Challenge done: ${c.description}. +${c.reward}'
+                : 'Challenge missed: ${c.description}',
+            key: const ValueKey('challenge-line'),
+            style: TextStyle(
+              color: done ? Pal.green : Pal.dim,
+              fontSize: 14,
+            ),
+          );
+        }(),
         const SizedBox(height: 8),
         if (r.unpaid > 0)
           PxText(

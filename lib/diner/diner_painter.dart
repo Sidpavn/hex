@@ -306,10 +306,7 @@ class DinerPainter extends CustomPainter {
     final things = <_Drawn>[
       for (final p in diner.items.where((p) => !p.def.floor))
         _Drawn(
-          // Hung things (TV) sit on the wall one tile behind the floor cell
-          // they cover, so subtract a full tile unit rather than a hair.
-          (p.at.x + p.def.w - 1 + p.at.y + p.def.h - 1) -
-              (p.def.hung ? 1.0 : 0),
+          (p.at.x + p.def.w - 1 + p.at.y + p.def.h - 1).toDouble(),
           true,
           () => _fixture(canvas, p),
         ),
@@ -318,6 +315,15 @@ class DinerPainter extends CustomPainter {
       ..._edgeWalls(canvas),
       for (final (name, c) in streetProps(diner))
         _Drawn((c.x + c.y).toDouble(), true, () => _cell(canvas, name, c)),
+      // Right-side buildings must sort with delivery cars: a car in the lane
+      // (x=12) should draw behind block_rf (x=15). They are also in _still for
+      // the initial cache; this live copy covers that one and sorts correctly.
+      for (final b in buildings.where((b) => b.x0 >= Diner.plotRight + 5))
+        _Drawn(
+          (b.x0 + b.y0 + b.w + b.d).toDouble(),
+          true,
+          () => _cell(canvas, b.sprite, Cell(b.x0, b.y0), dim: true),
+        ),
       for (final a in live) _Drawn(a.depth, false, () => _actor(canvas, a)),
     ];
     // Equal depths keep the order they were added in, whatever the sort does.

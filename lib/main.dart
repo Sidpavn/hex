@@ -17,7 +17,7 @@ Future<void> main() async {
   }
   await PixelAssets.load();
   await DinerArt.load();
-  Sound.instance.watchLifecycle();
+  await Sound.instance.watchLifecycle();
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   runApp(const HexApp());
 }

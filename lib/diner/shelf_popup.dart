@@ -142,13 +142,18 @@ class FixtureTile extends StatelessWidget {
       dim: (locked || !affordable) && !selected,
       glow: selected ? Pal.gold : null,
       padding: const EdgeInsets.all(6),
+      // A tall-enough floor that a one-word and a two-word name land on the
+      // same height in practice, so the tiles read as a uniform grid: it is
+      // a minimum, not a cap, so a longer name only ever grows it further
+      // rather than being cut off.
       child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 72),
+        constraints: const BoxConstraints(minHeight: 108),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             SizedBox(
-              height: 44,
+              height: 40,
               child: Align(
                 alignment: Alignment.bottomCenter,
                 child: DinerSprite(spriteName(def.kind, Dir.sw)),
@@ -157,13 +162,20 @@ class FixtureTile extends StatelessWidget {
             const SizedBox(height: 4),
             PxText(
               def.name,
-              style: const TextStyle(color: Pal.text, fontSize: 13),
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Pal.text,
+                fontSize: 13,
+                height: 1.05,
+              ),
             ),
             PxText(
               locked ? ':lock: Lv ${def.unlock}' : ':coin: ${def.cost}',
+              textAlign: TextAlign.center,
               style: TextStyle(
                 color: affordable && !locked ? Pal.text : Pal.dimmer,
                 fontSize: 13,
+                height: 1.05,
               ),
             ),
           ],

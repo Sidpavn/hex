@@ -1332,7 +1332,7 @@ class DinerSim {
     }
     while (_nextCar < carSchedule.length && carSchedule[_nextCar] <= ticks) {
       _nextCar++;
-      _arriveCar();
+      if (diner.windowOn) _arriveCar();
     }
     final w = _walkInTick;
     if (w != null && _applicant == null && ticks >= w) _applicantArrives();
@@ -1466,7 +1466,8 @@ class DinerSim {
     }
     g
       ..slot = _cars.length
-      ..seat = Seat(diner.operatorSpot!, diner.operatorSpot!, Dir.sw)
+      ..seat = Seat(diner.operatorSpot!, diner.operatorSpot!, Dir.sw,
+          fixtureDepth: (diner.operatorSpot!.x + diner.operatorSpot!.y).toDouble())
       ..path = _drive(start, diner.carSlot(g.slot));
     _cars.add(g);
   }
@@ -3499,6 +3500,7 @@ class DinerSim {
       bool seated = false,
       bool car = false,
       double offset = 0,
+      double fixtureDepth = 0,
     }) {
       final moved = p.prev != p.cell;
       final t = moved ? alpha : 1.0;
@@ -3546,10 +3548,11 @@ class DinerSim {
         y,
         dir: p.dir,
         frame: frame,
-        // Sitting: on the cushion, in front of the chair but behind whoever
-        // stands in the next cell along.
+        // Sitting: just in front of the seat fixture's far-corner depth.
+        // fixtureDepth accounts for multi-tile seats (bench = depth+1) so
+        // the near-side customer is not hidden by the fixture.
         lift: seated ? 11 : 0,
-        row: seated ? p.cell.x + p.cell.y + 0.5 : x + y,
+        row: seated ? fixtureDepth + 0.5 : x + y,
         badge: badge,
         items: items,
         meter: meter,
@@ -3582,6 +3585,7 @@ class DinerSim {
           g.sprite,
           car: g.car,
           seated: seated && !g.car,
+          fixtureDepth: (seated && !g.car) ? (g.seat?.fixtureDepth ?? (g.cell.x + g.cell.y).toDouble()) : 0,
           badge: g.angry
               ? 'warn'
               : g.rushed

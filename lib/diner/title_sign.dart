@@ -14,10 +14,9 @@ class TitleSign extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final u = PixelUi.unit(context);
     return Stack(
       children: [
-        Container(
+        SizedBox(
           width: double.infinity,
           child: PixelBox(
             color: Pal.panelLo,
@@ -45,17 +44,43 @@ class TitleSign extends StatelessWidget {
             ),
           ),
         ),
-        CustomPaint(size: Size.fromHeight(9 * u), painter: _AwningPainter(u)),
+        const AwningBand(),
       ],
     );
   }
 }
 
-/// Alternating gold and cream stripes, with the bottom edge scalloped.
+/// Alternating stripes with a scalloped bottom edge, like the awning over a
+/// diner's window. [colorA]/[colorB] let a screen with its own surface
+/// (the menu card) use its own two colours instead of the default gold.
+class AwningBand extends StatelessWidget {
+  const AwningBand({
+    super.key,
+    this.colorA = Pal.gold,
+    this.colorB = Pal.text,
+  });
+
+  final Color colorA;
+  final Color colorB;
+
+  @override
+  Widget build(BuildContext context) {
+    final u = PixelUi.unit(context);
+    return CustomPaint(
+      size: Size.fromHeight(9 * u),
+      painter: _AwningPainter(u, colorA, colorB),
+    );
+  }
+}
+
 class _AwningPainter extends CustomPainter {
-  _AwningPainter(this.u);
+  _AwningPainter(this.u, this.a, this.b);
 
   final double u;
+  final Color a;
+  final Color b;
+
+  static Color _edgeOf(Color c) => Color.lerp(c, Colors.black, 0.28)!;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -65,9 +90,8 @@ class _AwningPainter extends CustomPainter {
     for (var i = 0; i < n; i++) {
       final x = i * stripe;
       final w = (x + stripe > size.width) ? size.width - x : stripe;
-      final gold = i.isEven;
-      final body = gold ? Pal.gold : Pal.text;
-      final edge = gold ? Pal.goldDark : Pal.dim;
+      final body = i.isEven ? a : b;
+      final edge = _edgeOf(body);
       // The stripe, with a darker band along the top edge for depth.
       p.color = body;
       canvas.drawRect(Rect.fromLTWH(x, 0, w, 6 * u), p);
@@ -81,5 +105,6 @@ class _AwningPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_AwningPainter old) => old.u != u;
+  bool shouldRepaint(_AwningPainter old) =>
+      old.u != u || old.a != a || old.b != b;
 }

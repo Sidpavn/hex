@@ -531,11 +531,15 @@ class Plot {
 /// A spot a guest can sit: the cell, the table cell in front of it, and the
 /// way they face.
 class Seat {
-  const Seat(this.cell, this.table, this.facing);
+  const Seat(this.cell, this.table, this.facing, {this.fixtureDepth = 0});
 
   final Cell cell;
   final Cell table;
   final Dir facing;
+
+  /// Far-corner depth of the seat fixture (at.x + def.w-1 + at.y + def.h-1).
+  /// Used by the painter to place seated guests just in front of the fixture.
+  final double fixtureDepth;
 }
 
 class Problem {
@@ -919,6 +923,12 @@ class Diner {
   /// Whether the machines are switched on. Off, they sell nothing and cost
   /// nothing: no stock, no repairs.
   bool vendingOn = true;
+
+  /// Whether the takeaway window is open. Closed, no cars arrive.
+  bool windowOn = true;
+
+  /// The day number whose daily challenge was already completed (0 = none yet).
+  int challengeDayDone = 0;
 
   /// How many are working.
   int get vendingActive => vendingOn ? vendingMachines : 0;
@@ -1399,7 +1409,12 @@ class Diner {
         if (approaches(c).isEmpty) continue;
         // Guests do not cross the kitchen, so the way to it must be theirs.
         if (guestWay != null && !approaches(c).any(guestWay.contains)) continue;
-        out.add(Seat(c, front, p.facing));
+        out.add(Seat(
+          c,
+          front,
+          p.facing,
+          fixtureDepth: (p.at.x + p.def.w - 1 + p.at.y + p.def.h - 1).toDouble(),
+        ));
       }
     }
     return out;
@@ -2051,6 +2066,8 @@ class Diner {
     'vend': vend.name,
     'regulars': regulars.toJson(),
     'vendOn': vendingOn,
+    if (!windowOn) 'winOn': false,
+    if (challengeDayDone > 0) 'chalDay': challengeDayDone,
     'vendCash': vendCash,
     'contract': {
       'day': contractDay,
@@ -2161,6 +2178,8 @@ class Diner {
         Vend.values.where((x) => x.name == j['vend']).firstOrNull ??
         Vend.drinks;
     d.vendingOn = j['vendOn'] != false;
+    d.windowOn = j['winOn'] != false;
+    d.challengeDayDone = (j['chalDay'] as int?) ?? 0;
     d.vendCash = ((j['vendCash'] as int?) ?? 0).clamp(0, 100000);
     d.savedAt = (j['saved'] is int ? j['saved'] as int : 0).clamp(0, 1 << 52);
     d.regulars = RegularBook.fromJson(j['regulars']);
