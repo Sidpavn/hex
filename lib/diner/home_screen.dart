@@ -10,7 +10,6 @@ import '../ui/pixel_dialog.dart';
 import '../ui/widgets.dart';
 import 'build_screen.dart';
 import 'diner.dart';
-import 'recipes.dart';
 import 'diner_art.dart';
 import 'diner_painter.dart';
 import 'guide.dart';
@@ -18,6 +17,7 @@ import 'home_card.dart';
 import 'iso.dart';
 import 'save_panel.dart';
 import 'settings_screen.dart';
+import 'streak_popup.dart';
 import 'title_sign.dart';
 
 /// Where to keep a copy of game [n] off the phone, if anywhere.
@@ -69,10 +69,12 @@ Future<void> _play(
   int n, {
   bool fresh = false,
   String locationId = 'diner',
+  String name = 'My Diner',
 }) async {
   Storage.useSlot(n);
   if (fresh) {
-    Storage.saveSlot(n, Diner.fresh(locationId: locationId));
+    final d = Diner.fresh(locationId: locationId)..name = name;
+    Storage.saveSlot(n, d);
     // A new game starts with the guide, which can be skipped.
     await Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => const GuideScreen(intro: true)),
@@ -86,12 +88,87 @@ Future<void> _play(
   Sound.instance.music(Music.build);
 }
 
-/// Whether the pizzeria (La Piazza) is unlocked: any save slot is at level 5+.
-bool _pizzeriaUnlocked() {
-  for (var n = 1; n <= Storage.slots; n++) {
-    if ((Storage.slotInfo(n)?.level ?? 0) >= 5) return true;
-  }
-  return false;
+/// Shows a dialog asking the player to name their new diner.
+Future<String> askDinerName(BuildContext context) async {
+  final controller = TextEditingController(text: 'My Diner');
+  final result = await popupPixel<String>(
+    context,
+    (ctx) => Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 64),
+      child: PixelBox(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const PxText(
+              'Name your diner',
+              style: TextStyle(color: Pal.gold, fontSize: 22),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              maxLength: 20,
+              cursorColor: Pal.gold,
+              cursorWidth: 2,
+              cursorHeight: 16.0,
+              style: const TextStyle(
+                fontFamily: 'VT323',
+                fontSize: 17,
+                color: Pal.text,
+              ),
+              decoration: const InputDecoration(
+                counterText: '',
+                filled: true,
+                fillColor: Pal.panel,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.zero,
+                  borderSide: BorderSide(color: Pal.ink, width: 2),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.zero,
+                  borderSide: BorderSide(color: Pal.gold, width: 2),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.zero,
+                  borderSide: BorderSide(color: Pal.ink, width: 2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: GoldButton(
+                    key: const ValueKey('name-skip'),
+                    label: 'Skip',
+                    filled: false,
+                    color: Pal.dim,
+                    onTap: () => Navigator.of(ctx).pop('My Diner'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: GoldButton(
+                    key: const ValueKey('name-done'),
+                    label: 'Done',
+                    onTap: () {
+                      final v = controller.text.trim();
+                      Navigator.of(ctx).pop(v.isEmpty ? 'My Diner' : v);
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+  return result ?? 'My Diner';
 }
 
 /// The title screen: the restaurant, what to do next, and whether the saves
@@ -130,19 +207,20 @@ class _HomeScreenState extends State<HomeScreen> {
       );
       return;
     }
-    String locationId = 'diner';
-    if (_pizzeriaUnlocked()) {
-      final picked = await Navigator.of(context).push<String>(
-        MaterialPageRoute<String>(
-          builder: (_) => const LocationPickerScreen(),
-        ),
-      );
-      if (!mounted) return;
-      if (picked == null) return; // cancelled
-      locationId = picked;
-    }
-    await _play(context, n, fresh: true, locationId: locationId);
+    final name = await _askDinerName();
+    if (!mounted) return;
+    await _play(context, n, fresh: true, name: name);
     if (mounted) setState(() {});
+  }
+
+  Future<String> _askDinerName() => askDinerName(context);
+
+  Future<void> _openStreakPopup(int game, Diner diner) async {
+    final claimed = await popupPixel<bool>(
+      context,
+      (_) => StreakPopup(diner: diner, game: game),
+    );
+    if (claimed == true && mounted) setState(() {});
   }
 
   Future<void> _saves({String note = ''}) async {
@@ -159,15 +237,16 @@ class _HomeScreenState extends State<HomeScreen> {
     final game = gameToContinue();
     final info = game == null ? null : Storage.slotInfo(game);
     final shown = game == null ? null : Storage.slotDiner(game);
-    final streakReady = game != null && Storage.streakReady;
     final hasGame = game != null && info != null;
 
     return Scaffold(
       backgroundColor: Pal.bgTop,
       body: Backdrop(
         child: SafeArea(
-          child: Column(
+          child: Stack(
             children: [
+              Column(
+                children: [
               const CheckerBand(colorA: Pal.tealDark, colorB: Pal.cream),
               Expanded(
                 child: _Scene(
@@ -209,15 +288,21 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                 ],
               ),
-              if (streakReady)
-              _StreakBanner(
-                game: game,
-                diner: shown!,
-                onClaimed: () => setState(() {}),
-              ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
                 child: _belowCard(hasGame, game, info, shown),
+              ),
+                ],
+              ),
+              Positioned(
+                top: 15,
+                left: 10,
+                child: _DailyRewardButton(
+                  ready: Storage.streakReady,
+                  onTap: game != null && shown != null
+                      ? () => _openStreakPopup(game, shown)
+                      : null,
+                ),
               ),
             ],
           ),
@@ -676,6 +761,7 @@ class _SavesScreenState extends State<SavesScreen> {
 
   Widget _row(int n) {
     final info = Storage.slotInfo(n);
+    final diner = info != null ? Storage.slotDiner(n) : null;
     final playing = n == Storage.slot && info != null;
     return Panel(
       key: ValueKey('game-$n'),
@@ -688,11 +774,11 @@ class _SavesScreenState extends State<SavesScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 PxText(
-                  'Game $n',
-                  style: const TextStyle(color: Pal.text, fontSize: 18),
+                  info == null ? 'Empty' : (diner?.name ?? 'My Diner'),
+                  style: const TextStyle(color: Pal.text, fontSize: 17),
                 ),
                 PxText(
-                  info == null ? 'Empty' : info.summary,
+                  info == null ? '' : info.summary,
                   style: const TextStyle(color: Pal.dim, fontSize: 14),
                 ),
                 if (info != null && savedAgo(info.savedAt).isNotEmpty)
@@ -768,7 +854,15 @@ class _SlotScreenState extends State<SlotScreen> {
             key: ValueKey(d == null ? 'start-here' : 'play-$n'),
             label: d == null ? 'New game here' : 'Play this game',
             onTap: () async {
-              await _play(context, n, fresh: d == null);
+              if (d == null) {
+                final ctx = context;
+                final name = await askDinerName(ctx);
+                if (!mounted) return;
+                // ignore: use_build_context_synchronously
+                await _play(ctx, n, fresh: true, name: name);
+              } else {
+                await _play(context, n);
+              }
               if (mounted) setState(() {});
             },
           ),
@@ -804,107 +898,44 @@ class _SlotScreenState extends State<SlotScreen> {
   }
 }
 
-// ── Streak bonus banner ───────────────────────────────────────────────────
+// ── Daily reward button ───────────────────────────────────────────────────
 
-class _StreakBanner extends StatelessWidget {
-  const _StreakBanner({
-    required this.game,
-    required this.diner,
-    required this.onClaimed,
-  });
+class _DailyRewardButton extends StatelessWidget {
+  const _DailyRewardButton({required this.ready, required this.onTap});
 
-  final int game;
-  final Diner diner;
-  final VoidCallback onClaimed;
+  final bool ready;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    final streak = Storage.streakCount;
-    final nextStreak = (streak == 0 || Storage.streakReady)
-        ? (Storage.streakCount + 1).clamp(1, 6)
-        : streak.clamp(1, 6);
-    final coins = 25 * nextStreak;
+    final enabled = onTap != null;
     return GestureDetector(
-      key: const ValueKey('streak-banner'),
-      behavior: HitTestBehavior.opaque,
-      onTap: () {
-        final bonus = Storage.claimStreak();
-        if (bonus <= 0) return;
-        diner.coins += bonus;
-        if (Storage.streakCount > diner.maxStreakDays) {
-          diner.maxStreakDays = Storage.streakCount;
-        }
-        Storage.saveSlot(game, diner);
-        onClaimed();
-      },
-      child: ColoredBox(
-        color: Pal.teal,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Row(
-            children: [
-              Expanded(
-                child: PxText(
-                  'Day $nextStreak streak — tap to claim $coins coins',
-                  style: const TextStyle(color: Pal.cream, fontSize: 14),
-                ),
+      onTap: onTap,
+      child: PixelBox(
+        key: const ValueKey('daily-reward-button'),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        border: enabled && ready ? Pal.gold : Pal.ink,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            PxText(
+              ':coin:',
+              style: TextStyle(
+                color: enabled && ready ? Pal.gold : Pal.dim,
+                fontSize: 14,
               ),
-              const PxText(
-                'Claim',
-                style: TextStyle(color: Pal.gold, fontSize: 14),
+            ),
+            PxText(
+              enabled && ready ? 'Claim' : 'Daily',
+              style: TextStyle(
+                color: enabled && ready ? Pal.gold : Pal.dim,
+                fontSize: 11,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-// ── Location picker ───────────────────────────────────────────────────────
-
-/// Shown when starting a new game once the pizzeria is unlocked. Returns the
-/// chosen location id, or null if the player goes back.
-class LocationPickerScreen extends StatelessWidget {
-  const LocationPickerScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return ScreenFrame(
-      title: 'New game',
-      subtitle: 'Pick a location',
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
-        children: [
-          for (final loc in locations)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Panel(
-                key: ValueKey('loc-${loc.id}'),
-                onTap: () => Navigator.of(context).pop(loc.id),
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    PxText(
-                      loc.name,
-                      style: const TextStyle(color: Pal.text, fontSize: 22),
-                    ),
-                    PxText(
-                      loc.tagline,
-                      style: const TextStyle(color: Pal.dim, fontSize: 14),
-                    ),
-                    const SizedBox(height: 6),
-                    PxText(
-                      '${loc.dishes.length} dishes to discover',
-                      style: const TextStyle(color: Pal.gold, fontSize: 14),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}

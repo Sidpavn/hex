@@ -82,7 +82,7 @@ class PxIcon extends StatelessWidget {
   final String name;
 
   /// Whole-number multiple of the UI pixel.
-  final int mult;
+  final double mult;
 
   /// Flat tint (e.g. to grey out an icon).
   final Color? tint;
@@ -190,7 +190,7 @@ class PxText extends StatelessWidget {
   final int? maxLines;
   final TextOverflow? overflow;
   final TextAlign? textAlign;
-  final int iconMult;
+  final double iconMult;
 
   static final _token = RegExp(r':([a-z0-9]+):');
 

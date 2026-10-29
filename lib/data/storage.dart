@@ -5,6 +5,24 @@ import 'package:hive_ce_flutter/hive_flutter.dart';
 import '../diner/diner.dart';
 import 'cloud_save.dart';
 
+/// A reward given for claiming a daily streak bonus.
+class StreakReward {
+  const StreakReward({required this.coins, required this.gems});
+  final int coins;
+  final int gems;
+  bool get isEmpty => coins == 0 && gems == 0;
+}
+
+const List<StreakReward> _streakRewards = [
+  StreakReward(coins: 25, gems: 0),
+  StreakReward(coins: 50, gems: 0),
+  StreakReward(coins: 75, gems: 1),
+  StreakReward(coins: 100, gems: 0),
+  StreakReward(coins: 125, gems: 0),
+  StreakReward(coins: 150, gems: 0),
+  StreakReward(coins: 200, gems: 3),
+];
+
 /// Persistent save: the diner.
 ///
 /// Everything lives in one Hive box as plain values (no adapters). If Hive was
@@ -92,15 +110,25 @@ class Storage {
   /// since the last claim).
   static bool get streakReady => _lastStreakDay < _dayNum();
 
-  /// Claims the streak bonus. Returns the coins awarded (25 per streak day,
-  /// capped at 150 for a 6-day streak). Returns 0 if already claimed today.
-  static int claimStreak() {
+  /// Which day of the 7-day cycle the next claim will land on (1-based, 1–7).
+  static int get streakDayInCycle {
+    if (!streakReady) return ((streakCount - 1) % 7) + 1;
+    final next = (_lastStreakDay == _dayNum() - 1) ? streakCount + 1 : 1;
+    return ((next - 1) % 7) + 1;
+  }
+
+  /// The reward that will be given on the next claim.
+  static StreakReward get nextClaimReward => _streakRewards[streakDayInCycle - 1];
+
+  /// Claims the streak bonus. Returns the reward; coins and gems are both zero
+  /// if already claimed today.
+  static StreakReward claimStreak() {
     final today = _dayNum();
-    if (_lastStreakDay >= today) return 0;
+    if (_lastStreakDay >= today) return const StreakReward(coins: 0, gems: 0);
     final streak = (_lastStreakDay == today - 1) ? streakCount + 1 : 1;
     streakCount = streak;
     _lastStreakDay = today;
-    return 25 * streak.clamp(1, 6);
+    return _streakRewards[(streak - 1) % 7];
   }
 
   /// The best score already sent for a leaderboard, by name, so a lower one

@@ -446,7 +446,7 @@ class Stars extends StatelessWidget {
   final int count;
   final int of;
   final double size;
-  final int mult;
+  final double mult;
 
   @override
   Widget build(BuildContext context) => Row(

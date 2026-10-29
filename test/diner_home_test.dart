@@ -119,8 +119,13 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
     }
 
-    /// A new game starts with the guide: skip it.
+    /// A new game starts with the guide: skip it. Also dismisses the name
+    /// dialog that appears first.
     Future<void> skipGuide(WidgetTester tester) async {
+      // Dismiss the diner name dialog.
+      expect(find.byKey(const ValueKey('name-skip')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('name-skip')));
+      await settle(tester);
       expect(find.byType(GuideScreen), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('guide-skip')));
       await settle(tester);

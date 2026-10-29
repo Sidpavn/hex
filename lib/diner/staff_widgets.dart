@@ -189,9 +189,9 @@ class StaffCard extends StatelessWidget {
                 ),
               ),
               if (!applicant) ...[
+                const SizedBox(height: 10),
                 MoodFace(s),
-                const SizedBox(height: 4),
-                MoodPips(s),
+                // MoodPips(s),
               ],
             ],
           ),

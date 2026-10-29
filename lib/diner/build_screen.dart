@@ -25,6 +25,7 @@ import 'advice.dart';
 import 'events.dart';
 import 'challenge.dart';
 import 'goals.dart';
+import 'franchise_screen.dart';
 import 'goals_screen.dart';
 import 'diner_art.dart';
 import 'diner_painter.dart';
@@ -1723,6 +1724,16 @@ class _BuildScreenState extends State<BuildScreen>
     });
   }
 
+  Future<void> _openInvestments() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => FranchiseScreen(diner: diner),
+      ),
+    );
+    if (!mounted) return;
+    setState(() => _coins = diner.coins);
+  }
+
   Future<void> _openOrder() async {
     await Navigator.of(
       context,
@@ -2713,6 +2724,21 @@ class _BuildScreenState extends State<BuildScreen>
             ],
           ),
         ),
+        if (_railShown)
+          Positioned(
+            left: 8,
+            bottom: 8,
+            child: _RailButton(
+              key: const ValueKey('investments'),
+              icon: 'coin',
+              label: 'Invest',
+              active: diner.franchises.any(
+                (f) => f.pendingEvent != null && !f.eventDecided,
+              ),
+              big: true,
+              onTap: _openInvestments,
+            ),
+          ),
         if (_railShown && (diner.offer != null || diner.takenContract != null))
           Positioned(
             right: 8,
@@ -2852,7 +2878,7 @@ class _RailButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // The biggest whole multiple of the icon that leaves room for the name.
-    final mult = PixelUi.unit(context) * 24 <= 34 ? 2 : 1;
+    final double mult = PixelUi.unit(context) * 24 <= 34 ? 2 : 1;
     return Panel(
       onTap: onTap,
       glow: warn ? Pal.red : (active || hint ? Pal.gold : null),

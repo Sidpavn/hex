@@ -428,6 +428,7 @@ class DayReport {
     this.regularsGone = const [],
     this.cars = 0,
     this.items = 0,
+    this.franchiseIncome = 0,
   });
 
   final int day;
@@ -509,6 +510,9 @@ class DayReport {
   /// How many of those served came by car, to the window.
   final int cars;
   final int items;
+
+  /// Coins earned by franchise investments this day.
+  final int franchiseIncome;
 
   /// What the day made after the ingredients.
   int get profit => earned - ingredients;
@@ -3462,6 +3466,7 @@ class DinerSim {
         ),
       )
       ..removeRange(0, math.max(0, diner.history.length - DayLog.keep));
+    final franchiseIncome = diner.endFranchiseDay(rng);
     return result = DayReport(
       day: day,
       served: served,
@@ -3502,6 +3507,7 @@ class DinerSim {
       regularsGone: List.of(regularsGone),
       cars: carsServed,
       items: itemsServed,
+      franchiseIncome: franchiseIncome,
     );
   }
 

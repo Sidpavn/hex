@@ -7,6 +7,8 @@ library;
 import 'styles.dart';
 import 'dart:math' as math;
 
+import 'franchise.dart';
+
 import 'contracts.dart';
 import 'crowd.dart';
 import 'events.dart';
@@ -735,12 +737,18 @@ class Diner {
   /// (La Piazza). Determines which dishes are on offer.
   String locationId = 'diner';
 
+  /// The player-chosen name for this restaurant.
+  String name = 'My Diner';
+
   /// Convenience: the full definition for this location.
   LocationDef get locationDef => locationById(locationId);
 
   /// The longest daily-play streak reached so far, in calendar days. Updated
   /// when a streak bonus is claimed; used by the streak goals.
   int maxStreakDays = 0;
+
+  /// All franchise investments owned by this restaurant.
+  List<OwnedFranchise> franchises = [];
 
   /// The goals that have been met, by id. See `goals.dart`.
   final Set<String> goalsDone = {};
@@ -2101,12 +2109,59 @@ class Diner {
   /// When this was last saved, in milliseconds since 1970. Zero if never.
   int savedAt = 0;
 
+  // ── franchise investments ────────────────────────────────────────────────
+
+  int get totalFranchiseIncome =>
+      franchises.fold(0, (s, f) => s + f.dailyIncome());
+
+  void openFranchise(String defId) {
+    final def = franchiseDefById(defId)!;
+    coins -= def.openCost;
+    final rng = math.Random();
+    final f = OwnedFranchise(defId: defId);
+    f.pendingEvent =
+        franchiseEventPool[rng.nextInt(franchiseEventPool.length)];
+    franchises.add(f);
+  }
+
+  bool decideFranchise(String defId, FranchiseOption option) {
+    final f = franchises.where((x) => x.defId == defId).firstOrNull;
+    if (f == null || f.eventDecided) return false;
+    final cost = option.coinCost;
+    if (cost > 0 && coins < cost) return false;
+    coins -= cost;
+    f.decide(option);
+    return true;
+  }
+
+  bool upgradeFranchise(String defId, FranchiseUpgrade upgrade) {
+    final f = franchises.where((x) => x.defId == defId).firstOrNull;
+    if (f == null || !f.canUpgrade(upgrade)) return false;
+    final cost = f.upgradeCost(upgrade);
+    if (coins < cost) return false;
+    coins -= cost;
+    f.upgrades[upgrade] = f.upgradeLevel(upgrade) + 1;
+    return true;
+  }
+
+  int endFranchiseDay(math.Random rng) {
+    var total = 0;
+    for (final f in franchises) {
+      total += f.endDay(rng);
+    }
+    coins += total;
+    return total;
+  }
+
   Map<String, Object?> toJson() => {
     'v': saveVersion,
     'saved': savedAt,
     'coins': coins,
     if (locationId != 'diner') 'loc': locationId,
+    if (name != 'My Diner') 'name': name,
     if (maxStreakDays > 0) 'streak': maxStreakDays,
+    if (franchises.isNotEmpty)
+      'franchises': [for (final f in franchises) f.toJson()],
     'owned': owned.toList()..sort(),
     'goals': goalsDone.toList()..sort(),
     'hints': hintsSeen.toList()..sort(),
@@ -2213,6 +2268,7 @@ class Diner {
     );
     final loc = j['loc'];
     if (loc is String) d.locationId = loc;
+    d.name = (j['name'] as String?) ?? 'My Diner';
     final streak = j['streak'];
     if (streak is int && streak > 0) d.maxStreakDays = streak;
     d.supplier =
@@ -2387,6 +2443,13 @@ class Diner {
     for (final raw in (j['hatches'] as List?) ?? const []) {
       final e = Edge.fromJson(raw);
       if (e != null && d.walls.contains(e)) d.hatches.add(e);
+    }
+    for (final raw in (j['franchises'] as List? ?? const [])) {
+      try {
+        d.franchises.add(
+          OwnedFranchise.fromJson(raw as Map<String, Object?>),
+        );
+      } catch (_) {}
     }
     return d;
   }

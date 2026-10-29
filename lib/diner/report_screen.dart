@@ -38,6 +38,13 @@ class DayReportScreen extends StatelessWidget {
                 _row('Tips included', '${r.tips}'),
                 _row('Ingredients', '${r.ingredients}'),
                 _row('Wages', '${r.wages}'),
+                if (r.franchiseIncome > 0)
+                  _row(
+                    'Investments',
+                    '+${r.franchiseIncome}',
+                    Pal.gold,
+                    const ValueKey('franchise-income-line'),
+                  ),
                 _row('Kept', '${r.earned - r.ingredients - r.wages}', Pal.gold),
               ],
             ),
