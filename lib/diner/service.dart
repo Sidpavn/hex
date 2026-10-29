@@ -272,13 +272,13 @@ class Machine {
 
 /// The pass: where cooks leave finished dishes for the servers.
 class PassShelf {
-  PassShelf(this.edge);
+  PassShelf(this.edge, [this.capacity = 4]);
 
   /// The wall it is set in.
   final Edge edge;
 
   /// How many dishes it holds.
-  static const capacity = 4;
+  final int capacity;
 
   final List<OrderItem> plates = [];
 
@@ -1218,7 +1218,7 @@ class DinerSim {
       ..clear()
       ..addAll([
         for (final e in diner.hatches)
-          if (diner.hatchSides(e).isNotEmpty) PassShelf(e),
+          if (diner.hatchSides(e).isNotEmpty) PassShelf(e, progress.passCapacity),
       ]);
     guests.clear();
     _queue.clear();
@@ -1903,7 +1903,7 @@ class DinerSim {
       final fav = g.items.any(
         (i) => i.dish == r.favourite && i.state == ItemState.delivered,
       );
-      if (happy) r.give(fav ? 2 : 1);
+      if (happy) r.give((fav ? 2 : 1) + progress.loyaltyBonus);
       if (g.favMissed) r.give(-1);
       if (happy && fav) {
         _tell(
@@ -2058,7 +2058,7 @@ class DinerSim {
     }
     ingredientCost = cost().round();
     // A poor supplier sends some of it bad: paid for, and thrown straight out.
-    final lost = diner.supplier.spoiledShare(progress.day);
+    final lost = diner.supplier.spoiledShare(progress.day) * progress.spoilDiscount;
     if (lost > 0) {
       for (final e in want.entries.toList()) {
         final bad = (e.value * lost).floor();
@@ -2313,7 +2313,7 @@ class DinerSim {
         p.reserved = math.max(0, p.reserved - 1);
         w.face(_acrossFrom(w.cell, p.edge));
         for (final i in List.of(w.carrying)) {
-          if (p.plates.length >= PassShelf.capacity) break;
+          if (p.plates.length >= p.capacity) break;
           if (i.guest.state != GuestState.waiting || !_viaShelf(i, any: true)) {
             continue;
           }
@@ -2664,8 +2664,11 @@ class DinerSim {
   /// 1. Take a finished dish off a machine, if there is room on the tray.
   /// 2. Start the next dish if its machine is right here, even with a plate
   ///    in hand, so the cooker never sits empty while someone walks.
-  /// 3. Deliver what they are carrying.
-  /// 4. Go and start the next dish.
+  /// 3. Walk over to a car waiting at the window, if nobody else is on the
+  ///    way: a fallback for whoever is free, never a reason to leave a
+  ///    ready station.
+  /// 4. Deliver what they are carrying.
+  /// 5. Go and start the next dish.
   ///
   /// Someone with a station they prefer looks after that machine first, and
   /// helps elsewhere when it needs nothing.
@@ -2687,8 +2690,12 @@ class DinerSim {
     }
     if (_holdAtWindow(w)) return;
     if (_pickUp(w)) return;
-    if (_tendWindow(w)) return;
+    // A cook whose own next dish is right here starts it rather than
+    // walking off to the window: tending a car is a fallback for someone
+    // who would otherwise stand idle, not a reason to abandon a ready
+    // station.
     if (_startLoading(w, within: 1)) return;
+    if (_tendWindow(w)) return;
 
     // Anything on the tray for someone who has left is written off.
     w.carrying.removeWhere((i) {
@@ -2926,6 +2933,15 @@ class DinerSim {
     return a < b ? sides[0] : sides[1];
   }
 
+  /// Whether someone other than [w] is standing on [c], or already on their
+  /// way to stand on it at this same pass: a hatch is one tile wide, so a
+  /// cook and a server reaching for it at once must take turns, not stack.
+  bool _heldAtShelf(Worker w, PassShelf p, Cell c) => workers.any(
+    (o) =>
+        o != w &&
+        (o.cell == c || (o.shelf == p && o.path.isNotEmpty && o.path.last == c)),
+  );
+
   /// Where [w] stands to use [p], and the way there: the kitchen side for
   /// cooks, the dining side for everyone else, so a cook does not walk out
   /// into the room and a server does not walk into the kitchen. Either side
@@ -2939,12 +2955,16 @@ class DinerSim {
     if (k != null) {
       final side = [
         for (final c in diner.hatchSides(p.edge))
-          if ((c == k) == kitchen) c,
+          if ((c == k) == kitchen && !_heldAtShelf(w, p, c)) c,
       ];
       final spot = nearest(diner, w.cell, side);
       if (spot != null) return spot;
     }
-    return nearest(diner, w.cell, diner.hatchSides(p.edge));
+    final free = [
+      for (final c in diner.hatchSides(p.edge))
+        if (!_heldAtShelf(w, p, c)) c,
+    ];
+    return nearest(diner, w.cell, free);
   }
 
   /// Whether [item] would go through a pass: it is for a guest at a table,

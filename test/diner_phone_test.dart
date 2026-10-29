@@ -126,7 +126,9 @@ void main() {
         );
       });
 
-      testWidgets('a catering order, and the card for it', (tester) async {
+      testWidgets('a catering order, and the corner button for it', (
+        tester,
+      ) async {
         final d = played()
           ..progress.level = 6
           ..progress.reputation = 85;
@@ -136,7 +138,7 @@ void main() {
         }
         d.progress.day = n;
         await show(tester, BuildScreen(diner: d));
-        expect(find.byKey(const ValueKey('order-card')), findsOneWidget);
+        expect(find.byKey(const ValueKey('catering')), findsOneWidget);
         await show(tester, OrderScreen(diner: d));
         d.takeContract(d.offer!, {d.roster.employees.first.id}, closed: true);
         await show(tester, BuildScreen(diner: d));

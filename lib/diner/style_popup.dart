@@ -5,6 +5,7 @@ import '../ui/pixel_dialog.dart';
 import '../ui/widgets.dart';
 import 'diner.dart';
 import 'diner_sprite.dart';
+import 'goals.dart';
 import 'styles.dart';
 
 /// Choosing a wallpaper and a floor. The ones that come free are used with a
@@ -193,6 +194,7 @@ class _StyleTile extends StatelessWidget {
     required this.inUse,
     required this.owned,
     required this.onTap,
+    this.goalTitle,
   });
 
   final Style style;
@@ -200,17 +202,27 @@ class _StyleTile extends StatelessWidget {
   final bool owned;
   final VoidCallback onTap;
 
+  /// The goal that unlocks it, if it is earned rather than bought or free.
+  final String? goalTitle;
+
   @override
   Widget build(BuildContext context) {
-    final name = style.kind == StyleKind.wall
-        ? 'wall_a${style.suffix}'
-        : 'floor_a${style.suffix}';
+    final name = switch (style.kind) {
+      StyleKind.wall => 'wall_a${style.suffix}',
+      StyleKind.floor => 'floor_a${style.suffix}',
+      StyleKind.chair => 'chair_sw${style.suffix}',
+      StyleKind.bench => 'bench_sw${style.suffix}',
+      StyleKind.table => 'table${style.suffix}',
+      StyleKind.longTable => 'longTable_sw${style.suffix}',
+    };
     final status = inUse
         ? 'In use'
         : style.free
         ? 'Free'
         : owned
         ? 'Unlocked'
+        : goalTitle != null
+        ? goalTitle!
         : ':gem: ${style.gems}';
     return Panel(
       onTap: onTap,
@@ -254,6 +266,187 @@ class _StyleTile extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Choosing the look of one placed chair, bench, table or long table. Unlike
+/// the wallpaper and floor, this changes only the piece that was tapped.
+class FixtureStylePopup extends StatefulWidget {
+  const FixtureStylePopup({
+    super.key,
+    required this.diner,
+    required this.placed,
+    required this.onChanged,
+    required this.shop,
+  });
+
+  final Diner diner;
+  final Placed placed;
+
+  /// Told after anything changes, so the game can redraw and save.
+  final VoidCallback onChanged;
+
+  /// Opens the gem shop; returns when it is closed.
+  final Future<void> Function() shop;
+
+  @override
+  State<FixtureStylePopup> createState() => _FixtureStylePopupState();
+}
+
+class _FixtureStylePopupState extends State<FixtureStylePopup> {
+  String _note = '';
+
+  Diner get d => widget.diner;
+  Placed get p => widget.placed;
+  StyleKind get _kind => styleKindOf(p.kind)!;
+
+  bool _inUse(Style s) {
+    final defaultId = switch (_kind) {
+      StyleKind.chair => chairDefault,
+      StyleKind.bench => benchDefault,
+      StyleKind.table => tableDefault,
+      StyleKind.longTable => longTableDefault,
+      StyleKind.wall || StyleKind.floor => '',
+    };
+    return (p.style ?? defaultId) == s.id;
+  }
+
+  Future<void> _tap(Style s) async {
+    if (d.owns(s)) {
+      if (d.styleFixture(p, s)) {
+        widget.onChanged();
+        setState(() => _note = '');
+      }
+      return;
+    }
+    if (s.goal != null) {
+      setState(
+        () =>
+            _note = '${d.goalNamed(s.goal!)?.title ?? 'A goal'} unlocks this.',
+      );
+      return;
+    }
+    if (d.gems < s.gems) {
+      setState(
+        () => _note = '${s.name} costs ${s.gems} gems. You have ${d.gems}.',
+      );
+      return;
+    }
+    final ok = await askPixel(
+      context,
+      title: '${s.name} ${fixtureDefs[p.kind]!.name.toLowerCase()}',
+      body: 'Unlock for ${s.gems} gems? You keep it for good.',
+      yes: 'Unlock for ${s.gems} gems',
+      no: 'Not now',
+      yesKey: const ValueKey('confirm-style'),
+    );
+    if (!ok || !mounted) return;
+    if (d.buyStyle(s) == PlaceResult.ok) {
+      d.styleFixture(p, s);
+      widget.onChanged();
+      setState(() => _note = '${s.name} unlocked.');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: size.height * 0.8),
+        child: PixelBox(
+          key: const ValueKey('fixture-style-popup'),
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: PxText(
+                      '${fixtureDefs[p.kind]!.name} style',
+                      style: const TextStyle(color: Pal.gold, fontSize: 22),
+                    ),
+                  ),
+                  PxText(
+                    ':gem: ${d.gems}',
+                    key: const ValueKey('gem-count'),
+                    style: const TextStyle(color: Pal.text, fontSize: 18),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Flexible(
+                child: LayoutBuilder(
+                  builder: (_, box) {
+                    final w = ((box.maxWidth - 16) / 3).floorToDouble();
+                    return SingleChildScrollView(
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          for (final s in stylesOf(_kind))
+                            SizedBox(
+                              width: w,
+                              child: _StyleTile(
+                                key: ValueKey('fstyle-${s.id}'),
+                                style: s,
+                                inUse: _inUse(s),
+                                owned: d.owns(s),
+                                goalTitle: s.goal == null
+                                    ? null
+                                    : d.goalNamed(s.goal!)?.title,
+                                onTap: () => _tap(s),
+                              ),
+                            ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+              if (_note.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                PxText(
+                  _note,
+                  key: const ValueKey('style-note'),
+                  style: const TextStyle(color: Pal.dim, fontSize: 14),
+                ),
+              ],
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: GoldButton(
+                      key: const ValueKey('get-gems'),
+                      label: 'Get gems',
+                      filled: false,
+                      color: Pal.text,
+                      onTap: () async {
+                        await widget.shop();
+                        if (mounted) setState(() {});
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: GoldButton(
+                      key: const ValueKey('style-close'),
+                      label: 'Close',
+                      onTap: () => Navigator.pop(context),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -312,8 +505,8 @@ class _GemShopPopupState extends State<GemShopPopup> {
             ),
             const SizedBox(height: 4),
             const PxText(
-              'Gems unlock wallpapers and floors. They do not change how the '
-              'diner runs.',
+              'Gems unlock wallpapers, floors and furniture looks. They do '
+              'not change how the diner runs.',
               style: TextStyle(color: Pal.dim, fontSize: 14),
             ),
             const SizedBox(height: 12),

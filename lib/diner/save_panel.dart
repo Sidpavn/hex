@@ -173,16 +173,7 @@ class _SavePanelState extends State<SavePanel> {
             ),
             const SizedBox(height: 8),
           ],
-          if (widget.diner != null)
-            GoldButton(
-              key: const ValueKey('copy-save'),
-              label: 'Copy save code',
-              filled: false,
-              color: Pal.text,
-              onTap: _copy,
-            ),
           if (widget.store != null) ...[
-            const SizedBox(height: 8),
             GoldButton(
               key: const ValueKey('sync-save'),
               label: widget.diner == null
@@ -190,27 +181,36 @@ class _SavePanelState extends State<SavePanel> {
                   : 'Back up with ${widget.store!.name}',
               onTap: _syncing ? null : _sync,
             ),
-          ],
-          if (widget.onLoad != null) ...[
             const SizedBox(height: 8),
-            GoldButton(
-              key: const ValueKey('load-save'),
-              label: 'Load a save code',
-              filled: false,
-              color: Pal.text,
-              onTap: _load,
-            ),
           ],
-          if (widget.onTitle != null) ...[
-            const SizedBox(height: 8),
-            GoldButton(
-              key: const ValueKey('to-title'),
-              label: 'Back to the title screen',
-              filled: false,
-              color: Pal.text,
-              onTap: widget.onTitle,
-            ),
-          ],
+          ButtonRow(
+            children: [
+              if (widget.diner != null)
+                GoldButton(
+                  key: const ValueKey('copy-save'),
+                  label: 'Copy save code',
+                  filled: false,
+                  color: Pal.text,
+                  onTap: _copy,
+                ),
+              if (widget.onLoad != null)
+                GoldButton(
+                  key: const ValueKey('load-save'),
+                  label: 'Load a save code',
+                  filled: false,
+                  color: Pal.text,
+                  onTap: _load,
+                ),
+              if (widget.onTitle != null)
+                GoldButton(
+                  key: const ValueKey('to-title'),
+                  label: 'Back to the title screen',
+                  filled: false,
+                  color: Pal.dim,
+                  onTap: widget.onTitle,
+                ),
+            ],
+          ),
           if (_note.isNotEmpty) ...[
             const SizedBox(height: 8),
             PxText(

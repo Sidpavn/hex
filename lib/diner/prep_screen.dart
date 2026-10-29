@@ -39,7 +39,7 @@ class _PrepScreenState extends State<PrepScreen> {
   /// chosen means.
   Widget _suppliers() {
     final s = diner.supplier;
-    final lost = s.spoiledShare(diner.progress.day);
+    final lost = s.spoiledShare(diner.progress.day) * diner.progress.spoilDiscount;
     return Panel(
       key: const ValueKey('suppliers'),
       child: Column(

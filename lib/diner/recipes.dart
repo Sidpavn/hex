@@ -209,7 +209,7 @@ enum Tier {
 }
 
 /// Things to spend coins on between days.
-enum Upgrade { kitchen, checkout, cosy, staff, tray, vending }
+enum Upgrade { kitchen, checkout, cosy, staff, tray, vending, supply, pass, loyalty }
 
 class UpgradeDef {
   const UpgradeDef(this.name, this.info, this.max, this.cost);
@@ -244,7 +244,7 @@ const Map<Upgrade, UpgradeDef> upgradeDefs = {
   Upgrade.staff: UpgradeDef(
     'Staff room',
     'Room for one more person on the team.',
-    3,
+    7,
     120,
   ),
   Upgrade.tray: UpgradeDef(
@@ -260,6 +260,24 @@ const Map<Upgrade, UpgradeDef> upgradeDefs = {
         'machine to collect them, choose what it sells, or switch it off.',
     2,
     150,
+  ),
+  Upgrade.supply: UpgradeDef(
+    'Better storage',
+    'Cuts how much the budget market spoils by a fifth, each level.',
+    3,
+    90,
+  ),
+  Upgrade.pass: UpgradeDef(
+    'Bigger pass',
+    'One more plate fits on the pass shelf at once.',
+    2,
+    130,
+  ),
+  Upgrade.loyalty: UpgradeDef(
+    'Loyalty cards',
+    'Regulars warm to the place a point faster on every happy visit.',
+    2,
+    100,
   ),
 };
 
@@ -330,6 +348,16 @@ class Progress {
   int get staffLimit => 1 + upgradeLvl(Upgrade.staff);
 
   int get carry => 3 + 2 * upgradeLvl(Upgrade.tray);
+
+  /// How many plates fit on the pass shelf at once.
+  int get passCapacity => 4 + upgradeLvl(Upgrade.pass);
+
+  /// What the budget market's usual spoilage is multiplied by: less with
+  /// each level of storage.
+  double get spoilDiscount => 1 - 0.2 * upgradeLvl(Upgrade.supply);
+
+  /// Extra fondness points a regular gains on a happy visit.
+  int get loyaltyBonus => upgradeLvl(Upgrade.loyalty);
 
   int recipeUpgradeCost(Dish d) => 40 * recipeLvl(d);
 

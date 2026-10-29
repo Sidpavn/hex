@@ -25,7 +25,8 @@ String spriteName(Kind kind, Dir facing) => switch (kind) {
   Kind.oven ||
   Kind.freezer ||
   Kind.chair ||
-  Kind.bench => '${kind.name}_${facing.name}',
+  Kind.bench ||
+  Kind.jukebox => '${kind.name}_${facing.name}',
   Kind.longTable =>
     facing == Dir.se || facing == Dir.nw ? 'longTable_se' : 'longTable_sw',
   Kind.window => 'window_se',
@@ -67,7 +68,6 @@ class DinerPainter extends CustomPainter {
     this.placeOk,
     this.hoverEdge,
     this.selectedEdge,
-    this.guestSel,
     this.group = const [],
     this.groupMoving = false,
     this.ghostGroup = const [],
@@ -127,9 +127,6 @@ class DinerPainter extends CustomPainter {
   /// The edge a wall being placed is aimed at, and the wall picked.
   final Edge? hoverEdge;
   final Edge? selectedEdge;
-
-  /// The guest the player has tapped during service: outlined where they are.
-  final Guest? guestSel;
 
   /// The fixtures chosen to be moved, turned, copied or sold together.
   final List<Placed> group;
@@ -336,13 +333,6 @@ class DinerPainter extends CustomPainter {
     }
 
     _warnings(canvas);
-    final gs = guestSel;
-    if (gs != null && !gs.gone) {
-      final path = Path();
-      _outline(path, gs.cell, 1, 1);
-      _outlineShifted(path, gs.cell, 1, 1);
-      _stroke(canvas, path, Pal.gold);
-    }
     if (expanding) _plotOutlines(canvas);
     if (flash > 0 && flashPlot != null) _flashOn(canvas, flashPlot!);
     _cursor(canvas);
@@ -439,7 +429,23 @@ class DinerPainter extends CustomPainter {
     // Whatever is being picked up stays where it was, faded, so the ghost
     // does not look like a second one.
     final lifted = p == moving || (groupMoving && group.contains(p));
-    _cell(canvas, spriteName(p.kind, p.facing), p.at, faded: lifted);
+    _cell(canvas, _skinned(p.kind, p.facing, p.style), p.at, faded: lifted);
+  }
+
+  /// [spriteName], with the chosen cosmetic look for a seating piece applied.
+  /// [style] is the one piece's own look; null previews as Classic, for a
+  /// piece not yet placed.
+  String _skinned(Kind kind, Dir facing, [String? style]) {
+    final base = spriteName(kind, facing);
+    final suffix = switch (kind) {
+      Kind.chair => styleById(StyleKind.chair, style ?? chairDefault)?.suffix,
+      Kind.bench => styleById(StyleKind.bench, style ?? benchDefault)?.suffix,
+      Kind.table => styleById(StyleKind.table, style ?? tableDefault)?.suffix,
+      Kind.longTable =>
+        styleById(StyleKind.longTable, style ?? longTableDefault)?.suffix,
+      _ => null,
+    };
+    return suffix == null || suffix.isEmpty ? base : '$base$suffix';
   }
 
   void _actor(Canvas canvas, Actor a) {
@@ -742,7 +748,7 @@ class DinerPainter extends CustomPainter {
     final ok = _ghostOk;
     final path = Path();
     for (final g in ghostGroup) {
-      if (ok) _cell(canvas, spriteName(g.kind, g.facing), g.at);
+      if (ok) _cell(canvas, _skinned(g.kind, g.facing, g.style), g.at);
       _outline(path, g.at, g.w, g.h);
       _outlineShifted(path, g.at, g.w, g.h);
       if (!ok) {
@@ -820,7 +826,7 @@ class DinerPainter extends CustomPainter {
     if (kind == null || at == null) return;
     final ghost = Placed(0, kind, at, kind == Kind.window ? Dir.se : facing);
     final ok = _ghostOk;
-    if (ok) _cell(canvas, spriteName(kind, facing), at);
+    if (ok) _cell(canvas, _skinned(kind, facing), at);
     final path = Path();
     _outline(path, at, ghost.w, ghost.h);
     _outlineShifted(path, at, ghost.w, ghost.h);
@@ -963,7 +969,6 @@ class DinerPainter extends CustomPainter {
       old.grid != grid ||
       old.expanding != expanding ||
       old.placeOk != placeOk ||
-      old.guestSel != guestSel ||
       old.group != group ||
       old.groupMoving != groupMoving ||
       old.ghostGroup != ghostGroup ||
@@ -976,14 +981,17 @@ class DinerPainter extends CustomPainter {
 
 class _Drawn implements Comparable<_Drawn> {
   _Drawn(this.depth, bool fixture, this.draw, {bool wall = false})
-    : rank = wall ? 1 : (fixture ? 0 : 2);
+    : rank = wall ? 0 : (fixture ? 1 : 2);
 
   final double depth;
 
-  /// At the same depth: fixtures draw first (rank 0), edge walls next (rank 1),
-  /// then actors last (rank 2). This lets walking actors appear in front of
-  /// a fixture when they reach its front-face diagonal, while seated actors
-  /// stay behind their chair because the service layer gives them a lower row.
+  /// At the same depth: edge walls draw first (rank 0), fixtures next
+  /// (rank 1), then actors last (rank 2). A fixture placed right against a
+  /// wall's front face ties its depth with the wall and must cover it, not
+  /// the other way round. Actors drawing last lets a walking one appear in
+  /// front of a fixture when they reach its front-face diagonal, while
+  /// seated actors stay behind their chair because the service layer gives
+  /// them a lower row.
   final int rank;
   final VoidCallback draw;
 

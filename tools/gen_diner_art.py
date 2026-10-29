@@ -169,6 +169,30 @@ FLOOR_STYLES = [
     ('mint', '#bfe6d8', '#a2d4c3'),
 ]
 
+# Furniture looks for the chair, bench, table and long table: each sells (or
+# is earned, or is free) the same way across all four, but is picked for each
+# piece on its own. The ids are the ones in lib/diner/styles.dart.
+SEAT_STYLES = [
+    {
+        'id': 'mint',
+        'chair_seat': '#9ad9c8', 'chair_wood': '#c58a56',
+        'bench_seat': '#9ad9c8', 'bench_base': '#5fae99',
+        'cloth': '#9ad9c8', 'cloth_light': '#c9ecdf', 'cloth_pale': '#eef8f3',
+    },
+    {
+        'id': 'diner',
+        'chair_seat': '#2e7d6b', 'chair_wood': '#3a3a46',
+        'bench_seat': '#2e7d6b', 'bench_base': '#234f45',
+        'cloth': '#2e7d6b', 'cloth_light': '#6fae9f', 'cloth_pale': '#eef2e2',
+    },
+    {
+        'id': 'walnut',
+        'chair_seat': '#caa06a', 'chair_wood': '#8e5a37',
+        'bench_seat': '#caa06a', 'bench_base': '#8e5a37',
+        'cloth': '#caa06a', 'cloth_light': '#e0c194', 'cloth_pale': '#f3e6cf',
+    },
+]
+
 
 def wall_pieces(suffix='', wall_hex='#a6e0d1', trim_hex='#fff3d6',
                 pattern='plain'):
@@ -286,12 +310,12 @@ def wall_pieces(suffix='', wall_hex='#a6e0d1', trim_hex='#fff3d6',
 
 
 # -------------------------------------------------------------- fixtures
-def table():
+def table(suffix='', cloth=RED, light='#f7b3aa', pale='#fff6e8'):
     img = cell_img(34)
     # pedestal and foot
     cylinder(img, 8, 8, 5, 0, 2, ramp('#5b5266'))
     cylinder(img, 8, 8, 2, 2, 10, ramp('#8d8499'))
-    # tablecloth top: red/white check, in an iso ellipse
+    # tablecloth top: a two-tone check, in an iso ellipse
     cx, cy = P(8, 8, 11)
     rx, ry = 14, 7
     def check(x, y):
@@ -299,13 +323,13 @@ def table():
         v = (y + 11) - x / 2.0
         su, sv = int(u // 5) % 2, int(v // 5) % 2
         if su and sv:
-            return RED.top
+            return cloth.top
         if su or sv:
-            return hexc('#f7b3aa')
-        return hexc('#fff6e8')
+            return hexc(light)
+        return hexc(pale)
     # drape: a darker band under the rim
-    ellipse(img, cx, cy + 2, rx, ry, RED.right)
-    ellipse(img, cx, cy + 1, rx, ry, RED.left)
+    ellipse(img, cx, cy + 2, rx, ry, cloth.right)
+    ellipse(img, cx, cy + 1, rx, ry, cloth.left)
     ellipse(img, cx, cy, rx, ry, check)
     # little flower in a vase
     box(img, 7, 7, 9, 9, 11, 14, ramp('#9ccbe8'))
@@ -315,25 +339,35 @@ def table():
     img.put(x + 1, y, PINK.hi)
     img.put(x, y - 1, PINK.hi)
     img.put(x, y + 1, GOLD.top)
-    add('table', img, 0.55)
+    add(f'table{suffix}', img, 0.55)
 
 
-def chair(name, back):
+def chair(name, back, seat=RED, wood=WOOD):
     img = cell_img(26)
     leg = ramp('#7b4b2c')
+    _ll = shaded_side(leg.left, leg.hi, leg.lo, 0, 7, ao_rows=1, hi_rows=1)
+    _lr = shaded_side(leg.right, leg.hi, leg.lo, 0, 7, ao_rows=1, hi_rows=1)
     for (u, v) in ((3, 3), (11, 3), (3, 11), (11, 11)):
-        box(img, u, v, u + 2, v + 2, 0, 7, leg, edge=False)
-    box(img, 2, 2, 14, 14, 7, 9, WOOD)
-    box(img, 3, 3, 13, 13, 9, 11, RED)
+        box(img, u, v, u + 2, v + 2, 0, 7, leg, edge=False, left=_ll, right=_lr)
+    box(img, 2, 2, 14, 14, 7, 9, wood)
+    box(img, 3, 3, 13, 13, 9, 11, seat)
     h = 22
     if back == 'su':   # back on the low-u side (facing +u / SE)
-        box(img, 2, 2, 4, 14, 9, h, WOOD)
+        box(img, 2, 2, 4, 14, 9, h, wood,
+            left=shaded_side(wood.left, wood.hi, wood.lo, 9, h),
+            right=shaded_side(wood.right, wood.hi, wood.lo, 9, h))
     elif back == 'sv':  # facing +v / SW
-        box(img, 2, 2, 14, 4, 9, h, WOOD)
+        box(img, 2, 2, 14, 4, 9, h, wood,
+            left=shaded_side(wood.left, wood.hi, wood.lo, 9, h),
+            right=shaded_side(wood.right, wood.hi, wood.lo, 9, h))
     elif back == 'nu':  # facing -u / NW: back on the high-u side, kept low
-        box(img, 12, 2, 14, 14, 9, 15, WOOD)
+        box(img, 12, 2, 14, 14, 9, 15, wood,
+            left=shaded_side(wood.left, wood.hi, wood.lo, 9, 15, ao_rows=1, hi_rows=1),
+            right=shaded_side(wood.right, wood.hi, wood.lo, 9, 15, ao_rows=1, hi_rows=1))
     else:               # facing -v / NE
-        box(img, 2, 12, 14, 14, 9, 15, WOOD)
+        box(img, 2, 12, 14, 14, 9, 15, wood,
+            left=shaded_side(wood.left, wood.hi, wood.lo, 9, 15, ao_rows=1, hi_rows=1),
+            right=shaded_side(wood.right, wood.hi, wood.lo, 9, 15, ao_rows=1, hi_rows=1))
     add(name, img, 0.55)
 
 
@@ -367,36 +401,57 @@ def plant():
     add('plant', img, 0.5)
 
 
-def jukebox():
+def jukebox(f):
+    """A jukebox, its lit glass front and speaker turned to face [f]: the
+    same cabinet either way, just which side the glass and the grille sit
+    on. Facing away from the camera ('nw'/'ne') it is the plain red back."""
     img = cell_img(46)
     body = ramp('#d9453d')
-    box(img, 2, 3, 14, 13, 0, 30, body, edge=False)
+    box(img, 2, 3, 14, 13, 0, 30, body, edge=False,
+        left=shaded_side(body.left, body.hi, body.lo, 0, 30, ao_rows=3, hi_rows=2),
+        right=shaded_side(body.right, body.hi, body.lo, 0, 30, ao_rows=3, hi_rows=2))
     # base plinth
     box(img, 1, 2, 15, 14, 0, 3, WOOD_D, edge=False)
     # arched top: stepped boxes
     box(img, 3, 4, 13, 12, 30, 33, body, edge=False)
     box(img, 5, 5, 11, 11, 33, 35, body)
-    # front glass (the +v face) as an arched window
+    # the lit glass front, an arched window of colour bands
     a0, a1, z0, z1 = 4, 12, 12, 30
-    def glass(u, z):
+
+    def glass(a, z):
         k = (z - z0) / (z1 - z0)
-        if z > z1 - 3 and (u < a0 + 1 or u > a1 - 2):
+        if z > z1 - 3 and (a < a0 + 1 or a > a1 - 2):
             return body.left
         bands = [hexc('#5fd3d0'), hexc('#7ee0a0'), hexc('#ffd35a'), hexc('#ff9a5a'), hexc('#ff6f8a')]
         return bands[int(k * len(bands)) % len(bands)]
-    face_left(img, a0, a1, 13, z0, z1, glass)
-    face_left(img, a0 - 1, a0, 13, z0, z1, GOLD.top)
-    face_left(img, a1, a1 + 1, 13, z0, z1, GOLD.top)
-    # speaker grille and coin slot on the lower front
-    for k in range(4):
-        face_left(img, 5 + k * 2, 6 + k * 2, 13, 5, 10, body.lo)
-    face_left(img, 9, 11, 13, 7, 8, GOLD.top)
-    # side speaker (the +u face)
-    for k in range(3):
-        for j in range(3):
-            x, y = P(14, 5 + k * 2, 8 + j * 4)
-            img.put(x, y, body.lo)
-    add('jukebox', img, 0.55)
+
+    if f == 'sw':
+        # the front is the +v face; the +u face shows a side speaker
+        face_left(img, a0, a1, 13, z0, z1, glass)
+        face_left(img, a0 - 1, a0, 13, z0, z1, GOLD.top)
+        face_left(img, a1, a1 + 1, 13, z0, z1, GOLD.top)
+        for k in range(4):
+            face_left(img, 5 + k * 2, 6 + k * 2, 13, 5, 10, body.lo)
+        face_left(img, 9, 11, 13, 7, 8, GOLD.top)
+        for k in range(3):
+            for j in range(3):
+                x, y = P(14, 5 + k * 2, 8 + j * 4)
+                img.put(x, y, body.lo)
+    elif f == 'se':
+        # the front is the +u face; the +v face shows a side speaker
+        face_right(img, 14, a0, a1, z0, z1, glass)
+        face_right(img, 14, a0 - 1, a0, z0, z1, GOLD.top)
+        face_right(img, 14, a1, a1 + 1, z0, z1, GOLD.top)
+        for k in range(4):
+            face_right(img, 14, 5 + k * 2, 6 + k * 2, 5, 10, body.lo)
+        face_right(img, 14, 9, 11, 7, 8, GOLD.top)
+        for k in range(3):
+            for j in range(3):
+                x, y = P(5 + k * 2, 13, 8 + j * 4)
+                img.put(x, y, body.lo)
+    # 'nw' and 'ne' face away from the camera: the plain cabinet back,
+    # same as the shaded body already drawn.
+    add(f'jukebox_{f}', img, 0.55)
 
 
 def wall_tv(f):
@@ -486,17 +541,18 @@ def on_back(img, f, a0, a1, z0, z1, color, plane=15):
 def counter(f):
     img = cell_img(32)
     body = ramp('#b8743f')
+    _cl = shaded_side(body.left, body.hi, body.lo, 0, 13)
+    _cr = shaded_side(body.right, body.hi, body.lo, 0, 13)
     box(img, 1, 1, 15, 15, 0, 13, body,
-        left=lambda u, z: (body.lo if z < 2 else
-                           (body.hi if z > 11 else
-                            (body.right if (3 <= u <= 12 and 3 <= z <= 9 and
-                                            (u in (3, 12) or z in (3, 9))) else body.left))),
-        right=lambda v, z: (body.lo if z < 2 else
-                            (body.hi if z > 11 else
-                             (body.left if (3 <= v <= 12 and 3 <= z <= 9 and
-                                            (v in (3, 12) or z in (3, 9))) else body.right))))
+        left=lambda u, z: (body.right if (3 <= u <= 12 and 3 <= z <= 9 and
+                                          (u in (3, 12) or z in (3, 9))) else _cl(u, z)),
+        right=lambda v, z: (body.left if (3 <= v <= 12 and 3 <= z <= 9 and
+                                          (v in (3, 12) or z in (3, 9))) else _cr(v, z)))
     box(img, 0, 0, 16, 16, 13, 15, MARBLE,
-        top=lambda u, v: MARBLE.top if (int(u + v * 0.7) % 7) else MARBLE.left)
+        top=shaded_top(
+            MARBLE.top, MARBLE.hi, 0, 16, 0, 16,
+            under=lambda u, v: MARBLE.top if (int(u + v * 0.7) % 7) else MARBLE.left,
+        ))
     # cash register: its screen turns to the front
     reg = ramp('#4a4f63')
     box(img, 5, 5, 11, 11, 15, 18, reg)
@@ -540,9 +596,11 @@ def grill(f):
                 face_left(img, 4 + k * 3, 6 + k * 3, 15, 17, 22, STEEL.lo)
             box(img, 0, 10, 16, 16, 26, 30, STEEL_D)
 
+    _gl = shaded_side(STEEL.left, STEEL.hi, STEEL.lo, 0, 12)
+    _gr = shaded_side(STEEL.right, STEEL.hi, STEEL.lo, 0, 12)
     box(img, 1, 1, 15, 15, 0, 12, STEEL,
-        left=lambda u, z: (STEEL.lo if z < 2 else (STEEL.right if (u in (2, 14) or z == 11) else STEEL.left)),
-        right=lambda v, z: (STEEL_D.right if z < 2 else (STEEL.lo if (v in (2, 14) or z == 11) else STEEL.right)))
+        left=lambda u, z: (STEEL.right if (u in (2, 14) or z == 11) else _gl(u, z)),
+        right=lambda v, z: (STEEL.lo if (v in (2, 14) or z == 11) else _gr(v, z)))
     if f in ('sw', 'se'):
         hood()
     box(img, 2, 2, 14, 14, 12, 13, STEEL_D)
@@ -574,9 +632,11 @@ def fryer(f):
     img = cell_img(34)
     body = ramp('#59607a')
     accent = ramp('#e0a526')
+    _fl = shaded_side(body.left, body.hi, body.lo, 0, 13)
+    _fr = shaded_side(body.right, body.hi, body.lo, 0, 13)
     box(img, 1, 1, 15, 15, 0, 13, body,
-        left=lambda u, z: (body.lo if z < 2 else (accent.base if z == 11 else body.left)),
-        right=lambda v, z: (body.lo if z < 2 else (accent.right if z == 11 else body.right)))
+        left=lambda u, z: accent.base if z == 11 else _fl(u, z),
+        right=lambda v, z: accent.right if z == 11 else _fr(v, z))
     # two oil wells with wire baskets
     box(img, 2, 2, 14, 14, 13, 14, body)
     for (u0, v0) in ((3, 3), (3, 9)):
@@ -612,7 +672,9 @@ def fryer(f):
 def soda(f):
     img = cell_img(46)
     body = ramp('#3f8fd0')
-    box(img, 2, 3, 14, 13, 0, 32, body, edge=False)
+    box(img, 2, 3, 14, 13, 0, 32, body, edge=False,
+        left=shaded_side(body.left, body.hi, body.lo, 0, 32, ao_rows=3, hi_rows=3),
+        right=shaded_side(body.right, body.hi, body.lo, 0, 32, ao_rows=3, hi_rows=3))
     box(img, 1, 2, 15, 14, 0, 3, STEEL_D, edge=False)
     box(img, 3, 4, 13, 12, 32, 35, ramp('#2f6fa8'))
     # front: a glass panel of coloured syrup, three nozzles, a drip tray
@@ -646,9 +708,11 @@ def espresso(f):
     img = cell_img(36)
     body = ramp('#6b4a3a')
     chrome = ramp('#cfd6e4')
+    _el = shaded_side(body.left, body.hi, body.lo, 0, 11)
+    _er = shaded_side(body.right, body.hi, body.lo, 0, 11)
     box(img, 1, 1, 15, 15, 0, 11, body,
-        left=lambda u, z: (body.lo if z < 2 else (GOLD.base if z == 10 else body.left)),
-        right=lambda v, z: (body.lo if z < 2 else (GOLD.right if z == 10 else body.right)))
+        left=lambda u, z: GOLD.base if z == 10 else _el(u, z),
+        right=lambda v, z: GOLD.right if z == 10 else _er(v, z))
     # the machine itself: a polished steel block with two group heads
     box(img, 3, 3, 13, 13, 11, 22, chrome)
     box(img, 2, 2, 14, 14, 22, 24, ramp('#a7b0c4'))
@@ -680,8 +744,12 @@ def oven(f):
     img = cell_img(46)
     brick = ramp('#c0583f')
     box(img, 1, 1, 15, 15, 0, 14, brick,
-        left=lambda u, z: (brick.lo if z < 2 else (brick.right if (int(u) + int(z // 3)) % 4 == 0 else brick.left)),
-        right=lambda v, z: (brick.lo if z < 2 else (brick.lo if (int(v) + int(z // 3)) % 4 == 0 else brick.right)))
+        left=lambda u, z: (brick.lo if z < 2 else
+                           (brick.hi if z >= 12 else
+                            (brick.right if (int(u) + int(z // 3)) % 4 == 0 else brick.left))),
+        right=lambda v, z: (brick.lo if z < 2 else
+                            (brick.hi if z >= 12 else
+                             (brick.lo if (int(v) + int(z // 3)) % 4 == 0 else brick.right))))
     # a stepped dome on top
     box(img, 2, 2, 14, 14, 14, 20, brick)
     box(img, 4, 4, 12, 12, 20, 25, brick)
@@ -714,11 +782,16 @@ def oven(f):
 def freezer(f):
     img = cell_img(30)
     body = ramp('#e8f0f8')
+    # The blue accent stripe already sits at the top and reads as the
+    # highlight there, so the shared shader only needs to add the base AO.
+    _zl = shaded_side(body.left, body.hi, body.lo, 0, 13, hi_rows=0)
+    _zr = shaded_side(body.right, body.hi, body.lo, 0, 13, hi_rows=0)
     box(img, 1, 1, 15, 15, 0, 13, body,
-        left=lambda u, z: (body.lo if z < 2 else (BLUE.base if z in (11, 12) else body.left)),
-        right=lambda v, z: (body.lo if z < 2 else (BLUE.right if z in (11, 12) else body.right)))
+        left=lambda u, z: BLUE.base if z in (11, 12) else _zl(u, z),
+        right=lambda v, z: BLUE.right if z in (11, 12) else _zr(v, z))
     # a glass lid over rows of tubs in different flavours
-    face_top(img, 2, 14, 2, 14, 13, hexc('#bfe2f5'))
+    face_top(img, 2, 14, 2, 14, 13,
+              shaded_top(hexc('#bfe2f5'), lighter(hexc('#bfe2f5'), 0.35), 2, 14, 2, 14))
     cols = [hexc('#f9d6e0'), hexc('#fff2b8'), hexc('#cfa27a'), hexc('#bfe7c8')]
     for i in range(2):
         for j in range(2):
@@ -735,37 +808,44 @@ def freezer(f):
     add(f'freezer_{f}', img, 0.55)
 
 
-def bench(f):
+def bench(f, suffix='', seat=PINK, base='#b3576f'):
     """A bench seats two. Facing se or nw it runs along the y axis."""
     along_y = f in ('se', 'nw')
     img = cell_img(30, extra_w=32)
     img.ox = 16
     if along_y:
         img = Img(32 + 16, 30 + 36 + 16, 32, 30)
-    seat = PINK
-    base = ramp('#b3576f')
+    base = ramp(base)
     L = 32
     if not along_y:
-        box(img, 1, 2, L - 1, 14, 0, 7, base, edge=False)
+        box(img, 1, 2, L - 1, 14, 0, 7, base, edge=False,
+            left=shaded_side(base.left, base.hi, base.lo, 0, 7, ao_rows=1, hi_rows=1),
+            right=shaded_side(base.right, base.hi, base.lo, 0, 7, ao_rows=1, hi_rows=1))
         box(img, 1, 3, L - 1, 14, 7, 10, seat)
         if f == 'sw':
             box(img, 1, 2, L - 1, 5, 10, 22, seat,
                 left=lambda u, z: (seat.hi if z > 20 else (seat.left if int(u) % 6 else seat.right)))
         else:
-            box(img, 1, 11, L - 1, 14, 10, 15, seat)
+            box(img, 1, 11, L - 1, 14, 10, 15, seat,
+                left=shaded_side(seat.left, seat.hi, seat.lo, 10, 15, ao_rows=1, hi_rows=1),
+                right=shaded_side(seat.right, seat.hi, seat.lo, 10, 15, ao_rows=1, hi_rows=1))
     else:
-        box(img, 2, 1, 14, L - 1, 0, 7, base, edge=False)
+        box(img, 2, 1, 14, L - 1, 0, 7, base, edge=False,
+            left=shaded_side(base.left, base.hi, base.lo, 0, 7, ao_rows=1, hi_rows=1),
+            right=shaded_side(base.right, base.hi, base.lo, 0, 7, ao_rows=1, hi_rows=1))
         box(img, 3, 1, 14, L - 1, 7, 10, seat)
         if f == 'se':
             box(img, 2, 1, 5, L - 1, 10, 22, seat,
                 right=lambda v, z: (seat.hi if z > 20 else (seat.right if int(v) % 6 else seat.lo)))
         else:
-            box(img, 11, 1, 14, L - 1, 10, 15, seat)
-    add(f'bench_{f}', img, 0.55)
+            box(img, 11, 1, 14, L - 1, 10, 15, seat,
+                left=shaded_side(seat.left, seat.hi, seat.lo, 10, 15, ao_rows=1, hi_rows=1),
+                right=shaded_side(seat.right, seat.hi, seat.lo, 10, 15, ao_rows=1, hi_rows=1))
+    add(f'bench_{f}{suffix}', img, 0.55)
 
 
-def long_table(f):
-    """A table two tiles long, with the same red check cloth and a vase at
+def long_table(f, suffix='', cloth=RED, light='#f7b3aa', pale='#fff6e8'):
+    """A table two tiles long, with the same check cloth and a vase at
     each end of the cloth's middle. 'sw' lies along x, 'se' along y."""
     along_y = f == 'se'
     img = cell_img(34, extra_w=32)
@@ -778,22 +858,24 @@ def long_table(f):
     def check(u, v):
         su, sv = int(u // 5) % 2, int(v // 5) % 2
         if su and sv:
-            return RED.top
+            return cloth.top
         if su or sv:
-            return hexc('#f7b3aa')
-        return hexc('#fff6e8')
+            return hexc(light)
+        return hexc(pale)
 
+    _ll = shaded_side(leg.left, leg.hi, leg.lo, 0, 9, ao_rows=2, hi_rows=1)
+    _lr = shaded_side(leg.right, leg.hi, leg.lo, 0, 9, ao_rows=2, hi_rows=1)
     if not along_y:
         for cu in (8, 24):
-            box(img, cu - 2, 6, cu + 2, 10, 0, 9, leg, edge=False)
-        box(img, 1, 2, L - 1, 14, 9, 11, RED, top=check)
+            box(img, cu - 2, 6, cu + 2, 10, 0, 9, leg, edge=False, left=_ll, right=_lr)
+        box(img, 1, 2, L - 1, 14, 9, 11, cloth, top=check)
         box(img, 14, 6, 18, 10, 11, 14, ramp('#9ccbe8'))
     else:
         for cv in (8, 24):
-            box(img, 6, cv - 2, 10, cv + 2, 0, 9, leg, edge=False)
-        box(img, 2, 1, 14, L - 1, 9, 11, RED, top=check)
+            box(img, 6, cv - 2, 10, cv + 2, 0, 9, leg, edge=False, left=_ll, right=_lr)
+        box(img, 2, 1, 14, L - 1, 9, 11, cloth, top=check)
         box(img, 6, 14, 10, 18, 11, 14, ramp('#9ccbe8'))
-    add(f'longTable_{f}', img, 0.55)
+    add(f'longTable_{f}{suffix}', img, 0.55)
 
 
 # ------------------------------------------------------------------ people
@@ -1309,7 +1391,9 @@ def hedge():
 def flower_bed():
     img = cell_img(8)
     wood = ramp('#8d6a4a')
-    box(img, 1, 2, 15, 14, 0, 5, wood)
+    box(img, 1, 2, 15, 14, 0, 5, wood,
+        left=shaded_side(wood.left, wood.hi, wood.lo, 0, 5, ao_rows=1, hi_rows=1),
+        right=shaded_side(wood.right, wood.hi, wood.lo, 0, 5, ao_rows=1, hi_rows=1))
     face_top(img, 2, 14, 3, 13, 5, ramp('#5a3f2a').top)
     n = noise(73)
     for _ in range(14):
@@ -1375,8 +1459,10 @@ def bus_stop():
     img = cell_img(40)
     post = ramp('#4a5568')
     glass = ramp('#9ad0e8')
-    box(img, 1, 5, 3, 7, 0, 30, post, edge=False)
-    box(img, 13, 5, 15, 7, 0, 30, post, edge=False)
+    _pl = shaded_side(post.left, post.hi, post.lo, 0, 30, ao_rows=2, hi_rows=2)
+    _pr = shaded_side(post.right, post.hi, post.lo, 0, 30, ao_rows=2, hi_rows=2)
+    box(img, 1, 5, 3, 7, 0, 30, post, edge=False, left=_pl, right=_pr)
+    box(img, 13, 5, 15, 7, 0, 30, post, edge=False, left=_pl, right=_pr)
     face_left(img, 3, 13, 6, 4, 28, glass.top)
     box(img, 0, 3, 16, 10, 30, 33, ramp('#d9453d'))
     # the sign
@@ -1438,7 +1524,9 @@ def park_bench():
     box(img, 2, 4, 3, 12, 0, 6, iron, edge=False)
     box(img, 13, 4, 14, 12, 0, 6, iron, edge=False)
     box(img, 1, 3, 15, 13, 6, 8, wood)
-    box(img, 1, 3, 15, 5, 8, 15, wood)
+    box(img, 1, 3, 15, 5, 8, 15, wood,
+        left=shaded_side(wood.left, wood.hi, wood.lo, 8, 15, ao_rows=1, hi_rows=1),
+        right=shaded_side(wood.right, wood.hi, wood.lo, 8, 15, ao_rows=1, hi_rows=1))
     add('bench_park', img, 0.5)
 
 
@@ -1514,7 +1602,9 @@ def street_lamp():
     img = cell_img(54)
     pole = ramp('#3d4252')
     box(img, 7, 7, 9, 9, 0, 3, pole, edge=False)
-    box(img, 7, 7, 9, 9, 3, 44, pole, edge=False)
+    box(img, 7, 7, 9, 9, 3, 44, pole, edge=False,
+        left=shaded_side(pole.left, pole.hi, pole.lo, 3, 44, ao_rows=2, hi_rows=2),
+        right=shaded_side(pole.right, pole.hi, pole.lo, 3, 44, ao_rows=2, hi_rows=2))
     box(img, 5, 5, 11, 11, 44, 48, pole)
     cx, cy = P(8, 8, 48)
     ellipse(img, cx, cy - 1, 4, 2, hexc('#fff3b0'))
@@ -1559,7 +1649,11 @@ def vending(on=True, cash=False):
     img = cell_img(54)
     body = ramp('#c9473b')
     dark = ramp('#2c3040')
-    box(img, 3, 4, 13, 12, 0, 36, body)
+    # The left (+v) face is entirely redrawn below by `front`; only the
+    # right (+u) side profile stays as the plain body colour, so that is
+    # the one worth shading here.
+    box(img, 3, 4, 13, 12, 0, 36, body,
+        right=shaded_side(body.right, body.hi, body.lo, 0, 36, ao_rows=3, hi_rows=2))
 
     cans = [hexc('#f2c338'), hexc('#4a9de0'), hexc('#e2e8ee'),
             hexc('#6ec16a'), hexc('#e2493f')]
@@ -1762,8 +1856,10 @@ def pass_edge():
 def doorway(name, open_):
     img = cell_img(40)
     frame = ramp('#6b3f26')
-    box(img, 0, 12, 3, 16, 0, 30, frame)
-    box(img, 13, 12, 16, 16, 0, 30, frame)
+    _dl = shaded_side(frame.left, frame.hi, frame.lo, 0, 30, ao_rows=2, hi_rows=2)
+    _dr = shaded_side(frame.right, frame.hi, frame.lo, 0, 30, ao_rows=2, hi_rows=2)
+    box(img, 0, 12, 3, 16, 0, 30, frame, left=_dl, right=_dr)
+    box(img, 13, 12, 16, 16, 0, 30, frame, left=_dl, right=_dr)
     box(img, 0, 12, 16, 16, 28, 33, frame)
     # a hanging sign, green when the doors are open and red when they are shut
     plate = ramp('#4cae5a' if open_ else '#d9453d')
@@ -1961,7 +2057,9 @@ def car(color, f):
     for a in (-11, 11):
         for b in (-7, 7):
             B(a - 4, b - 1, a + 4, b + 1, 0, 7, TYRE, edge=False)
-    B(-17, -7, 17, 7, 3, 12, body)
+    B(-17, -7, 17, 7, 3, 12, body,
+      left=shaded_side(body.left, body.hi, body.lo, 3, 12),
+      right=shaded_side(body.right, body.hi, body.lo, 3, 12))
     # a lower bonnet and boot, a cabin between them
     B(-10, -6, 7, 6, 12, 20, GLASS)
     B(-10, -6, 7, 6, 19, 22, body)
@@ -1979,7 +2077,9 @@ def window_ledge():
     right-hand wall: a counter top with a paper bag and a bell."""
     img = Img(48, 82, 32, 30)
     body = ramp('#b8743f')
-    box(img, 3, 1, 13, 31, 0, 10, body)
+    box(img, 3, 1, 13, 31, 0, 10, body,
+        left=shaded_side(body.left, body.hi, body.lo, 0, 10, ao_rows=2, hi_rows=1),
+        right=shaded_side(body.right, body.hi, body.lo, 0, 10, ao_rows=2, hi_rows=1))
     box(img, 2, 0, 16, 32, 10, 12, MARBLE)
     box(img, 8, 6, 13, 12, 12, 19, ramp('#d9b98a'))
     face_right(img, 13, 7, 11, 13, 17, hexc('#a97c4f'))
@@ -2049,6 +2149,7 @@ def build():
         oven(f)
         freezer(f)
         bench(f)
+        jukebox(f)
     for c in CAR_COLORS:
         for f in FACINGS:
             car(c, f)
@@ -2061,8 +2162,25 @@ def build():
     chair('chair_sw', 'sv')
     chair('chair_nw', 'nu')
     chair('chair_ne', 'nv')
+    for s in SEAT_STYLES:
+        sid = s['id']
+        suffix = f'_s_{sid}'
+        chair_seat, chair_wood = ramp(s['chair_seat']), ramp(s['chair_wood'])
+        chair(f'chair_se{suffix}', 'su', seat=chair_seat, wood=chair_wood)
+        chair(f'chair_sw{suffix}', 'sv', seat=chair_seat, wood=chair_wood)
+        chair(f'chair_nw{suffix}', 'nu', seat=chair_seat, wood=chair_wood)
+        chair(f'chair_ne{suffix}', 'nv', seat=chair_seat, wood=chair_wood)
+        bench_seat = ramp(s['bench_seat'])
+        for f in FACINGS:
+            bench(f, suffix=suffix, seat=bench_seat, base=s['bench_base'])
+        cloth = ramp(s['cloth'])
+        table(suffix=suffix, cloth=cloth,
+              light=s['cloth_light'], pale=s['cloth_pale'])
+        long_table('sw', suffix=suffix, cloth=cloth,
+                   light=s['cloth_light'], pale=s['cloth_pale'])
+        long_table('se', suffix=suffix, cloth=cloth,
+                    light=s['cloth_light'], pale=s['cloth_pale'])
     plant()
-    jukebox()
     wall_tv('sw')
     wall_tv('se')
     rug()

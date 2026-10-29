@@ -229,6 +229,7 @@ class FixtureDef {
     this.h = 1,
     this.floor = false,
     this.hung = false,
+    this.faced = false,
     this.unlock = 1,
     this.info = '',
     this.aura,
@@ -250,6 +251,11 @@ class FixtureDef {
   /// and faces into the room from the back wall or the left wall.
   final bool hung;
 
+  /// A decor piece with an obvious front even though it stands free on the
+  /// floor like a plant or a rug: the jukebox's lit glass and speakers, for
+  /// instance, only read right when they face into the room.
+  final bool faced;
+
   /// Restaurant level that unlocks it.
   final int unlock;
 
@@ -265,6 +271,7 @@ class FixtureDef {
   /// Whether it has a front that matters.
   bool get turns =>
       hung ||
+      faced ||
       (role != Role.decor && role != Role.table && role != Role.window) ||
       // A table two tiles long lies one way or the other.
       (role == Role.table && w != h);
@@ -394,6 +401,7 @@ const Map<Kind, FixtureDef> fixtureDefs = {
     120,
     Role.decor,
     unlock: 2,
+    faced: true,
     aura: Aura(AuraEffect.tips, 3, 1.25),
     info: 'Music puts people in a generous mood.',
   ),
@@ -457,13 +465,28 @@ const Map<Kind, FixtureDef> fixtureDefs = {
 };
 
 /// One fixture standing on the grid. [at] is its top-left cell.
+/// The style kind that dresses up [k], for the furniture pieces that can be
+/// styled one at a time; null for anything else.
+StyleKind? styleKindOf(Kind k) => switch (k) {
+  Kind.chair => StyleKind.chair,
+  Kind.bench => StyleKind.bench,
+  Kind.table => StyleKind.table,
+  Kind.longTable => StyleKind.longTable,
+  _ => null,
+};
+
 class Placed {
-  Placed(this.id, this.kind, this.at, [this.facing = Dir.sw]);
+  Placed(this.id, this.kind, this.at, [this.facing = Dir.sw, this.style]);
 
   final int id;
   final Kind kind;
   Cell at;
   Dir facing;
+
+  /// The cosmetic look on this one piece, for a chair/bench/table/long
+  /// table; null means Classic. Each piece carries its own, unlike the
+  /// wallpaper and floor, which are the same for the whole room.
+  String? style;
 
   FixtureDef get def => fixtureDefs[kind]!;
 
@@ -735,12 +758,16 @@ class Diner {
   String wallStyle = wallDefault;
   String floorStyle = floorDefault;
 
-  /// Whether [s] can be used: free, or bought.
+  /// Whether [s] can be used: free, earned by a goal, or bought.
   bool owns(Style s) =>
-      s.free || ownedStyles.contains('${s.kind.name}:${s.id}');
+      s.free ||
+      (s.goal != null && goalsDone.contains(s.goal)) ||
+      ownedStyles.contains('${s.kind.name}:${s.id}');
 
-  /// Spends gems on [s]. Refused if it is already owned or there are too few.
+  /// Spends gems on [s]. Refused if it is already owned, earned rather than
+  /// sold, or there are too few gems.
   PlaceResult buyStyle(Style s) {
+    if (s.goal != null) return PlaceResult.taken;
     if (owns(s)) return PlaceResult.taken;
     if (gems < s.gems) return PlaceResult.broke;
     gems -= s.gems;
@@ -756,6 +783,15 @@ class Diner {
     } else {
       floorStyle = s.id;
     }
+    return true;
+  }
+
+  /// Puts [s] on one placed chair, bench, table or long table, if it is
+  /// owned. Unlike the wallpaper and floor, this is just for [p] — other
+  /// pieces of the same kind keep whatever look they already have.
+  bool styleFixture(Placed p, Style s) {
+    if (!owns(s)) return false;
+    p.style = s.id;
     return true;
   }
 
@@ -2089,7 +2125,13 @@ class Diner {
     'markup': {for (final e in markup.entries) e.key.name: e.value},
     'items': [
       for (final p in items)
-        {'k': p.kind.name, 'x': p.at.x, 'y': p.at.y, 'f': p.facing.name},
+        {
+          'k': p.kind.name,
+          'x': p.at.x,
+          'y': p.at.y,
+          'f': p.facing.name,
+          if (p.style != null) 's': p.style!,
+        },
     ],
     if (walls.isNotEmpty)
       'walls': [for (final e in walls.toList()..sort(_byPlace)) e.toJson()],
@@ -2301,7 +2343,9 @@ class Diner {
           (kind != Kind.window ||
               probe.cells.every((c) => c.x == d.right && c.y >= top));
       if (fits) {
-        d._put(kind, at, facing);
+        final placed = d._put(kind, at, facing);
+        final style = m['s'];
+        if (style is String) placed.style = style;
       } else {
         d.coins += fixtureDefs[kind]!.cost;
       }

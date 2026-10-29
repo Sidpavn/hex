@@ -174,6 +174,37 @@ class GoldButton extends StatelessWidget {
   }
 }
 
+/// Lays out a handful of secondary buttons two to a row instead of stacking
+/// each one full width underneath the last. An odd one out at the end takes
+/// the full row to itself, so it never looks half-filled.
+class ButtonRow extends StatelessWidget {
+  const ButtonRow({super.key, required this.children, this.spacing = 8});
+
+  final List<Widget> children;
+  final double spacing;
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = <Widget>[];
+    for (var i = 0; i < children.length; i += 2) {
+      final left = children.length - i;
+      if (i > 0) rows.add(SizedBox(height: spacing));
+      rows.add(
+        Row(
+          children: [
+            Expanded(child: children[i]),
+            if (left > 1) ...[
+              SizedBox(width: spacing),
+              Expanded(child: children[i + 1]),
+            ],
+          ],
+        ),
+      );
+    }
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: rows);
+  }
+}
+
 /// Section heading used inside panels and forms.
 class Eyebrow extends StatelessWidget {
   const Eyebrow(this.text, {super.key});

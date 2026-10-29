@@ -38,6 +38,11 @@ class _StaffScreenState extends State<StaffScreen> {
     if (mounted) setState(() {});
   }
 
+  Widget _card(Staff s) => KeyedSubtree(
+    key: ValueKey('team-${s.id}'),
+    child: StaffCard(staff: s, onTap: () => _open(s)),
+  );
+
   String _names(List<Kind> kinds) {
     final list = [for (final k in kinds) fixtureDefs[k]!.name.toLowerCase()];
     if (list.length <= 1) return list.join();
@@ -88,10 +93,20 @@ class _StaffScreenState extends State<StaffScreen> {
                     'Nobody works here. Hire someone.',
                     style: TextStyle(color: Pal.red, fontSize: 14),
                   ),
-                for (final s in roster.employees) ...[
-                  KeyedSubtree(
-                    key: ValueKey('team-${s.id}'),
-                    child: StaffRow(staff: s, onTap: () => _open(s)),
+                for (var i = 0; i < roster.employees.length; i += 2) ...[
+                  IntrinsicHeight(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(child: _card(roster.employees[i])),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: i + 1 < roster.employees.length
+                              ? _card(roster.employees[i + 1])
+                              : const SizedBox.shrink(),
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 8),
                 ],

@@ -282,6 +282,21 @@ void main() {
       expect(left, greaterThanOrEqualTo(0));
     });
 
+    test('better storage cuts how much of it spoils', () {
+      Diner market() => cafe(day: plainDay())..supplier = Supplier.market;
+      final plain = DinerSim(market(), seed: 3);
+      while (!plain.finished && plain.ticks < 2500) {
+        plain.tick();
+      }
+      final stored = market()..progress.upgrades[Upgrade.supply] = 3;
+      final sim = DinerSim(stored, seed: 3);
+      while (!sim.finished && sim.ticks < 2500) {
+        sim.tick();
+      }
+      expect(plain.spoiled, greaterThan(0));
+      expect(sim.spoiled, lessThan(plain.spoiled));
+    });
+
     test('the farm earns bigger tips', () {
       double tips(Supplier s) {
         var t = 0.0;

@@ -56,37 +56,41 @@ class PauseMenu extends StatelessWidget {
               const SizedBox(height: 12),
               const SoundToggles(),
               const SizedBox(height: 8),
-              GoldButton(
-                key: const ValueKey('pause-settings'),
-                label: ':gear: Settings',
-                filled: false,
-                color: Pal.text,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => SettingsScreen(diner: diner),
+              ButtonRow(
+                children: [
+                  GoldButton(
+                    key: const ValueKey('pause-settings'),
+                    label: ':gear: Settings',
+                    filled: false,
+                    color: Pal.text,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => SettingsScreen(diner: diner),
+                      ),
+                    ),
                   ),
-                ),
+                  GoldButton(
+                    key: const ValueKey('pause-guide'),
+                    label: 'How to play',
+                    filled: false,
+                    color: Pal.text,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const GuideScreen(),
+                      ),
+                    ),
+                  ),
+                  if (!inService)
+                    GoldButton(
+                      key: const ValueKey('pause-title-button'),
+                      label: 'Back to the title screen',
+                      filled: false,
+                      color: Pal.dim,
+                      onTap: () =>
+                          Navigator.of(context).pop(PauseChoice.title),
+                    ),
+                ],
               ),
-              const SizedBox(height: 8),
-              GoldButton(
-                key: const ValueKey('pause-guide'),
-                label: 'How to play',
-                filled: false,
-                color: Pal.text,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(builder: (_) => const GuideScreen()),
-                ),
-              ),
-              if (!inService) ...[
-                const SizedBox(height: 8),
-                GoldButton(
-                  key: const ValueKey('pause-title-button'),
-                  label: 'Back to the title screen',
-                  filled: false,
-                  color: Pal.text,
-                  onTap: () => Navigator.of(context).pop(PauseChoice.title),
-                ),
-              ],
             ],
           ),
         ),

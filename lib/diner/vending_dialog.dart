@@ -151,20 +151,23 @@ class _VendingDialogState extends State<VendingDialog> {
                 style: const TextStyle(color: Pal.text, fontSize: 14),
               ),
               const SizedBox(height: 12),
-              GoldButton(
-                key: const ValueKey('vend-power'),
-                label: on ? 'Switch off' : 'Switch on',
-                filled: !on,
-                color: on ? Pal.text : Pal.gold,
-                onTap: _power,
-              ),
-              const SizedBox(height: 8),
-              GoldButton(
-                key: const ValueKey('vend-close'),
-                label: 'Close',
-                filled: false,
-                color: Pal.text,
-                onTap: () => Navigator.of(context).pop(),
+              ButtonRow(
+                children: [
+                  GoldButton(
+                    key: const ValueKey('vend-power'),
+                    label: on ? 'Switch off' : 'Switch on',
+                    filled: !on,
+                    color: on ? Pal.text : Pal.gold,
+                    onTap: _power,
+                  ),
+                  GoldButton(
+                    key: const ValueKey('vend-close'),
+                    label: 'Close',
+                    filled: false,
+                    color: Pal.text,
+                    onTap: () => Navigator.of(context).pop(),
+                  ),
+                ],
               ),
             ],
           ),

@@ -112,6 +112,15 @@ final List<Goal> goals = [
     hint: 'A TV makes guests nearby wait longer. Aim it before you place it.',
   ),
   Goal(
+    'seats10',
+    'Seat 10 guests at once',
+    100,
+    (f) => f.diner.seats().length >= 10,
+    hint:
+        'Chairs, benches and tables each seat guests. Add enough for ten at '
+        'once.',
+  ),
+  Goal(
     'happy',
     'A day when nobody leaves angry',
     150,
@@ -195,6 +204,40 @@ final List<Goal> goals = [
     'Own the whole plot',
     300,
     (f) => f.diner.owned.length == Diner.plots.length,
+  ),
+  Goal(
+    'supply',
+    'Buy better storage',
+    100,
+    (f) => f.diner.progress.upgradeLvl(Upgrade.supply) >= 1,
+    hint:
+        'Better storage is in Upgrades, under Kitchen. It cuts how much the '
+        "budget market's deliveries spoil.",
+  ),
+  Goal(
+    'pass',
+    'Buy a bigger pass',
+    100,
+    (f) => f.diner.progress.upgradeLvl(Upgrade.pass) >= 1,
+    hint:
+        'Bigger pass is in Upgrades, under Service. More plates fit on the '
+        'shelf for servers to carry out.',
+  ),
+  Goal(
+    'loyalty',
+    'Buy loyalty cards',
+    100,
+    (f) => f.diner.progress.upgradeLvl(Upgrade.loyalty) >= 1,
+    hint:
+        'Loyalty cards is in Upgrades, under Team. Regulars warm to the '
+        'place faster on a happy visit.',
+  ),
+  Goal(
+    'bigTeam',
+    'Grow the team to 6',
+    150,
+    (f) => f.diner.roster.employees.length >= 6,
+    hint: 'Staff room in Upgrades makes room for more people on the team.',
   ),
 ];
 

@@ -28,6 +28,8 @@ import 'goals.dart';
 import 'goals_screen.dart';
 import 'diner_art.dart';
 import 'diner_painter.dart';
+import 'home_card.dart';
+import 'title_sign.dart' show AwningBand;
 export 'diner_sprite.dart' show DinerSprite;
 import 'shelf_popup.dart';
 import 'style_popup.dart';
@@ -189,9 +191,6 @@ class _BuildScreenState extends State<BuildScreen>
   /// Looking at the plot to choose a section to buy, and the one chosen.
   bool _expanding = false;
   int? _plotSel;
-
-  /// The guest tapped during service, to read about or rush.
-  Guest? _guestSel;
 
   /// Goals met on the day that just ended, for the summary.
   List<Goal> _dayGoals = [];
@@ -400,7 +399,6 @@ class _BuildScreenState extends State<BuildScreen>
       _levelBefore = diner.progress.level;
       diner.clearUndo();
       sim = DinerSim(diner);
-      _guestSel = null;
       _toasts.clear();
       _phase = Phase.service;
       _coachTo(Coach.watch);
@@ -1201,28 +1199,26 @@ class _BuildScreenState extends State<BuildScreen>
     });
   }
 
-  /// A tap on the board during service: pick the guest standing there.
-  void _tapGuest(Cell near, Cell exact) {
+  /// A tap on the board during service: on a guest still waiting for food,
+  /// it rushes them, if a rush is left to spend. On a table with a mess on
+  /// it and nobody sitting there, it clears it instead.
+  void _tapClean(Cell near, Cell exact) {
     // A person is drawn above the tile they stand on, so look a tile toward
     // the viewer first.
     final front = Cell(exact.x + 1, exact.y + 1);
-    final g = sim.guestAt(front) ?? sim.guestAt(exact) ?? sim.guestAt(near);
+    final guest = sim.guestAt(front) ?? sim.guestAt(exact) ?? sim.guestAt(near);
+    if (guest != null) {
+      if (!sim.canRush(guest)) return;
+      setState(() {
+        if (sim.rush(guest)) Sound.instance.play(Sfx.tap);
+      });
+      return;
+    }
     setState(() {
-      _guestSel = g;
-      if (g != null) _coachTo(Coach.nextDay);
-      // No guest there: a tap on a table with a mess on it clears it.
-      if (g == null) {
-        sim.cleanAt(front);
-        sim.cleanAt(exact);
-        sim.cleanAt(near);
-      }
+      sim.cleanAt(front);
+      sim.cleanAt(exact);
+      sim.cleanAt(near);
     });
-  }
-
-  void _rushGuest() {
-    final g = _guestSel;
-    if (g == null) return;
-    setState(() => sim.rush(g));
   }
 
   void _undo() {
@@ -1371,15 +1367,19 @@ class _BuildScreenState extends State<BuildScreen>
                   child: SingleChildScrollView(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                      child: PixelBox(
-                        padding: const EdgeInsets.all(12),
-                        child: switch (_phase) {
-                          Phase.build =>
-                            _expanding ? _expandPanel() : _buildPanel(),
-                          Phase.service => _servicePanel(),
-                          Phase.summary => _summaryPanel(),
-                        },
-                      ),
+                      // The day's end is handed to the player as a printed
+                      // receipt, not another slate panel: a deliberate,
+                      // bounded use of the diner's cream paper surface.
+                      child: _phase == Phase.summary
+                          ? _summaryReceipt()
+                          : PixelBox(
+                              padding: const EdgeInsets.all(12),
+                              child: _phase == Phase.build
+                                  ? (_expanding
+                                        ? _expandPanel()
+                                        : _buildPanel())
+                                  : _servicePanel(),
+                            ),
                     ),
                   ),
                 ),
@@ -1648,10 +1648,6 @@ class _BuildScreenState extends State<BuildScreen>
           _challengeCard()!,
           const SizedBox(height: 8),
         ],
-        if (!_selecting && !editing && _orderCard() != null) ...[
-          _orderCard()!,
-          const SizedBox(height: 12),
-        ],
         if (editing && _placing == Kind.kitchenFloor)
           ..._paintRows()
         else if (editing)
@@ -1672,7 +1668,9 @@ class _BuildScreenState extends State<BuildScreen>
     );
   }
 
-  /// Today's daily challenge, shown before service starts.
+  /// Today's daily challenge, shown before service starts. Plain text, not
+  /// a card: nothing happens when it's tapped, so it must not look like the
+  /// catering card right below it, which does.
   Widget? _challengeCard() {
     final c = DailyChallenge.forDay(
       diner.progress.day,
@@ -1681,56 +1679,19 @@ class _BuildScreenState extends State<BuildScreen>
     );
     if (c == null) return null;
     final done = diner.challengeDayDone == diner.progress.day;
-    return Panel(
+    return Column(
       key: const ValueKey('challenge-card'),
-      padding: const EdgeInsets.all(8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          PxText(
-            done ? 'Challenge done' : 'Challenge',
-            style: TextStyle(
-              color: done ? Pal.green : Pal.gold,
-              fontSize: 16,
-            ),
-          ),
-          PxText(
-            '${c.description}. +${c.reward}',
-            style: const TextStyle(color: Pal.dim, fontSize: 14),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Today's catering order, on offer or taken, as a short card that opens it.
-  Widget? _orderCard() {
-    final taken = diner.takenContract;
-    final c = taken ?? diner.offer;
-    if (c == null) return null;
-    return Panel(
-      key: const ValueKey('order-card'),
-      padding: const EdgeInsets.all(8),
-      onTap: _openOrder,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          PxText(
-            taken != null
-                ? 'Catering for ${c.client}: taken'
-                : 'Catering order from ${c.client}',
-            style: TextStyle(
-              color: taken != null ? Pal.green : Pal.gold,
-              fontSize: 16,
-            ),
-          ),
-          PxText(
-            '${c.summary}. Pays ${c.reward}.'
-            '${taken != null && diner.closedForOrder ? ' Doors shut.' : ''}',
-            style: const TextStyle(color: Pal.dim, fontSize: 14),
-          ),
-        ],
-      ),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        PxText(
+          done ? 'Challenge done' : 'Today\'s Challenge',
+          style: TextStyle(color: done ? Pal.green : Pal.gold, fontSize: 16),
+        ),
+        PxText(
+          '${c.description}. +${c.reward}',
+          style: const TextStyle(color: Pal.dim, fontSize: 14),
+        ),
+      ],
     );
   }
 
@@ -1790,6 +1751,23 @@ class _BuildScreenState extends State<BuildScreen>
       context,
       (_) => StylePopup(
         diner: diner,
+        shop: _openGemShop,
+        onChanged: () {
+          setState(() => _revision++);
+          _save(_savedAt);
+        },
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
+  /// Opens the style popup for one placed chair, bench, table or long table.
+  Future<void> _styleFixture(Placed p) async {
+    await popupPixel<void>(
+      context,
+      (_) => FixtureStylePopup(
+        diner: diner,
+        placed: p,
         shop: _openGemShop,
         onChanged: () {
           setState(() => _revision++);
@@ -1976,62 +1954,53 @@ class _BuildScreenState extends State<BuildScreen>
     ];
   }
 
-  Widget _selectedRow(Placed sel) => Row(
+  Widget _selectedRow(Placed sel) => ButtonRow(
     children: [
-      if (sel.kind == Kind.window) ...[
-        Expanded(
-          child: GoldButton(
-            key: const ValueKey('window-toggle'),
-            label: diner.windowOn ? 'Close window' : 'Open window',
-            filled: !diner.windowOn,
-            color: diner.windowOn ? Pal.text : Pal.gold,
-            onTap: _toggleWindow,
-          ),
+      if (sel.kind == Kind.window)
+        GoldButton(
+          key: const ValueKey('window-toggle'),
+          label: diner.windowOn ? 'Close window' : 'Open window',
+          filled: !diner.windowOn,
+          color: diner.windowOn ? Pal.text : Pal.gold,
+          onTap: _toggleWindow,
         ),
-        const SizedBox(width: 8),
-      ],
-      if (sel.def.rotates) ...[
-        Expanded(
-          child: GoldButton(
-            key: const ValueKey('rotate'),
-            label: 'Rotate',
-            filled: false,
-            color: Pal.text,
-            onTap: _rotate,
-          ),
-        ),
-        const SizedBox(width: 8),
-      ],
-      Expanded(
-        child: GoldButton(
-          key: const ValueKey('move'),
-          label: 'Move',
+      if (sel.def.rotates)
+        GoldButton(
+          key: const ValueKey('rotate'),
+          label: ':gear: Rotate',
           filled: false,
           color: Pal.text,
-          onTap: _startMove,
+          onTap: _rotate,
         ),
+      GoldButton(
+        key: const ValueKey('move'),
+        label: ':lift: Move',
+        filled: false,
+        color: Pal.text,
+        onTap: _startMove,
       ),
-      if (sel.kind != Kind.window) ...[
-        const SizedBox(width: 8),
-        Expanded(
-          child: GoldButton(
-            key: const ValueKey('select-more'),
-            label: 'Select',
-            filled: false,
-            color: Pal.text,
-            onTap: _startSelecting,
-          ),
-        ),
-      ],
-      const SizedBox(width: 8),
-      Expanded(
-        child: GoldButton(
-          key: const ValueKey('sell'),
-          label: 'Sell +${sel.def.refund}',
+      if (styleKindOf(sel.kind) != null)
+        GoldButton(
+          key: const ValueKey('style-fixture'),
+          label: ':brush: Style',
           filled: false,
-          color: Pal.dim,
-          onTap: _sell,
+          color: Pal.text,
+          onTap: () => _styleFixture(sel),
         ),
+      if (sel.kind != Kind.window)
+        GoldButton(
+          key: const ValueKey('select-more'),
+          label: ':cursor: Select',
+          filled: false,
+          color: Pal.text,
+          onTap: _startSelecting,
+        ),
+      GoldButton(
+        key: const ValueKey('sell'),
+        label: ':coin: Sell +${sel.def.refund}',
+        filled: false,
+        color: Pal.dim,
+        onTap: _sell,
       ),
     ],
   );
@@ -2119,99 +2088,6 @@ class _BuildScreenState extends State<BuildScreen>
       ),
     ],
   );
-
-  /// Who a tapped guest is, how they are doing, and the button to rush them.
-  Widget _guestCard(Guest g) => ListenableBuilder(
-    listenable: clock,
-    builder: (context, _) => _guestCardBody(g),
-  );
-
-  Widget _guestCardBody(Guest g) {
-    if (g.gone) return const SizedBox.shrink();
-    final String status;
-    if (g.state == GuestState.waiting) {
-      status = g.rushed ? 'Being rushed' : 'Waiting for food';
-    } else if (g.state == GuestState.eating) {
-      status = 'Eating';
-    } else if (g.inQueue || g.state == GuestState.arriving) {
-      status = 'In the queue';
-    } else {
-      status = 'On their way';
-    }
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 260),
-      child: PixelBox(
-        key: const ValueKey('guest-card'),
-        color: Pal.panel,
-        padding: const EdgeInsets.all(8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            PxText(
-              g.name,
-              style: const TextStyle(color: Pal.text, fontSize: 17),
-            ),
-            PxText(
-              g.critic
-                  ? 'Food critic. Wants a premium dish.'
-                  : g.blogger
-                  ? 'Food blogger. Wants a fair price and a short wait.'
-                  : '${g.gender.singular[0].toUpperCase()}${g.gender.singular.substring(1)}, '
-                        '${g.temper.label.toLowerCase()}, '
-                        '${g.wallet.label.toLowerCase()}',
-              key: const ValueKey('guest-kind'),
-              style: const TextStyle(color: Pal.dim, fontSize: 14),
-            ),
-            if (g.regular != null)
-              PxText(
-                'Regular, ${g.regular!.hearts} '
-                '${g.regular!.hearts == 1 ? 'heart' : 'hearts'}. Likes '
-                '${recipes[g.regular!.favourite]!.name.toLowerCase()}.',
-                key: const ValueKey('guest-regular'),
-                style: const TextStyle(color: Pal.gold, fontSize: 14),
-              ),
-            PxText(
-              status,
-              style: const TextStyle(color: Pal.dim, fontSize: 14),
-            ),
-            const SizedBox(height: 4),
-            PxBar(
-              value: g.mood,
-              color: g.mood > 0.66
-                  ? Pal.green
-                  : g.mood > 0.33
-                  ? Pal.gold
-                  : Pal.red,
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: GoldButton(
-                    key: const ValueKey('guest-close'),
-                    label: 'Close',
-                    filled: false,
-                    color: Pal.dim,
-                    onTap: () => setState(() => _guestSel = null),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  flex: 2,
-                  child: GoldButton(
-                    key: const ValueKey('guest-rush'),
-                    label: 'Rush  ${sim.rushLeft} left',
-                    onTap: sim.canRush(g) ? _rushGuest : null,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   Widget _servicePanel() {
     return ListenableBuilder(
@@ -2332,6 +2208,25 @@ class _BuildScreenState extends State<BuildScreen>
     _ => 'Bad day',
   };
 
+  /// The day's receipt: an awning seam leading into the cream card, trimmed
+  /// with the diner's own checkerboard at the bottom.
+  Widget _summaryReceipt() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const AwningBand(colorA: Pal.teal, colorB: Pal.cream),
+        ColoredBox(
+          color: Pal.cream,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: _summaryPanel(),
+          ),
+        ),
+        const CheckerBand(colorA: Pal.teal, colorB: Pal.cream),
+      ],
+    );
+  }
+
   Widget _summaryPanel() {
     final r = _report;
     if (r == null) return const SizedBox.shrink();
@@ -2348,16 +2243,15 @@ class _BuildScreenState extends State<BuildScreen>
     final fix = r.unpaid > 0 ? null : fixFirst(r);
     final best = fix == null ? r.highlights(1).firstOrNull : null;
     final ratingColour = r.reputation > r.reputationBefore
-        ? Pal.green
+        ? Pal.teal
         : r.reputation < r.reputationBefore
-        ? Pal.red
-        : Pal.dim;
+        ? Pal.rust
+        : Pal.creamDim;
     final dayColour = switch (r.stars) {
-      3 || 2 => Pal.green,
-      1 => Pal.gold,
-      _ => Pal.red,
+      3 || 2 => Pal.teal,
+      1 => Pal.goldDark,
+      _ => Pal.rust,
     };
-    final guests = r.served + r.walkouts;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2367,7 +2261,7 @@ class _BuildScreenState extends State<BuildScreen>
             Expanded(
               child: PxText(
                 'Day ${r.day}',
-                style: const TextStyle(color: Pal.dim, fontSize: 17),
+                style: const TextStyle(color: Pal.teal, fontSize: 17),
               ),
             ),
             PxText(
@@ -2377,6 +2271,8 @@ class _BuildScreenState extends State<BuildScreen>
             ),
           ],
         ),
+        Container(height: 1, color: Pal.creamDark),
+        const SizedBox(height: 6),
         Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
@@ -2384,7 +2280,7 @@ class _BuildScreenState extends State<BuildScreen>
               '${kept >= 0 ? '+' : ''}$kept',
               key: const ValueKey('kept'),
               style: TextStyle(
-                color: kept >= 0 ? Pal.gold : Pal.red,
+                color: kept >= 0 ? Pal.teal : Pal.rust,
                 fontSize: 32,
                 height: 1.1,
               ),
@@ -2398,12 +2294,12 @@ class _BuildScreenState extends State<BuildScreen>
                   children: [
                     const PxText(
                       'kept today',
-                      style: TextStyle(color: Pal.dim, fontSize: 14),
+                      style: TextStyle(color: Pal.teal, fontSize: 14),
                     ),
                     PxText(
                       profitLine(r),
                       key: const ValueKey('profit-line'),
-                      style: const TextStyle(color: Pal.text, fontSize: 14),
+                      style: const TextStyle(color: Pal.inkWarm, fontSize: 14),
                     ),
                   ],
                 ),
@@ -2411,50 +2307,29 @@ class _BuildScreenState extends State<BuildScreen>
             ),
           ],
         ),
-        const SizedBox(height: 8),
-        // How the guests went, as one bar: served against left angry.
-        SizedBox(
+        Container(height: 1, color: Pal.creamDark),
+        const SizedBox(height: 6),
+        // How the guests went, as a receipt ledger: served against left angry.
+        Column(
           key: const ValueKey('serve-bar'),
-          height: 8,
-          child: guests == 0
-              ? const ColoredBox(color: Pal.panelLo)
-              : Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (r.served > 0)
-                      Expanded(
-                        flex: r.served,
-                        child: const ColoredBox(color: Pal.green),
-                      ),
-                    if (r.served > 0 && r.walkouts > 0)
-                      const SizedBox(width: 2),
-                    if (r.walkouts > 0)
-                      Expanded(
-                        flex: r.walkouts,
-                        child: const ColoredBox(color: Pal.red),
-                      ),
-                  ],
-                ),
-        ),
-        const SizedBox(height: 4),
-        Row(
           children: [
-            Expanded(
-              child: PxText(
-                '${r.served} served',
-                style: const TextStyle(color: Pal.green, fontSize: 14),
-              ),
+            LedgerLine(
+              label: 'Served',
+              value: '${r.served}',
+              dim: Pal.teal,
+              ink: Pal.teal,
             ),
-            PxText(
-              '${r.walkouts} left angry',
-              style: TextStyle(
-                color: r.walkouts == 0 ? Pal.dim : Pal.red,
-                fontSize: 14,
-              ),
+            LedgerLine(
+              label: 'Left angry',
+              value: '${r.walkouts}',
+              dim: Pal.teal,
+              ink: r.walkouts == 0 ? Pal.creamDim : Pal.rust,
             ),
           ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 6),
+        Container(height: 1, color: Pal.creamDark),
+        const SizedBox(height: 8),
         Row(
           children: [
             Stars((r.reputation / 20).round(), of: 5),
@@ -2484,7 +2359,7 @@ class _BuildScreenState extends State<BuildScreen>
                 : 'Challenge missed: ${c.description}',
             key: const ValueKey('challenge-line'),
             style: TextStyle(
-              color: done ? Pal.green : Pal.dim,
+              color: done ? Pal.teal : Pal.creamDim,
               fontSize: 14,
             ),
           );
@@ -2496,7 +2371,7 @@ class _BuildScreenState extends State<BuildScreen>
                 ? 'Wages short by ${r.unpaid}. Staff are unhappy.'
                 : '${r.quit.join(', ')} quit over unpaid wages.',
             key: const ValueKey('unpaid-line'),
-            style: const TextStyle(color: Pal.red, fontSize: 14),
+            style: const TextStyle(color: Pal.rust, fontSize: 14),
           )
         else if (r.catering != null && r.cateringState != ContractState.open)
           PxText(
@@ -2511,10 +2386,10 @@ class _BuildScreenState extends State<BuildScreen>
             key: const ValueKey('catering-line'),
             style: TextStyle(
               color: r.cateringState == ContractState.done
-                  ? Pal.green
+                  ? Pal.teal
                   : r.cateringState == ContractState.missed
-                  ? Pal.red
-                  : Pal.dim,
+                  ? Pal.rust
+                  : Pal.creamDim,
               fontSize: 14,
             ),
           )
@@ -2526,7 +2401,7 @@ class _BuildScreenState extends State<BuildScreen>
                 : '${_dayGoals.length} goals done. '
                       '+${_dayGoals.fold(0, (a, g) => a + g.reward)}',
             key: const ValueKey('goal-line'),
-            style: const TextStyle(color: Pal.gold, fontSize: 14),
+            style: const TextStyle(color: Pal.goldDark, fontSize: 14),
           )
         else if (r.levelsGained > 0)
           PxText(
@@ -2534,7 +2409,7 @@ class _BuildScreenState extends State<BuildScreen>
             '${unlocked.isEmpty ? '' : ' New: ${unlocked.join(', ')}.'}'
             ' +${r.levelsGained * Diner.levelGems} gems.',
             key: const ValueKey('level-line'),
-            style: const TextStyle(color: Pal.gold, fontSize: 14),
+            style: const TextStyle(color: Pal.goldDark, fontSize: 14),
           )
         else if (best != null)
           Row(
@@ -2547,9 +2422,9 @@ class _BuildScreenState extends State<BuildScreen>
                   height: 6,
                   child: ColoredBox(
                     color: switch (best.tone) {
-                      Tone.good => Pal.green,
-                      Tone.bad => Pal.red,
-                      Tone.mixed => Pal.gold,
+                      Tone.good => Pal.teal,
+                      Tone.bad => Pal.rust,
+                      Tone.mixed => Pal.goldDark,
                     },
                   ),
                 ),
@@ -2558,7 +2433,7 @@ class _BuildScreenState extends State<BuildScreen>
                 child: PxText(
                   best.text,
                   key: const ValueKey('story-line'),
-                  style: const TextStyle(color: Pal.text, fontSize: 14),
+                  style: const TextStyle(color: Pal.inkWarm, fontSize: 14),
                 ),
               ),
             ],
@@ -2568,7 +2443,7 @@ class _BuildScreenState extends State<BuildScreen>
           PxText(
             'Fix first: $fix',
             key: const ValueKey('fix-first'),
-            style: const TextStyle(color: Pal.text, fontSize: 14),
+            style: const TextStyle(color: Pal.inkWarm, fontSize: 14),
           ),
         ],
         if (_supplierHint != null) ...[
@@ -2576,7 +2451,7 @@ class _BuildScreenState extends State<BuildScreen>
           PxText(
             _supplierHint!,
             key: const ValueKey('supplier-hint'),
-            style: const TextStyle(color: Pal.dim, fontSize: 14),
+            style: const TextStyle(color: Pal.creamDim, fontSize: 14),
           ),
         ],
         if (_cloudNote.isNotEmpty) ...[
@@ -2584,7 +2459,7 @@ class _BuildScreenState extends State<BuildScreen>
           PxText(
             _cloudNote,
             key: const ValueKey('cloud-note'),
-            style: const TextStyle(color: Pal.dim, fontSize: 14),
+            style: const TextStyle(color: Pal.creamDim, fontSize: 14),
           ),
         ],
         const SizedBox(height: 12),
@@ -2592,11 +2467,11 @@ class _BuildScreenState extends State<BuildScreen>
           children: [
             Expanded(
               flex: 7,
-              child: GoldButton(
+              child: DinerButton(
                 key: const ValueKey('details'),
                 label: 'Details',
                 filled: false,
-                color: Pal.text,
+                fontSize: 15,
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(
                     builder: (_) =>
@@ -2608,9 +2483,10 @@ class _BuildScreenState extends State<BuildScreen>
             const SizedBox(width: 8),
             Expanded(
               flex: 5,
-              child: GoldButton(
+              child: DinerButton(
                 key: const ValueKey('next-day'),
                 label: 'Next day',
+                fontSize: 15,
                 onTap: _nextDay,
               ),
             ),
@@ -2697,7 +2573,7 @@ class _BuildScreenState extends State<BuildScreen>
                 return;
               }
               if (_phase == Phase.service) {
-                _tapGuest(pickCell(d.localPosition), cellAt(d.localPosition));
+                _tapClean(pickCell(d.localPosition), cellAt(d.localPosition));
                 return;
               }
               if (!_building) return;
@@ -2766,7 +2642,6 @@ class _BuildScreenState extends State<BuildScreen>
                 hover: _hover,
                 hoverEdge: _building && _onEdge(_placing) ? _edge : null,
                 selectedEdge: _building ? _wallSel : null,
-                guestSel: _phase == Phase.service ? _guestSel : null,
                 placeOk: _op != _GroupOp.none
                     ? _groupResult == PlaceResult.ok
                     : _placeResult == PlaceResult.ok,
@@ -2786,8 +2661,6 @@ class _BuildScreenState extends State<BuildScreen>
         ),
         if (_phase == Phase.service)
           Positioned(left: 8, top: 8, child: ToastStack(toasts: _toasts.shown)),
-        if (_phase == Phase.service && _guestSel != null && !_guestSel!.gone)
-          Positioned(left: 8, bottom: 8, child: _guestCard(_guestSel!)),
         if (_coachNow case final c?)
           Positioned(left: 8, right: 56, bottom: 8, child: _coachCard(c)),
         if (_phase == Phase.build && _infoLine().isNotEmpty)
@@ -2840,6 +2713,19 @@ class _BuildScreenState extends State<BuildScreen>
             ],
           ),
         ),
+        if (_railShown && (diner.offer != null || diner.takenContract != null))
+          Positioned(
+            right: 8,
+            bottom: 8,
+            child: _RailButton(
+              key: const ValueKey('catering'),
+              icon: 'pack',
+              label: 'Catering',
+              active: diner.offer != null && diner.takenContract == null,
+              big: true,
+              onTap: _openOrder,
+            ),
+          ),
       ],
     );
   }
@@ -2950,6 +2836,7 @@ class _RailButton extends StatelessWidget {
     this.active = false,
     this.warn = false,
     this.hint = false,
+    this.big = false,
   });
 
   final String icon;
@@ -2960,6 +2847,7 @@ class _RailButton extends StatelessWidget {
 
   /// The tip is about this button: a gold border says so.
   final bool hint;
+  final bool big;
 
   @override
   Widget build(BuildContext context) {
@@ -2970,7 +2858,7 @@ class _RailButton extends StatelessWidget {
       glow: warn ? Pal.red : (active || hint ? Pal.gold : null),
       padding: EdgeInsets.zero,
       child: SizedBox(
-        width: 52,
+        width: big ? 72 : 52,
         height: 52,
         child: Center(
           child: FittedBox(

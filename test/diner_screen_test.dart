@@ -371,6 +371,8 @@ void main() {
       200,
       scrollable: find.byType(Scrollable).first,
     );
+    await tester.ensureVisible(find.byKey(const ValueKey('reset')));
+    await tester.pump();
     await tester.tap(find.byKey(const ValueKey('reset')));
     await tester.pump(const Duration(milliseconds: 600));
   }

@@ -642,25 +642,30 @@ void main() {
       await tester.pump();
     }
 
-    testWidgets('a day with an offer shows a card, and one without does not', (
+    testWidgets(
+      'an offer also shows a corner button, which opens the order too',
+      (tester) async {
+        final n = day(offer: true);
+        await open(tester, cafe(day: n));
+        expect(find.byKey(const ValueKey('catering')), findsOneWidget);
+        await tester.tap(find.byKey(const ValueKey('catering')));
+        await beat(tester);
+        expect(find.text('Catering order'), findsOneWidget);
+      },
+    );
+
+    testWidgets('no corner button on a quiet day', (tester) async {
+      await open(tester, cafe(day: day(offer: false)));
+      expect(find.byKey(const ValueKey('catering')), findsNothing);
+    });
+
+    testWidgets('the corner button opens the order, with what it pays', (
       tester,
     ) async {
-      final yes = day(offer: true);
-      await open(tester, cafe(day: yes));
-      expect(find.byKey(const ValueKey('order-card')), findsOneWidget);
-      expect(find.textContaining('Catering order from'), findsOneWidget);
-    });
-
-    testWidgets('no card on a quiet day', (tester) async {
-      await open(tester, cafe(day: day(offer: false)));
-      expect(find.byKey(const ValueKey('order-card')), findsNothing);
-    });
-
-    testWidgets('the card opens the order, with what it pays', (tester) async {
       final n = day(offer: true);
       final d = await open(tester, cafe(day: n));
       final c = d.offer!;
-      await tester.tap(find.byKey(const ValueKey('order-card')));
+      await tester.tap(find.byKey(const ValueKey('catering')));
       await beat(tester);
       expect(find.text('Catering order'), findsOneWidget);
       expect(find.text('Pays ${c.reward}'), findsOneWidget);
@@ -670,12 +675,12 @@ void main() {
       expect(find.byKey(const ValueKey('crew-70')), findsOneWidget);
     });
 
-    testWidgets('taking it turns the card green, and the doors can be shut', (
+    testWidgets('taking it turns the button green, and the doors can be shut', (
       tester,
     ) async {
       final n = day(offer: true);
       final d = await open(tester, cafe(day: n));
-      await tester.tap(find.byKey(const ValueKey('order-card')));
+      await tester.tap(find.byKey(const ValueKey('catering')));
       await beat(tester);
       await reveal(tester, 'doors-shut');
       await tester.tap(find.byKey(const ValueKey('doors-shut')));
@@ -686,14 +691,13 @@ void main() {
       await beat(tester);
       expect(d.takenContract, isNotNull);
       expect(d.closedForOrder, isTrue);
-      expect(find.textContaining('taken'), findsOneWidget);
       expect(find.text('Start catering day'), findsOneWidget);
     });
 
     testWidgets('someone has to be chosen, and it says so', (tester) async {
       final n = day(offer: true);
       final d = await open(tester, cafe(day: n));
-      await tester.tap(find.byKey(const ValueKey('order-card')));
+      await tester.tap(find.byKey(const ValueKey('catering')));
       await beat(tester);
       // Half the team is chosen to begin with: clear them.
       for (final id in d.roster.employees.map((s) => s.id).toList()) {
@@ -716,16 +720,16 @@ void main() {
       expect(d.takenContract, isNull);
     });
 
-    testWidgets('Not today clears the card', (tester) async {
+    testWidgets('Not today clears the order', (tester) async {
       final n = day(offer: true);
       final d = await open(tester, cafe(day: n));
-      await tester.tap(find.byKey(const ValueKey('order-card')));
+      await tester.tap(find.byKey(const ValueKey('catering')));
       await beat(tester);
       await reveal(tester, 'pass-order');
       await tester.tap(find.byKey(const ValueKey('pass-order')));
       await beat(tester);
       expect(d.contractState, ContractState.declined);
-      expect(find.byKey(const ValueKey('order-card')), findsNothing);
+      expect(find.byKey(const ValueKey('catering')), findsNothing);
     });
 
     testWidgets('Change my mind puts it back on offer', (tester) async {
@@ -733,7 +737,7 @@ void main() {
       final d = await open(tester, cafe(day: n));
       d.takeContract(d.offer!, {70});
       await tester.pump();
-      await tester.tap(find.byKey(const ValueKey('order-card')));
+      await tester.tap(find.byKey(const ValueKey('catering')));
       await beat(tester);
       await reveal(tester, 'cancel-order');
       await tester.tap(find.byKey(const ValueKey('cancel-order')));

@@ -42,12 +42,19 @@ class _HiringScreenState extends State<HiringScreen> {
   }
 
   Future<void> _open(Staff s) async {
-    await Navigator.of(context).push<bool>(
+    final hired = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => PersonScreen(diner: diner, staff: s, applicant: true),
       ),
     );
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {});
+    // The team is now full: there is nothing more to do here, so go
+    // straight back to the roster instead of landing on "no room left".
+    if (hired == true &&
+        roster.employees.length >= diner.progress.staffLimit) {
+      Navigator.of(context).pop();
+    }
   }
 
   @override

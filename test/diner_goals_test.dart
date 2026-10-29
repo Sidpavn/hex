@@ -177,6 +177,28 @@ void main() {
         }),
         isTrue,
       );
+      expect(meets('seats10', (d) {}), isFalse);
+      expect(
+        meets('seats10', (d) {
+          // Room enough for several more tables than the starter's two.
+          d.progress.level = 9;
+          for (final p in [1, 2, 3, 4]) {
+            d.unlock(p);
+          }
+          final ys = d.insideCells().map((c) => c.y).toSet().toList()..sort();
+          final xs = d.insideCells().map((c) => c.x).toSet().toList()..sort();
+          for (final row in ys) {
+            for (var tx = xs.first + 1; tx < xs.last; tx += 3) {
+              if (d.place(Kind.table, Cell(tx, row)) != PlaceResult.ok) {
+                continue;
+              }
+              d.place(Kind.chair, Cell(tx - 1, row), Dir.se);
+              d.place(Kind.chair, Cell(tx + 1, row), Dir.nw);
+            }
+          }
+        }),
+        isTrue,
+      );
       expect(meets('window', (d) {}), isFalse);
       expect(
         meets('window', (d) {
@@ -232,6 +254,43 @@ void main() {
       );
       expect(
         meets('plot', (d) => d.owned.addAll({for (var i = 1; i <= 12; i++) i})),
+        isTrue,
+      );
+    });
+
+    test('buying the new upgrades meets their goals', () {
+      expect(meets('supply', (d) {}), isFalse);
+      expect(
+        meets('supply', (d) => d.progress.upgrades[Upgrade.supply] = 1),
+        isTrue,
+      );
+      expect(meets('pass', (d) {}), isFalse);
+      expect(
+        meets('pass', (d) => d.progress.upgrades[Upgrade.pass] = 1),
+        isTrue,
+      );
+      expect(meets('loyalty', (d) {}), isFalse);
+      expect(
+        meets('loyalty', (d) => d.progress.upgrades[Upgrade.loyalty] = 1),
+        isTrue,
+      );
+    });
+
+    test('growing the team to 6 meets its goal', () {
+      expect(meets('bigTeam', (d) {}), isFalse);
+      expect(
+        meets('bigTeam', (d) {
+          for (var i = 0; i < 6; i++) {
+            d.roster.employees.add(
+              Staff(
+                id: 900 + i,
+                name: 'S$i',
+                stats: {for (final s in Stat.values) s: 5},
+                potential: {for (final s in Stat.values) s: 10},
+              ),
+            );
+          }
+        }),
         isTrue,
       );
     });
@@ -357,6 +416,28 @@ void main() {
       expect(find.text('1 of ${goals.length} done'), findsOneWidget);
       // The next three have moved on.
       expect(find.byKey(const ValueKey('goal-rating2')), findsOneWidget);
+    });
+
+    testWidgets('done goals start folded away, and unfold on a tap', (
+      tester,
+    ) async {
+      final d = Diner.starter()..goalsDone.addAll(['open', 'serve10']);
+      await open(tester, diner: d);
+      await tester.tap(find.byKey(const ValueKey('goals')));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('done-toggle')),
+        200,
+      );
+      expect(find.text('Done (2)'), findsOneWidget);
+      expect(find.byKey(const ValueKey('goal-open')), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('done-toggle')));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('goal-open')), findsOneWidget);
+      expect(find.byKey(const ValueKey('goal-serve10')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('done-toggle')));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('goal-open')), findsNothing);
     });
 
     testWidgets('finishing a day tells you the goal you have just met', (

@@ -380,7 +380,7 @@ void main() {
         each: (sim) {
           for (final p in sim.passes) {
             most = most < p.plates.length ? p.plates.length : most;
-            expect(p.plates.length, lessThanOrEqualTo(PassShelf.capacity));
+            expect(p.plates.length, lessThanOrEqualTo(p.capacity));
             expect(p.reserved, greaterThanOrEqualTo(0));
             for (final i in p.plates) {
               expect(i.state, ItemState.onPass);
@@ -391,6 +391,46 @@ void main() {
       );
       expect(most, greaterThan(0));
     });
+
+    test('a bigger pass upgrade holds one more plate per level', () {
+      final d = kitchen()..progress.upgrades[Upgrade.pass] = 2;
+      final sim = DinerSim(d, seed: 3);
+      expect(sim.passes, isNotEmpty);
+      for (final p in sim.passes) {
+        expect(p.capacity, 6);
+      }
+    });
+
+    test(
+      'a cook and a server never both stand at the hatch to use it at once',
+      () {
+        // One cook, one server: both reach for the pass constantly, so this
+        // is the scenario most likely to stack them on its one-tile sides.
+        // Crossing paths on the way to deliver elsewhere is fine; both
+        // being there *for the pass* on the same tile is the deadlock.
+        const hatch = Edge(5, 5, true);
+        for (final seed in [1, 2, 3, 4, 5, 6]) {
+          final d = kitchen();
+          final sim = DinerSim(d, seed: seed);
+          while (!sim.finished && sim.ticks < 2500) {
+            sim.tick();
+            final atHatch = sim.workers.where(
+              (w) =>
+                  (w.state == WorkState.toShelf ||
+                      w.state == WorkState.fromShelf) &&
+                  d.hatchSides(hatch).contains(w.cell),
+            );
+            final byCell = <Cell, int>{};
+            for (final w in atHatch) {
+              byCell[w.cell] = (byCell[w.cell] ?? 0) + 1;
+            }
+            for (final n in byCell.values) {
+              expect(n, 1, reason: 'seed $seed: two workers using one tile');
+            }
+          }
+        }
+      },
+    );
 
     List<Staff> crew() => [
       person(70, 'CookA', cook: true),
@@ -409,7 +449,9 @@ void main() {
           seed: seed,
         ).served;
       }
-      expect(withPass, greaterThanOrEqualTo((without * 0.95).floor()));
+      // A one-tile hatch side now makes a cook and a server queue for their
+      // turn rather than overlap on it, which costs a few percent.
+      expect(withPass, greaterThanOrEqualTo((without * 0.9).floor()));
     });
 
     test('with a cook and one server it still works, if a little slower', () {

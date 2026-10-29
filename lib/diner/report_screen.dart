@@ -189,23 +189,31 @@ class DayReportScreen extends StatelessWidget {
           if (r.highlights(6).isNotEmpty) ...[
             const SizedBox(height: 12),
             const Eyebrow('What happened'),
-            for (final l in r.highlights(6)) ...[
-              Panel(
-                padding: const EdgeInsets.all(8),
-                child: PxText(
-                  l.text,
-                  style: TextStyle(
-                    color: switch (l.tone) {
-                      Tone.good => Pal.green,
-                      Tone.bad => Pal.red,
-                      Tone.mixed => Pal.text,
-                    },
-                    fontSize: 14,
-                  ),
-                ),
+            // One panel for the whole list, like Money/Guests/Restaurant
+            // above: none of these lines do anything when tapped, so they
+            // must not look like a stack of separate buttons.
+            Panel(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final l in r.highlights(6))
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: PxText(
+                        l.text,
+                        style: TextStyle(
+                          color: switch (l.tone) {
+                            Tone.good => Pal.green,
+                            Tone.bad => Pal.red,
+                            Tone.mixed => Pal.text,
+                          },
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                ],
               ),
-              const SizedBox(height: 6),
-            ],
+            ),
           ],
         ],
       ),

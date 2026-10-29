@@ -13,7 +13,7 @@ import 'settings_screen.dart';
 
 /// What to aim for: the next few goals with how to go about each, then what
 /// is further off, then what has been done.
-class GoalsScreen extends StatelessWidget {
+class GoalsScreen extends StatefulWidget {
   const GoalsScreen({
     super.key,
     required this.diner,
@@ -37,6 +37,21 @@ class GoalsScreen extends StatelessWidget {
 
   /// Carries on from a save the player pasted in.
   final ValueChanged<Diner>? onLoad;
+
+  @override
+  State<GoalsScreen> createState() => _GoalsScreenState();
+}
+
+class _GoalsScreenState extends State<GoalsScreen> {
+  Diner get diner => widget.diner;
+  VoidCallback? get onReset => widget.onReset;
+  CloudStore? get store => widget.store;
+  VoidCallback? get onTitle => widget.onTitle;
+  ValueChanged<Diner>? get onLoad => widget.onLoad;
+
+  /// Done goals start folded away: once there are a lot of them, they would
+  /// otherwise push everything else on the page a long way down.
+  bool _doneOpen = false;
 
   @override
   Widget build(BuildContext context) {
@@ -67,7 +82,8 @@ class GoalsScreen extends StatelessWidget {
             ),
           if (next.isNotEmpty) ...[
             const Eyebrow('Next'),
-            for (final g in next) ...[_card(g), const SizedBox(height: 8)],
+            _nextGoals(next),
+            const SizedBox(height: 8),
           ],
           if (later.isNotEmpty) ...[
             const SizedBox(height: 4),
@@ -79,33 +95,39 @@ class GoalsScreen extends StatelessWidget {
           ],
           if (done.isNotEmpty) ...[
             const SizedBox(height: 12),
-            const Eyebrow('Done'),
-            for (final g in done) ...[
-              _row(g, Pal.green),
-              const SizedBox(height: 6),
+            _doneHeader(done.length),
+            if (_doneOpen) ...[
+              const SizedBox(height: 8),
+              for (final g in done) ...[
+                _row(g, Pal.green),
+                const SizedBox(height: 6),
+              ],
             ],
           ],
           const SizedBox(height: 24),
-          GoldButton(
-            key: const ValueKey('open-guide'),
-            label: 'How to play',
-            filled: false,
-            color: Pal.text,
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const GuideScreen()),
-            ),
-          ),
-          const SizedBox(height: 24),
-          GoldButton(
-            key: const ValueKey('open-settings'),
-            label: ':gear: Settings',
-            filled: false,
-            color: Pal.text,
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => SettingsScreen(diner: diner),
+          ButtonRow(
+            children: [
+              GoldButton(
+                key: const ValueKey('open-guide'),
+                label: 'How to play',
+                filled: false,
+                color: Pal.text,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(builder: (_) => const GuideScreen()),
+                ),
               ),
-            ),
+              GoldButton(
+                key: const ValueKey('open-settings'),
+                label: ':gear: Settings',
+                filled: false,
+                color: Pal.text,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => SettingsScreen(diner: diner),
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 24),
           const Eyebrow('Your save'),
@@ -150,29 +172,68 @@ class GoalsScreen extends StatelessWidget {
     );
   }
 
-  Widget _card(Goal g) => Panel(
-    key: ValueKey('goal-${g.id}'),
+  /// The "Done" heading, tappable to fold its list away: with enough goals
+  /// met, that list would otherwise push the rest of the page far down.
+  Widget _doneHeader(int count) => GestureDetector(
+    key: const ValueKey('done-toggle'),
+    behavior: HitTestBehavior.opaque,
+    onTap: () => setState(() => _doneOpen = !_doneOpen),
+    child: Row(
+      children: [
+        Expanded(
+          child: PxText(
+            'Done ($count)',
+            style: const TextStyle(color: Pal.gold, fontSize: 14),
+          ),
+        ),
+        PxText(
+          _doneOpen ? 'Hide' : 'Show',
+          style: const TextStyle(color: Pal.dim, fontSize: 14),
+        ),
+      ],
+    ),
+  );
+
+  /// The goals to aim for next, grouped in one static panel: nothing here
+  /// is tappable, so it must not read as a stack of separate buttons the
+  /// way a list of saved games or staff rows does elsewhere in the app.
+  Widget _nextGoals(List<Goal> goals) => Panel(
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: PxText(
-                g.title,
-                style: const TextStyle(color: Pal.text, fontSize: 17),
-              ),
-            ),
-            PxText(
-              ':coin: ${g.reward}',
-              style: const TextStyle(color: Pal.gold, fontSize: 17),
-            ),
+        for (var i = 0; i < goals.length; i++) ...[
+          if (i > 0) ...[
+            const SizedBox(height: 6),
+            Container(height: 1, color: Pal.panelLo),
+            const SizedBox(height: 6),
           ],
-        ),
-        if (g.hint != null)
-          PxText(g.hint!, style: const TextStyle(color: Pal.dim, fontSize: 14)),
+          _goalLine(goals[i]),
+        ],
       ],
     ),
+  );
+
+  Widget _goalLine(Goal g) => Column(
+    key: ValueKey('goal-${g.id}'),
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Row(
+        children: [
+          Expanded(
+            child: PxText(
+              g.title,
+              style: const TextStyle(color: Pal.text, fontSize: 17),
+            ),
+          ),
+          PxText(
+            ':coin: ${g.reward}',
+            style: const TextStyle(color: Pal.gold, fontSize: 17),
+          ),
+        ],
+      ),
+      if (g.hint != null)
+        PxText(g.hint!, style: const TextStyle(color: Pal.dim, fontSize: 14)),
+    ],
   );
 
   Widget _row(Goal g, Color colour) => Row(

@@ -104,8 +104,8 @@ class _OrderScreenState extends State<OrderScreen> {
                     child: Row(
                       children: [
                         SizedBox(
-                          width: 32,
-                          child: DinerSprite('ico_${e.key.name}', mult: 3),
+                          width: 20,
+                          child: DinerSprite('ico_${e.key.name}', mult: 4),
                         ),
                         const SizedBox(width: 8),
                         Expanded(

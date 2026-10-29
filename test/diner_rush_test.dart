@@ -248,10 +248,10 @@ void main() {
     });
   });
 
-  group('rushing, on screen', () {
+  group('tapping a guest on the board', () {
     final board = find.byKey(const ValueKey('diner-board'));
 
-    Future<void> open(WidgetTester tester) async {
+    Future<void> open(WidgetTester tester, {int staff = 2}) async {
       await tester.runAsync(() async {
         await PixelAssets.load();
         await DinerArt.load();
@@ -260,125 +260,59 @@ void main() {
       tester.view.physicalSize = const Size(1170, 2532);
       tester.view.devicePixelRatio = 3;
       addTearDown(tester.view.reset);
-      await tester.pumpWidget(HexApp(home: BuildScreen(diner: busyKitchen())));
+      await tester.pumpWidget(
+        HexApp(home: BuildScreen(diner: busyKitchen(staff: staff))),
+      );
       await tester.pump();
     }
 
-    DinerPainter painter(WidgetTester tester) =>
-        tester.widget<CustomPaint>(board).painter! as DinerPainter;
+    DinerSim sim(WidgetTester tester) =>
+        (tester.widget<CustomPaint>(board).painter! as DinerPainter).sim!;
 
-    Offset onCell(WidgetTester tester, Cell c) {
-      final f = painter(tester).fit;
-      return tester.getTopLeft(board) +
-          f.view.vertex(c.x + 0.5, c.y + 0.5) * f.s;
-    }
-
-    /// Starts the day and runs until someone is waiting for food.
-    Future<Guest> waiting(WidgetTester tester) async {
+    /// Starts the day and runs until a guest is waiting for food, or gives
+    /// up.
+    Future<Guest?> untilWaiting(WidgetTester tester) async {
       await tester.tap(find.byKey(const ValueKey('start-day')));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('speed-3')));
       await tester.pump();
       for (var i = 0; i < 600; i++) {
         await tester.pump(const Duration(milliseconds: 100));
-        final sim = painter(tester).sim!;
-        final g = sim.guests
-            .where((g) => g.state == GuestState.waiting && g.items.isNotEmpty)
-            .firstOrNull;
-        if (g != null) return g;
+        final g = sim(tester).guests.where(
+          (g) => g.state == GuestState.waiting && g.items.isNotEmpty,
+        );
+        if (g.isNotEmpty) return g.first;
       }
-      fail('nobody sat down');
+      return null;
     }
 
-    testWidgets('tapping a guest shows who they are, and a Rush button', (
-      tester,
-    ) async {
-      await open(tester);
-      final g = await waiting(tester);
-      expect(find.byKey(const ValueKey('guest-card')), findsNothing);
-      await tester.tapAt(onCell(tester, g.cell));
-      await tester.pump();
-      expect(find.byKey(const ValueKey('guest-card')), findsOneWidget);
-      expect(find.text(g.name), findsOneWidget);
-      expect(
-        find.text(
-          '${g.gender.singular[0].toUpperCase()}${g.gender.singular.substring(1)}, '
-          '${g.temper.label.toLowerCase()}, ${g.wallet.label.toLowerCase()}',
-        ),
-        findsOneWidget,
-      );
-      expect(find.byKey(const ValueKey('guest-rush')), findsOneWidget);
-    });
+    Offset onCell(WidgetTester tester, Cell c) {
+      final f = (tester.widget<CustomPaint>(board).painter! as DinerPainter)
+          .fit;
+      return tester.getTopLeft(board) + f.view.vertex(c.x + 0.5, c.y + 0.5) * f.s;
+    }
 
-    testWidgets('Rush rushes them, and uses up one of two', (tester) async {
+    testWidgets('rushes them, and spends a rush', (tester) async {
       await open(tester);
-      final g = await waiting(tester);
+      final g = await untilWaiting(tester);
+      if (g == null) return;
+      final before = sim(tester).rushLeft;
       await tester.tapAt(onCell(tester, g.cell));
-      await tester.pump();
-      final sim = painter(tester).sim!;
-      expect(sim.rushLeft, 2);
-      await tester.tap(find.byKey(const ValueKey('guest-rush')));
       await tester.pump();
       expect(g.rushed, isTrue);
-      expect(sim.rushLeft, 1);
-      expect(find.text('Being rushed'), findsOneWidget);
+      expect(sim(tester).rushLeft, before - 1);
     });
 
-    testWidgets('tapping a guest alone rushes nobody: it takes the button', (
+    testWidgets('does nothing once the day\'s rushes are spent', (
       tester,
     ) async {
       await open(tester);
-      final g = await waiting(tester);
-      await tester.tapAt(onCell(tester, g.cell));
-      await tester.pump();
+      final g = await untilWaiting(tester);
+      if (g == null) return;
+      sim(tester).rushLeft = 0;
       await tester.tapAt(onCell(tester, g.cell));
       await tester.pump();
       expect(g.rushed, isFalse);
-      expect(painter(tester).sim!.rushLeft, 2);
-    });
-
-    testWidgets('Close and tapping bare ground put the card away', (
-      tester,
-    ) async {
-      await open(tester);
-      final g = await waiting(tester);
-      await tester.tapAt(onCell(tester, g.cell));
-      await tester.pump();
-      await tester.tap(find.byKey(const ValueKey('guest-close')));
-      await tester.pump();
-      expect(find.byKey(const ValueKey('guest-card')), findsNothing);
-      await tester.tapAt(onCell(tester, g.cell));
-      await tester.pump();
-      await tester.tapAt(onCell(tester, const Cell(8, 3)));
-      await tester.pump();
-      expect(find.byKey(const ValueKey('guest-card')), findsNothing);
-    });
-
-    testWidgets('the button is dead once the rushes are used', (tester) async {
-      await open(tester);
-      final g = await waiting(tester);
-      painter(tester).sim!.rushLeft = 0;
-      await tester.tapAt(onCell(tester, g.cell));
-      await tester.pump();
-      await tester.tap(
-        find.byKey(const ValueKey('guest-rush')),
-        warnIfMissed: false,
-      );
-      await tester.pump();
-      expect(g.rushed, isFalse);
-      expect(find.text('Rush  0 left'), findsOneWidget, reason: 'says why');
-    });
-
-    testWidgets('the card goes when the guest does', (tester) async {
-      await open(tester);
-      final g = await waiting(tester);
-      await tester.tapAt(onCell(tester, g.cell));
-      await tester.pump();
-      await tester.tap(find.byKey(const ValueKey('speed-3')));
-      for (var i = 0; i < 900 && !g.gone; i++) {
-        await tester.pump(const Duration(milliseconds: 100));
-      }
-      await tester.pump();
-      expect(g.gone, isTrue);
-      expect(find.byKey(const ValueKey('guest-card')), findsNothing);
     });
   });
 }

@@ -233,6 +233,34 @@ def face_top(img, u0, u1, v0, v1, z, color):
         fill(img, pts, color)
 
 
+def shaded_side(base, hi, lo, z0, z1, ao_rows=2, hi_rows=2):
+    """A left/right face shader for [box]: a solid contact-AO band of
+    [ao_rows] right at the base (grounds the object against the floor) and
+    a solid highlight band of [hi_rows] right at the top (a rim catching
+    the light), flat [base] in between. Fixed pixel counts, not a fraction
+    of the face's height, so a short object still reads as grounded and lit
+    instead of the bands shrinking to nothing."""
+    def f(coord, z):
+        if z - z0 < ao_rows:
+            return lo
+        if z1 - z <= hi_rows:
+            return hi
+        return base
+    return f
+
+
+def shaded_top(base, hi, u0, u1, v0, v1, hi_depth=3, under=None):
+    """A top-face shader for [box]: a solid highlight band [hi_depth] deep
+    along the front edge (the corner nearest the camera), falling back to
+    [under](u, v) elsewhere if given, else flat [base]."""
+    def f(u, v):
+        d = (u1 - u) + (v1 - v)
+        if d <= hi_depth:
+            return hi
+        return under(u, v) if under else base
+    return f
+
+
 def box(img, u0, v0, u1, v1, z0, z1, r, top=None, left=None, right=None, edge=True):
     """A lit box. [top]/[left]/[right] override a face colour or shader."""
     face_left(img, u0, u1, v1, z0, z1, left or r.left)

@@ -66,7 +66,12 @@ void main() {
         'Start day',
       ]) {
         if (text.contains(label)) {
-          expect(build, contains("'$label"), reason: label);
+          // A button's label may lead with a `:icon:` token before the word.
+          expect(
+            RegExp("'(:\\w+: )?${RegExp.escape(label)}").hasMatch(build),
+            isTrue,
+            reason: label,
+          );
         }
       }
       expect(text, contains('duty'));

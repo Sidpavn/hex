@@ -122,6 +122,85 @@ class StaffRow extends StatelessWidget {
   }
 }
 
+/// One person as a card: sprite, name, role and cost, for a 2-up grid.
+/// Tapping it opens their page.
+class StaffCard extends StatelessWidget {
+  const StaffCard({
+    super.key,
+    required this.staff,
+    required this.onTap,
+    this.applicant = false,
+  });
+
+  final Staff staff;
+  final VoidCallback onTap;
+
+  /// Someone looking for work rather than on the team.
+  final bool applicant;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = staff;
+    final missed = !applicant && s.lastPay == Pay.missed;
+    return Panel(
+      onTap: onTap,
+      padding: const EdgeInsets.all(15),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              SizedBox(
+                  width: 20,
+                  height: 40,
+                  child: DinerSprite(s.kitchen ? 'chef_sw_s0' : 'waiter_sw_s0', mult: 4)
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    PxText(
+                      s.name,
+                      style: const TextStyle(color: Pal.text, fontSize: 20, height: 0.7),
+                    ),
+                    PxText(
+                      s.role,
+                      style: TextStyle(color: Pal.text.withValues(alpha: 0.7), fontSize: 17),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              PxText(
+                applicant
+                    ? (s.walkIn ? 'walked in, fee ${s.fee}' : 'fee ${s.fee}')
+                    : missed
+                    ? ':coin: ${s.salary} a day, missed a payday'
+                    : ':coin: ${s.salary} a day',
+                style: TextStyle(
+                  color: missed ? Pal.red : Pal.dim,
+                  fontSize: 14,
+                ),
+              ),
+              if (!applicant) ...[
+                MoodFace(s),
+                const SizedBox(height: 4),
+                MoodPips(s),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// A quirk or speciality shown as a tag, with what it means.
 class TagInfo {
   const TagInfo(this.key, this.label, this.colour, this.help);

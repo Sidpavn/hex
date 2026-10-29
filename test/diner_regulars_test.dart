@@ -3,10 +3,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hex/data/storage.dart';
-import 'package:hex/diner/build_screen.dart';
 import 'package:hex/diner/diner.dart';
 import 'package:hex/diner/diner_art.dart';
-import 'package:hex/diner/diner_painter.dart';
 import 'package:hex/diner/goals.dart';
 import 'package:hex/diner/guests.dart';
 import 'package:hex/diner/luck.dart';
@@ -282,6 +280,27 @@ void main() {
       expect(sim.result!.regularsSeen, 1);
     });
 
+    test('loyalty cards speed up a happy visit\'s fondness gain', () {
+      // Several days she is due, so at least one is a happy visit.
+      final chance = regular(points: 6).chance;
+      final days = <int>[];
+      for (var n = 4; days.length < 8 && n < 400; n++) {
+        if (dayLuck(n, 201) < chance) days.add(n);
+      }
+
+      int finalPoints({required bool loyal}) {
+        final r = regular(points: 6, fav: Dish.burger);
+        for (final day in days) {
+          final d = cafe(day: day)..regulars.people.add(r);
+          if (loyal) d.progress.upgrades[Upgrade.loyalty] = 2;
+          play(d, seed: day);
+        }
+        return r.points;
+      }
+
+      expect(finalPoints(loyal: true), greaterThan(finalPoints(loyal: false)));
+    });
+
     test('they tip more the fonder they are', () {
       double tips(int points) {
         final r = regular(points: points);
@@ -538,44 +557,6 @@ void main() {
       final zed = tester.getTopLeft(find.byKey(const ValueKey('regular-2')));
       final ann = tester.getTopLeft(find.byKey(const ValueKey('regular-1')));
       expect(zed.dy, lessThan(ann.dy));
-    });
-
-    testWidgets('a regular in the restaurant says so on their card', (
-      tester,
-    ) async {
-      final r = regular(points: 9);
-      final d = cafe(day: dayItComes(r))..regulars.people.add(r);
-      await open(tester, d, BuildScreen(diner: d));
-      final board = find.byWidgetPredicate(
-        (w) => w is CustomPaint && w.painter is DinerPainter,
-      );
-      DinerPainter painter() =>
-          tester.widget<CustomPaint>(board).painter! as DinerPainter;
-      await tester.tap(find.byKey(const ValueKey('start-day')));
-      await tester.pump();
-      Guest? g;
-      for (var i = 0; i < 900 && g == null; i++) {
-        await tester.pump(const Duration(milliseconds: 100));
-        final sim = painter().sim!;
-        final x = sim.guests
-            .where((x) => x.regular == r && x.state == GuestState.waiting)
-            .firstOrNull;
-        // Tapped by their seat: wait until nobody else is drawn over them.
-        if (x != null &&
-            sim.guestAt(x.cell) == x &&
-            sim.guestAt(Cell(x.cell.x + 1, x.cell.y + 1)) == null) {
-          g = x;
-        }
-      }
-      expect(g, isNotNull, reason: 'she sat down, clear of the others');
-      final f = painter().fit;
-      await tester.tapAt(
-        tester.getTopLeft(board) +
-            f.view.vertex(g!.cell.x + 0.5, g.cell.y + 0.5) * f.s,
-      );
-      await tester.pump();
-      expect(find.byKey(const ValueKey('guest-regular')), findsOneWidget);
-      expect(find.text('Regular, 3 hearts. Likes burger.'), findsOneWidget);
     });
 
     testWidgets('the day report names who came and who joined', (tester) async {

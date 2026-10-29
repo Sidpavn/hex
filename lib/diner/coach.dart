@@ -15,7 +15,7 @@ enum Coach {
     phase: CoachPhase.build,
   ),
   watch(
-    'Tap a guest to see how they feel. The bar over their head is their patience.',
+    'The bar over a guest\'s head is their patience. Tap them to rush it.',
     phase: CoachPhase.service,
   ),
   nextDay(
