@@ -671,14 +671,16 @@ class Diner {
       progress = progress ?? Progress(),
       roster = roster ?? Roster.starter();
 
-  /// A small working diner: grill and counters along the back wall, two
-  /// tables with a chair each, a plant.
   /// A new game: the starter restaurant, with the first day's tips to follow.
-  factory Diner.fresh() => Diner.starter()..coach = 0;
+  factory Diner.fresh({String locationId = 'diner'}) =>
+      Diner.starter(locationId: locationId)..coach = 0;
 
-  factory Diner.starter() {
-    final d = Diner(coins: 120);
-    d._put(Kind.grill, const Cell(left, top), Dir.sw);
+  /// A small working diner: counters along the back wall, two tables with a
+  /// chair each, a plant, and the location's starter cooking station.
+  factory Diner.starter({String locationId = 'diner'}) {
+    final d = Diner(coins: 120)..locationId = locationId;
+    final loc = locationById(locationId);
+    d._put(loc.starterKind, const Cell(left, top), Dir.sw);
     d._put(Kind.counter, const Cell(left + 1, top), Dir.sw);
     d._put(Kind.counter, const Cell(left + 2, top), Dir.sw);
     d._put(Kind.plant, const Cell(left + 5, top));
@@ -728,6 +730,17 @@ class Diner {
   static const priceRise = 0.35;
 
   int coins;
+
+  /// Which location this restaurant is: 'diner' (Tiny Diner) or 'pizzeria'
+  /// (La Piazza). Determines which dishes are on offer.
+  String locationId = 'diner';
+
+  /// Convenience: the full definition for this location.
+  LocationDef get locationDef => locationById(locationId);
+
+  /// The longest daily-play streak reached so far, in calendar days. Updated
+  /// when a streak bonus is claimed; used by the streak goals.
+  int maxStreakDays = 0;
 
   /// The goals that have been met, by id. See `goals.dart`.
   final Set<String> goalsDone = {};
@@ -1492,7 +1505,9 @@ class Diner {
 
   /// Why [d] cannot be sold, or null if it can.
   String? whyNot(Dish d) {
-    if (!progress.unlocked(d)) return 'Unlocks at level ${recipes[d]!.unlock}';
+    if (!locationDef.dishes.contains(d)) return 'Not served here';
+    final unlock = locationDef.unlockAt[d] ?? recipes[d]!.unlock;
+    if (progress.level < unlock) return 'Unlocks at level $unlock';
     if (!hasMachineFor(d)) {
       return 'Needs a ${fixtureDefs[recipes[d]!.station]!.name.toLowerCase()}';
     }
@@ -1509,6 +1524,7 @@ class Diner {
     offered.removeWhere((d) => !available(d));
     for (final d in Dish.values) {
       if (offered.length >= menuSlots) break;
+      if (!locationDef.dishes.contains(d)) continue;
       if (offered.contains(d) || declined.contains(d) || !available(d)) {
         continue;
       }
@@ -2089,6 +2105,8 @@ class Diner {
     'v': saveVersion,
     'saved': savedAt,
     'coins': coins,
+    if (locationId != 'diner') 'loc': locationId,
+    if (maxStreakDays > 0) 'streak': maxStreakDays,
     'owned': owned.toList()..sort(),
     'goals': goalsDone.toList()..sort(),
     'hints': hintsSeen.toList()..sort(),
@@ -2193,6 +2211,10 @@ class Diner {
       progress: Progress.fromJson(j['progress'] as Map<String, Object?>?),
       roster: Roster.fromJson(j['staff']),
     );
+    final loc = j['loc'];
+    if (loc is String) d.locationId = loc;
+    final streak = j['streak'];
+    if (streak is int && streak > 0) d.maxStreakDays = streak;
     d.supplier =
         Supplier.values.where((x) => x.name == j['supplier']).firstOrNull ??
         Supplier.standard;

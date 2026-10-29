@@ -72,6 +72,37 @@ class Storage {
   static bool get postScores => _get('post_scores') != false;
   static set postScores(bool on) => _put('post_scores', on);
 
+  // ───────────────────────── daily streak ─────────────────────────
+
+  static int _dayNum() {
+    final epoch = DateTime(2024, 1, 1);
+    return DateTime.now().difference(epoch).inDays;
+  }
+
+  /// The calendar day (days since 2024-01-01) when the last streak bonus was
+  /// claimed. Zero means never.
+  static int get _lastStreakDay => (_get('streak_day') as int?) ?? 0;
+  static set _lastStreakDay(int d) => _put('streak_day', d);
+
+  /// The current streak length, in consecutive calendar days.
+  static int get streakCount => (_get('streak_count') as int?) ?? 0;
+  static set streakCount(int n) => _put('streak_count', n < 0 ? 0 : n);
+
+  /// Whether a streak bonus is ready to claim (a new calendar day has started
+  /// since the last claim).
+  static bool get streakReady => _lastStreakDay < _dayNum();
+
+  /// Claims the streak bonus. Returns the coins awarded (25 per streak day,
+  /// capped at 150 for a 6-day streak). Returns 0 if already claimed today.
+  static int claimStreak() {
+    final today = _dayNum();
+    if (_lastStreakDay >= today) return 0;
+    final streak = (_lastStreakDay == today - 1) ? streakCount + 1 : 1;
+    streakCount = streak;
+    _lastStreakDay = today;
+    return 25 * streak.clamp(1, 6);
+  }
+
   /// The best score already sent for a leaderboard, by name, so a lower one
   /// is not sent again.
   static int sentScore(String board) {

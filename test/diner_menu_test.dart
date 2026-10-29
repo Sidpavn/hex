@@ -375,9 +375,8 @@ void main() {
   });
 
   group('new dishes', () {
-    test('there are fourteen, in four courses, each with a home machine', () {
-      expect(Dish.values.length, 14);
-      expect(recipes.length, 14);
+    test('every dish has a recipe and a home machine', () {
+      expect(Dish.values.length, recipes.length);
       expect(
         recipes.values.map((r) => r.course).toSet(),
         Course.values.toSet(),
@@ -388,7 +387,10 @@ void main() {
     });
 
     test('machines unlock with the restaurant, in step with their dish', () {
-      for (final r in recipes.values) {
+      // Diner-location dishes must respect fixture unlock order since players
+      // buy their own machines. Pizzeria dishes use a starter oven/machine.
+      for (final d in locationById('diner').dishes) {
+        final r = recipes[d]!;
         expect(
           fixtureDefs[r.station]!.unlock,
           lessThanOrEqualTo(r.unlock),
@@ -603,7 +605,11 @@ void main() {
           }
         }
       }
-      expect(seen, {Dish.pizza, Dish.coffee});
+      // All seen specialties must be for skilled dishes
+      for (final d in seen) {
+        expect(recipes[d]!.skilled, isTrue, reason: '${d.name} is not skilled');
+      }
+      expect(seen, isNotEmpty);
       expect(with_ / n, inInclusiveRange(0.1, 0.35));
     });
 

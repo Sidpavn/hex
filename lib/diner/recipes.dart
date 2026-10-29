@@ -5,6 +5,7 @@ library;
 import 'diner.dart' show Kind;
 
 enum Dish {
+  // ── Original diner dishes ────────────────────────────────────────────────
   burger,
   cheeseburger,
   pizza,
@@ -19,6 +20,24 @@ enum Dish {
   milkshake,
   baconBurger,
   sundae,
+  // ── Diner — high-level unlocks (levels 10-14) ────────────────────────────
+  veggieBurger,
+  fishAndChips,
+  floatSoda,
+  waffleIceCream,
+  lobsterRoll,
+  luxeShake,
+  // ── Pizzeria dishes (La Piazza location) ────────────────────────────────
+  garlicBread,
+  calzone,
+  lemonade,
+  bruschetta,
+  pasta,
+  espressoDouble,
+  tiramisu,
+  gelato,
+  risotto,
+  pannaCotta,
 }
 
 /// What part of the meal a dish is. A guest orders one main and, if the menu
@@ -184,6 +203,157 @@ const Map<Dish, Recipe> recipes = {
     4,
     9,
     9,
+  ),
+  // ── Diner high-level ─────────────────────────────────────────────────────
+  Dish.veggieBurger: Recipe(
+    Dish.veggieBurger,
+    'Veggie burger',
+    Kind.grill,
+    Course.main,
+    8,
+    14,
+    10,
+  ),
+  Dish.fishAndChips: Recipe(
+    Dish.fishAndChips,
+    'Fish and chips',
+    Kind.fryer,
+    Course.main,
+    9,
+    17,
+    11,
+  ),
+  Dish.floatSoda: Recipe(
+    Dish.floatSoda,
+    'Float soda',
+    Kind.soda,
+    Course.drink,
+    3,
+    10,
+    11,
+    skilled: true,
+  ),
+  Dish.waffleIceCream: Recipe(
+    Dish.waffleIceCream,
+    'Waffle sundae',
+    Kind.freezer,
+    Course.dessert,
+    5,
+    13,
+    12,
+  ),
+  Dish.lobsterRoll: Recipe(
+    Dish.lobsterRoll,
+    'Lobster roll',
+    Kind.grill,
+    Course.main,
+    11,
+    26,
+    13,
+    skilled: true,
+  ),
+  Dish.luxeShake: Recipe(
+    Dish.luxeShake,
+    'Luxe shake',
+    Kind.freezer,
+    Course.drink,
+    5,
+    15,
+    14,
+    skilled: true,
+  ),
+  // ── Pizzeria (La Piazza) ─────────────────────────────────────────────────
+  Dish.garlicBread: Recipe(
+    Dish.garlicBread,
+    'Garlic bread',
+    Kind.oven,
+    Course.side,
+    4,
+    5,
+    1,
+  ),
+  Dish.calzone: Recipe(
+    Dish.calzone,
+    'Calzone',
+    Kind.oven,
+    Course.main,
+    16,
+    16,
+    2,
+  ),
+  Dish.lemonade: Recipe(
+    Dish.lemonade,
+    'Lemonade',
+    Kind.soda,
+    Course.drink,
+    3,
+    5,
+    1,
+  ),
+  Dish.bruschetta: Recipe(
+    Dish.bruschetta,
+    'Bruschetta',
+    Kind.grill,
+    Course.side,
+    5,
+    7,
+    2,
+  ),
+  Dish.pasta: Recipe(
+    Dish.pasta,
+    'Pasta',
+    Kind.oven,
+    Course.main,
+    13,
+    13,
+    3,
+  ),
+  Dish.espressoDouble: Recipe(
+    Dish.espressoDouble,
+    'Double espresso',
+    Kind.espresso,
+    Course.drink,
+    5,
+    8,
+    3,
+    skilled: true,
+  ),
+  Dish.tiramisu: Recipe(
+    Dish.tiramisu,
+    'Tiramisu',
+    Kind.freezer,
+    Course.dessert,
+    5,
+    10,
+    4,
+  ),
+  Dish.gelato: Recipe(
+    Dish.gelato,
+    'Gelato',
+    Kind.freezer,
+    Course.dessert,
+    3,
+    8,
+    5,
+  ),
+  Dish.risotto: Recipe(
+    Dish.risotto,
+    'Risotto',
+    Kind.oven,
+    Course.main,
+    15,
+    16,
+    6,
+    skilled: true,
+  ),
+  Dish.pannaCotta: Recipe(
+    Dish.pannaCotta,
+    'Panna cotta',
+    Kind.freezer,
+    Course.dessert,
+    5,
+    11,
+    8,
   ),
 };
 
@@ -420,3 +590,94 @@ class Progress {
     return p;
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Locations
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Which dishes a location serves, and any level-unlock overrides for them.
+/// The game ships with two: the original diner and the Italian pizzeria.
+class LocationDef {
+  const LocationDef(
+    this.id,
+    this.name,
+    this.tagline,
+    this.dishes, {
+    this.unlockAt = const {},
+    this.starterKind = Kind.grill,
+  });
+
+  final String id;
+  final String name;
+  final String tagline;
+
+  /// The dishes on offer at this location.
+  final Set<Dish> dishes;
+
+  /// Level overrides: if a dish's entry is here, this replaces Recipe.unlock
+  /// for players at this location.
+  final Map<Dish, int> unlockAt;
+
+  /// The cooking station placed in the starter layout for this location.
+  final Kind starterKind;
+}
+
+/// All 13 original dishes, plus 6 high-level ones unlocked from level 10 on.
+const Set<Dish> _dinerDishes = {
+  Dish.burger,
+  Dish.cheeseburger,
+  Dish.pizza,
+  Dish.fries,
+  Dish.soda,
+  Dish.coffee,
+  Dish.iceCream,
+  Dish.hotDog,
+  Dish.onionRings,
+  Dish.chickenSandwich,
+  Dish.nuggets,
+  Dish.milkshake,
+  Dish.baconBurger,
+  Dish.sundae,
+  Dish.veggieBurger,
+  Dish.fishAndChips,
+  Dish.floatSoda,
+  Dish.waffleIceCream,
+  Dish.lobsterRoll,
+  Dish.luxeShake,
+};
+
+/// Pizza at level 1 for the pizzeria, plus its 10 unique Italian dishes.
+const Set<Dish> _pizzeriaDishes = {
+  Dish.pizza,
+  Dish.garlicBread,
+  Dish.calzone,
+  Dish.lemonade,
+  Dish.bruschetta,
+  Dish.pasta,
+  Dish.espressoDouble,
+  Dish.tiramisu,
+  Dish.gelato,
+  Dish.risotto,
+  Dish.pannaCotta,
+};
+
+final List<LocationDef> locations = [
+  const LocationDef(
+    'diner',
+    'Tiny Diner',
+    'The classic American diner. Burgers, fries, and more.',
+    _dinerDishes,
+  ),
+  const LocationDef(
+    'pizzeria',
+    'La Piazza',
+    'An Italian pizzeria. Handmade pasta, pizza, and desserts.',
+    _pizzeriaDishes,
+    unlockAt: {Dish.pizza: 1},
+    starterKind: Kind.oven,
+  ),
+];
+
+/// The location matching [id], defaulting to the first (Tiny Diner).
+LocationDef locationById(String id) =>
+    locations.firstWhere((l) => l.id == id, orElse: () => locations.first);

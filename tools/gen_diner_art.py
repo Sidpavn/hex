@@ -1078,6 +1078,134 @@ def icons():
         rect(img, cx - 2, cy - 1, 5, 1, hexc('#5a3322'))
         rect(img, cx, cy - 5, 1, 2, RED.top)
 
+    # ── new diner high-level dishes ──────────────────────────────────────────
+    def veggieburger(img, cx, cy, w):
+        ellipse(img, cx, cy - 3, w, 2.4, hexc('#e8a04a'))
+        rect(img, cx - w, cy - 2, 2 * w, 1, hexc('#4cae5a'))
+        rect(img, cx - w + 1, cy - 1, 2 * w - 2, 1, hexc('#f5d04a'))
+        ellipse(img, cx, cy + 1, w, 1.8, hexc('#d9904a'))
+        rect(img, cx - 2, cy - 5, 2, 1, hexc('#fff0c8'))
+
+    def fishandchips(img, cx, cy, w):
+        # golden battered fish fillet + a few chips
+        rect(img, cx - 4, cy - 1, 9, 4, hexc('#f5d04a'))
+        rect(img, cx - 4, cy - 2, 9, 1, hexc('#c98a2e'))
+        rect(img, cx - 3, cy - 3, 7, 1, hexc('#e0c060'))
+        for k in (-3, 1, 4):
+            rect(img, cx + k, cy - 5 - (k % 2), 1, 3, hexc('#f5d04a'))
+
+    def floatsoda(img, cx, cy, w):
+        rect(img, cx - 3, cy - 3, 7, 7, (250, 250, 246))
+        rect(img, cx - 3, cy - 1, 7, 4, hexc('#ff6f61'))
+        ellipse(img, cx, cy - 3, 3.0, 1.6, (255, 255, 255))
+        rect(img, cx + 2, cy - 7, 1, 5, hexc('#3fb7b0'))
+
+    def waffleicecream(img, cx, cy, w):
+        # a waffle square with a scoop on top
+        for ky in range(3):
+            rect(img, cx - 3, cy + ky, 7, 1, hexc('#c98a2e'))
+        for kx in range(-3, 4, 2):
+            rect(img, cx + kx, cy, 1, 3, hexc('#c98a2e'))
+        rect(img, cx - 2, cy - 1, 5, 1, hexc('#e0a050'))
+        ellipse(img, cx, cy - 3, 3.0, 2.4, hexc('#f9d6e0'))
+
+    def lobsterroll(img, cx, cy, w):
+        # a buttered bun with red lobster peeking out
+        rect(img, cx - 4, cy - 1, 9, 4, hexc('#e8a04a'))
+        rect(img, cx - 3, cy - 2, 7, 1, hexc('#f0b765'))
+        rect(img, cx - 3, cy - 1, 7, 2, hexc('#e03a3a'))
+        rect(img, cx - 3, cy - 1, 7, 1, hexc('#f06050'))
+        for k in (-2, 1, 3):
+            rect(img, cx + k, cy - 3, 1, 2, hexc('#e03a3a'))
+
+    def luxeshake(img, cx, cy, w):
+        # a tall glass with dark shake, gold lid and a fancy straw
+        rect(img, cx - 3, cy - 3, 7, 8, (250, 250, 246))
+        rect(img, cx - 3, cy - 2, 7, 6, hexc('#5a2d6a'))
+        rect(img, cx - 3, cy - 2, 7, 1, hexc('#7a4d9a'))
+        rect(img, cx - 3, cy - 3, 7, 1, hexc('#f5d04a'))
+        rect(img, cx + 2, cy - 7, 1, 5, hexc('#f5d04a'))
+
+    # ── pizzeria (La Piazza) dishes ───────────────────────────────────────────
+    def garlicbread(img, cx, cy, w):
+        # a fat baguette slice with garlic butter, golden crust
+        rect(img, cx - 4, cy - 1, 9, 4, hexc('#e8b04a'))
+        rect(img, cx - 4, cy - 2, 9, 1, hexc('#f0c060'))
+        rect(img, cx - 3, cy - 1, 7, 1, hexc('#f5d890'))
+        for k in (-2, 0, 2):
+            rect(img, cx + k, cy - 3, 2, 1, hexc('#b0983a'))
+
+    def calzone(img, cx, cy, w):
+        # a half-moon pastry, golden with red peeking at the fold
+        for dy in range(5):
+            half = 4 - abs(dy - 2)
+            rect(img, cx - half, cy - 2 + dy, 2 * half, 1, hexc('#e8b04a'))
+        rect(img, cx - 2, cy, 5, 1, hexc('#f0c060'))
+        rect(img, cx, cy - 1, 2, 2, hexc('#e2493f'))
+
+    def lemonade(img, cx, cy, w):
+        rect(img, cx - 3, cy - 3, 7, 7, (250, 250, 246))
+        rect(img, cx - 3, cy - 2, 7, 5, hexc('#f5f0a0'))
+        rect(img, cx - 3, cy - 2, 7, 1, hexc('#fafad2'))
+        rect(img, cx + 2, cy - 6, 1, 4, hexc('#a8c840'))
+        ellipse(img, cx - 1, cy + 1, 1.8, 1.8, hexc('#f5f080'))
+
+    def bruschetta(img, cx, cy, w):
+        # toasted bread slice with tomato and basil on top
+        rect(img, cx - 4, cy - 1, 9, 4, hexc('#c98a2e'))
+        rect(img, cx - 4, cy - 2, 9, 1, hexc('#e0a850'))
+        for kx in range(-3, 4, 2):
+            rect(img, cx + kx, cy - 1, 2, 2, hexc('#e2493f'))
+        rect(img, cx - 1, cy - 2, 2, 1, hexc('#4cae5a'))
+
+    def pasta(img, cx, cy, w):
+        # a bowl with curly pasta and red sauce
+        ellipse(img, cx, cy + 1, 5, 3.0, (230, 238, 246))
+        ellipse(img, cx, cy + 1, 4, 2.2, (222, 226, 236))
+        for dx, dy in ((-2, 0), (1, -1), (-1, 1), (2, 0)):
+            rect(img, cx + dx, cy + dy, 2, 1, hexc('#f5c870'))
+            rect(img, cx + dx, cy + dy, 1, 1, hexc('#e2493f'))
+
+    def espressodouble(img, cx, cy, w):
+        # a small double espresso cup
+        rect(img, cx - 2, cy - 1, 5, 4, (250, 250, 246))
+        rect(img, cx - 2, cy - 1, 5, 2, hexc('#5a2800'))
+        rect(img, cx + 3, cy, 2, 2, (250, 250, 246))
+        rect(img, cx + 4, cy + 1, 1, 1, hexc('#7b8aa0'))
+        rect(img, cx - 1, cy - 4, 1, 2, hexc('#b09060'))
+        rect(img, cx + 1, cy - 5, 1, 2, hexc('#b09060'))
+
+    def tiramisu(img, cx, cy, w):
+        # a layered slice, cocoa on top, cream and coffee layers
+        rect(img, cx - 4, cy - 3, 9, 7, hexc('#c07840'))
+        rect(img, cx - 4, cy - 2, 9, 2, (255, 255, 255))
+        rect(img, cx - 4, cy, 9, 1, hexc('#5a2800'))
+        rect(img, cx - 4, cy + 1, 9, 2, (255, 255, 255))
+        rect(img, cx - 4, cy - 3, 9, 1, hexc('#7a4c28'))
+
+    def gelato(img, cx, cy, w):
+        # a cone with a tall swirl, three-tone
+        for r in range(5):
+            rect(img, cx - 2 + r // 2, cy + r, 5 - r, 1, hexc('#e0a050'))
+        ellipse(img, cx, cy - 1, 2.6, 2.2, hexc('#f9d6e0'))
+        ellipse(img, cx, cy - 4, 2.2, 2.0, hexc('#a8d0f8'))
+        ellipse(img, cx, cy - 7, 1.8, 1.6, hexc('#f5e0a0'))
+
+    def risotto(img, cx, cy, w):
+        # a low bowl of creamy rice with a sprig of green
+        ellipse(img, cx, cy + 1, 5.5, 3.0, (230, 238, 246))
+        ellipse(img, cx, cy + 1, 4.5, 2.2, hexc('#f5e8c0'))
+        for dx, dy in ((-2, 0), (0, -1), (2, 0), (-1, 1), (1, -1)):
+            rect(img, cx + dx, cy + dy, 1, 1, hexc('#ede0a8'))
+        rect(img, cx, cy - 2, 1, 2, hexc('#4cae5a'))
+
+    def pannacotta(img, cx, cy, w):
+        # a white dome with red berry coulis
+        ellipse(img, cx, cy, 3.5, 4.5, (250, 250, 246))
+        ellipse(img, cx, cy - 2, 2.5, 2.0, (255, 255, 255))
+        for dx, dy in ((-1, 1), (1, 2), (-2, 3), (2, 3)):
+            rect(img, cx + dx, cy + dy, 1, 1, hexc('#e03a7a'))
+
     dishes = (
         ('burger', burger),
         ('cheeseburger', cheeseburger),
@@ -1093,6 +1221,24 @@ def icons():
         ('milkshake', milkshake),
         ('baconBurger', baconburger),
         ('sundae', sundae),
+        # new diner dishes
+        ('veggieBurger', veggieburger),
+        ('fishAndChips', fishandchips),
+        ('floatSoda', floatsoda),
+        ('waffleIceCream', waffleicecream),
+        ('lobsterRoll', lobsterroll),
+        ('luxeShake', luxeshake),
+        # pizzeria (La Piazza)
+        ('garlicBread', garlicbread),
+        ('calzone', calzone),
+        ('lemonade', lemonade),
+        ('bruschetta', bruschetta),
+        ('pasta', pasta),
+        ('espressoDouble', espressodouble),
+        ('tiramisu', tiramisu),
+        ('gelato', gelato),
+        ('risotto', risotto),
+        ('pannaCotta', pannacotta),
     )
     for name, draw_dish in dishes:
         # a plate to set down on a table

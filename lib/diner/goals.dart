@@ -239,6 +239,36 @@ final List<Goal> goals = [
     (f) => f.diner.roster.employees.length >= 6,
     hint: 'Staff room in Upgrades makes room for more people on the team.',
   ),
+  Goal(
+    'level5',
+    'Reach restaurant level 5',
+    150,
+    (f) => f.diner.progress.level >= 5,
+    hint: 'Keep serving guests and the level will come. A new location unlocks.',
+  ),
+  Goal(
+    'level10',
+    'Reach restaurant level 10',
+    200,
+    (f) => f.diner.progress.level >= 10,
+    hint: 'The highest level takes time. New dishes unlock along the way.',
+  ),
+  Goal(
+    'streak3',
+    'Play 3 days in a row',
+    150,
+    (f) => f.diner.maxStreakDays >= 3,
+    hint: 'Open the app on 3 days in a row. A streak bonus arrives each day.',
+  ),
+  Goal(
+    'streak7',
+    'Play 7 days in a row',
+    300,
+    (f) => f.diner.maxStreakDays >= 7,
+    hint:
+        'Seven days in a row earns the biggest streak bonus. Come back every '
+        'day to keep the streak alive.',
+  ),
 ];
 
 /// Working out which goals are met.

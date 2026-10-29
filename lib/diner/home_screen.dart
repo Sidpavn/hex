@@ -10,6 +10,7 @@ import '../ui/pixel_dialog.dart';
 import '../ui/widgets.dart';
 import 'build_screen.dart';
 import 'diner.dart';
+import 'recipes.dart';
 import 'diner_art.dart';
 import 'diner_painter.dart';
 import 'guide.dart';
@@ -63,10 +64,15 @@ int? _firstEmpty() {
 
 /// Starts playing game [n]. A new game is saved at once, so it is there on
 /// the saved games page.
-Future<void> _play(BuildContext context, int n, {bool fresh = false}) async {
+Future<void> _play(
+  BuildContext context,
+  int n, {
+  bool fresh = false,
+  String locationId = 'diner',
+}) async {
   Storage.useSlot(n);
   if (fresh) {
-    Storage.saveSlot(n, Diner.fresh());
+    Storage.saveSlot(n, Diner.fresh(locationId: locationId));
     // A new game starts with the guide, which can be skipped.
     await Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => const GuideScreen(intro: true)),
@@ -78,6 +84,14 @@ Future<void> _play(BuildContext context, int n, {bool fresh = false}) async {
   ).push(MaterialPageRoute<void>(builder: (_) => const BuildScreen()));
   // The game stopped the music on the way out; the title has it.
   Sound.instance.music(Music.build);
+}
+
+/// Whether the pizzeria (La Piazza) is unlocked: any save slot is at level 5+.
+bool _pizzeriaUnlocked() {
+  for (var n = 1; n <= Storage.slots; n++) {
+    if ((Storage.slotInfo(n)?.level ?? 0) >= 5) return true;
+  }
+  return false;
 }
 
 /// The title screen: the restaurant, what to do next, and whether the saves
@@ -116,7 +130,18 @@ class _HomeScreenState extends State<HomeScreen> {
       );
       return;
     }
-    await _play(context, n, fresh: true);
+    String locationId = 'diner';
+    if (_pizzeriaUnlocked()) {
+      final picked = await Navigator.of(context).push<String>(
+        MaterialPageRoute<String>(
+          builder: (_) => const LocationPickerScreen(),
+        ),
+      );
+      if (!mounted) return;
+      if (picked == null) return; // cancelled
+      locationId = picked;
+    }
+    await _play(context, n, fresh: true, locationId: locationId);
     if (mounted) setState(() {});
   }
 
@@ -134,6 +159,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final game = gameToContinue();
     final info = game == null ? null : Storage.slotInfo(game);
     final shown = game == null ? null : Storage.slotDiner(game);
+    final streakReady = game != null && Storage.streakReady;
     final hasGame = game != null && info != null;
 
     return Scaffold(
@@ -182,6 +208,12 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                 ],
+              ),
+              if (streakReady)
+              _StreakBanner(
+                game: game,
+                diner: shown!,
+                onClaimed: () => setState(() {}),
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
@@ -766,6 +798,111 @@ class _SlotScreenState extends State<SlotScreen> {
               onTap: _delete,
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+// ── Streak bonus banner ───────────────────────────────────────────────────
+
+class _StreakBanner extends StatelessWidget {
+  const _StreakBanner({
+    required this.game,
+    required this.diner,
+    required this.onClaimed,
+  });
+
+  final int game;
+  final Diner diner;
+  final VoidCallback onClaimed;
+
+  @override
+  Widget build(BuildContext context) {
+    final streak = Storage.streakCount;
+    final nextStreak = (streak == 0 || Storage.streakReady)
+        ? (Storage.streakCount + 1).clamp(1, 6)
+        : streak.clamp(1, 6);
+    final coins = 25 * nextStreak;
+    return GestureDetector(
+      key: const ValueKey('streak-banner'),
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        final bonus = Storage.claimStreak();
+        if (bonus <= 0) return;
+        diner.coins += bonus;
+        if (Storage.streakCount > diner.maxStreakDays) {
+          diner.maxStreakDays = Storage.streakCount;
+        }
+        Storage.saveSlot(game, diner);
+        onClaimed();
+      },
+      child: ColoredBox(
+        color: Pal.teal,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: PxText(
+                  'Day $nextStreak streak — tap to claim $coins coins',
+                  style: const TextStyle(color: Pal.cream, fontSize: 14),
+                ),
+              ),
+              const PxText(
+                'Claim',
+                style: TextStyle(color: Pal.gold, fontSize: 14),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Location picker ───────────────────────────────────────────────────────
+
+/// Shown when starting a new game once the pizzeria is unlocked. Returns the
+/// chosen location id, or null if the player goes back.
+class LocationPickerScreen extends StatelessWidget {
+  const LocationPickerScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ScreenFrame(
+      title: 'New game',
+      subtitle: 'Pick a location',
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+        children: [
+          for (final loc in locations)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Panel(
+                key: ValueKey('loc-${loc.id}'),
+                onTap: () => Navigator.of(context).pop(loc.id),
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    PxText(
+                      loc.name,
+                      style: const TextStyle(color: Pal.text, fontSize: 22),
+                    ),
+                    PxText(
+                      loc.tagline,
+                      style: const TextStyle(color: Pal.dim, fontSize: 14),
+                    ),
+                    const SizedBox(height: 6),
+                    PxText(
+                      '${loc.dishes.length} dishes to discover',
+                      style: const TextStyle(color: Pal.gold, fontSize: 14),
+                    ),
+                  ],
+                ),
+              ),
+            ),
         ],
       ),
     );

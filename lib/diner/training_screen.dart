@@ -36,9 +36,13 @@ class _TrainingScreenState extends State<TrainingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final loc = diner.locationDef;
     final teach = [
       for (final r in recipes.values)
-        if (r.skilled && diner.progress.unlocked(r.dish)) r,
+        if (r.skilled &&
+            loc.dishes.contains(r.dish) &&
+            diner.progress.level >=
+                (loc.unlockAt[r.dish] ?? recipes[r.dish]!.unlock)) r,
     ];
     return ScreenFrame(
       title: 'Train ${s.name}',
