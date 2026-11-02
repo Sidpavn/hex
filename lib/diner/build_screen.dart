@@ -25,6 +25,7 @@ import 'advice.dart';
 import 'events.dart';
 import 'challenge.dart';
 import 'goals.dart';
+import 'franchise_event_popup.dart';
 import 'franchise_screen.dart';
 import 'goals_screen.dart';
 import 'diner_art.dart';
@@ -395,6 +396,11 @@ class _BuildScreenState extends State<BuildScreen>
 
   Future<void> _startDay() async {
     if (!sim.report.ready) return;
+    // let the player decide any pending franchise events before the day runs
+    if (diner.franchises.any((f) => f.pendingEvent != null && !f.eventDecided)) {
+      await showFranchiseEvents(context, diner);
+      if (!mounted) return;
+    }
     setState(() {
       _clearEdit();
       _levelBefore = diner.progress.level;
