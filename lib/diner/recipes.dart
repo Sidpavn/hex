@@ -360,7 +360,7 @@ const Map<Dish, Recipe> recipes = {
 /// How good the ingredients are. Better ingredients cost more, sell for more,
 /// and make a restaurant better liked.
 enum Tier {
-  budget('Budget', 0.92, 0.18, -6),
+  budget('Budget', 0.92, 0.18, 0),
   standard('Standard', 1.0, 0.26, 0),
   premium('Premium', 1.18, 0.38, 6);
 
@@ -529,7 +529,7 @@ class Progress {
   /// Extra fondness points a regular gains on a happy visit.
   int get loyaltyBonus => upgradeLvl(Upgrade.loyalty);
 
-  int recipeUpgradeCost(Dish d) => 40 * recipeLvl(d);
+  int recipeUpgradeCost(Dish d) => 60 * recipeLvl(d);
 
   bool canLevelRecipe(Dish d) => unlocked(d) && recipeLvl(d) < maxRecipeLevel;
 

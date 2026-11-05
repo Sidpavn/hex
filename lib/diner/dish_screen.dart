@@ -222,13 +222,25 @@ class _DishScreenState extends State<DishScreen> {
                         key: ValueKey('tier-${dish.name}-${t.name}'),
                         label: t.label,
                         selected: tier == t,
-                        onTap: t == Tier.premium && lvl < Diner.premiumLevel
-                            ? null
-                            : () => _tier(t),
+                        locked: t.index > diner.supplierMaxTier.index ||
+                            (t == Tier.premium && lvl < Diner.premiumLevel),
+                        onTap: () => _tier(t),
                       ),
                   ],
                 ),
-                if (lvl < Diner.premiumLevel) ...[
+                if (diner.supplierMaxTier == Tier.budget) ...[
+                  const SizedBox(height: 8),
+                  const PxText(
+                    'Budget market only. Switch supplier at end of day for better ingredients.',
+                    style: TextStyle(color: Pal.dim, fontSize: 14),
+                  ),
+                ] else if (diner.supplierMaxTier == Tier.standard) ...[
+                  const SizedBox(height: 8),
+                  const PxText(
+                    'Farm delivery unlocks premium ingredients.',
+                    style: TextStyle(color: Pal.dim, fontSize: 14),
+                  ),
+                ] else if (lvl < Diner.premiumLevel) ...[
                   const SizedBox(height: 8),
                   const PxText(
                     'Premium needs recipe level 3.',

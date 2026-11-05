@@ -4,6 +4,7 @@ import '../data/storage.dart';
 import '../ui/widgets.dart';
 import 'diner.dart';
 import 'recipes.dart';
+import 'suppliers.dart';
 
 /// The upgrades grouped under a heading, in the order shown.
 const List<(String, List<Upgrade>)> _groups = [
@@ -136,6 +137,13 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
               ],
             ],
           ),
+          if (u == Upgrade.supply && diner.supplier != Supplier.market) ...[
+            const SizedBox(height: 6),
+            const PxText(
+              'Only reduces spoilage from the budget market.',
+              style: TextStyle(color: Pal.red, fontSize: 13),
+            ),
+          ],
         ],
       ),
     );

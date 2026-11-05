@@ -21,7 +21,6 @@ import 'diner.dart';
 import 'order_screen.dart';
 import 'pause_menu.dart';
 import 'vending_dialog.dart';
-import 'advice.dart';
 import 'events.dart';
 import 'challenge.dart';
 import 'goals.dart';
@@ -40,11 +39,11 @@ import 'menu_screen.dart';
 import 'money.dart';
 import 'recipes.dart';
 import 'service.dart';
-import 'report_screen.dart';
+import 'settlement_screen.dart';
+import 'suppliers.dart';
 import 'staff_screen.dart';
 import 'stats_screen.dart';
 import 'toast.dart';
-import 'traits.dart';
 import 'upgrade_screen.dart';
 
 /// Where the day is up to. The layout can only be changed while building:
@@ -109,7 +108,6 @@ class _BuildScreenState extends State<BuildScreen>
 
   Phase _phase = Phase.build;
   DayReport? _report;
-  int _levelBefore = 1;
   int _speed = 1;
 
   // Editing.
@@ -403,7 +401,6 @@ class _BuildScreenState extends State<BuildScreen>
     }
     setState(() {
       _clearEdit();
-      _levelBefore = diner.progress.level;
       diner.clearUndo();
       sim = DinerSim(diner);
       _toasts.clear();
@@ -485,7 +482,6 @@ class _BuildScreenState extends State<BuildScreen>
       diner.hintsSeen.add('farm');
     }
     _dayEndSounds(report);
-    _postScores(report);
     diner.gems += report.levelsGained * Diner.levelGems;
     final challenge = DailyChallenge.forDay(
       report.day,
@@ -511,12 +507,13 @@ class _BuildScreenState extends State<BuildScreen>
 
   /// Sends the day's profit and the coins taken so far to the leaderboards,
   /// if they are new bests. It never waits and never asks anything.
-  void _postScores(DayReport r) {
+  void _postScores(DayReport r, {int? wages}) {
     final board = widget.scores ?? defaultScoreBoard();
     if (board == null) return;
-    ScorePoster(
-      board,
-    ).post(kept: r.earned - r.ingredients - r.wages, total: diner.totalEarned);
+    ScorePoster(board).post(
+      kept: r.earned - r.ingredients - (wages ?? r.wages),
+      total: diner.totalEarned,
+    );
   }
 
   /// A word about the supplier after the day, if there is one.
@@ -539,6 +536,15 @@ class _BuildScreenState extends State<BuildScreen>
     _syncing = false;
     if (note == null || !mounted) return;
     setState(() => _cloudNote = note);
+  }
+
+  void _onSettlementConfirm(Map<int, bool> paid, Supplier supplier) {
+    final r = _report;
+    if (r == null) return;
+    final wages = diner.applySettlement(paid, supplier);
+    _postScores(r, wages: wages);
+    _save(_savedAt);
+    _nextDay();
   }
 
   void _nextDay() {
@@ -2217,14 +2223,6 @@ class _BuildScreenState extends State<BuildScreen>
     ),
   );
 
-  /// What kind of day it was, in a word, from how well it went.
-  static String _verdict(int stars) => switch (stars) {
-    3 => 'Great day',
-    2 => 'Good day',
-    1 => 'Rough day',
-    _ => 'Bad day',
-  };
-
   /// The day's receipt: an awning seam leading into the cream card, trimmed
   /// with the diner's own checkerboard at the bottom.
   Widget _summaryReceipt() {
@@ -2247,271 +2245,15 @@ class _BuildScreenState extends State<BuildScreen>
   Widget _summaryPanel() {
     final r = _report;
     if (r == null) return const SizedBox.shrink();
-    final progress = diner.progress;
-    final kept = r.earned - r.ingredients - r.wages;
-    final unlocked = <String>[
-      for (final d in Dish.values)
-        if (recipes[d]!.unlock > _levelBefore &&
-            recipes[d]!.unlock <= progress.level)
-          recipes[d]!.name,
-      for (final f in fixtureDefs.values)
-        if (f.unlock > _levelBefore && f.unlock <= progress.level) f.name,
-    ];
-    final fix = r.unpaid > 0 ? null : fixFirst(r);
-    final best = fix == null ? r.highlights(1).firstOrNull : null;
-    final ratingColour = r.reputation > r.reputationBefore
-        ? Pal.teal
-        : r.reputation < r.reputationBefore
-        ? Pal.rust
-        : Pal.creamDim;
-    final dayColour = switch (r.stars) {
-      3 || 2 => Pal.teal,
-      1 => Pal.goldDark,
-      _ => Pal.rust,
-    };
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: PxText(
-                'Day ${r.day}',
-                style: const TextStyle(color: Pal.teal, fontSize: 17),
-              ),
-            ),
-            PxText(
-              _verdict(r.stars),
-              key: const ValueKey('verdict'),
-              style: TextStyle(color: dayColour, fontSize: 17),
-            ),
-          ],
-        ),
-        Container(height: 1, color: Pal.creamDark),
-        const SizedBox(height: 6),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            PxText(
-              '${kept >= 0 ? '+' : ''}$kept',
-              key: const ValueKey('kept'),
-              style: TextStyle(
-                color: kept >= 0 ? Pal.teal : Pal.rust,
-                fontSize: 32,
-                height: 1.1,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const PxText(
-                      'kept today',
-                      style: TextStyle(color: Pal.teal, fontSize: 14),
-                    ),
-                    PxText(
-                      profitLine(r),
-                      key: const ValueKey('profit-line'),
-                      style: const TextStyle(color: Pal.inkWarm, fontSize: 14),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-        Container(height: 1, color: Pal.creamDark),
-        const SizedBox(height: 6),
-        // How the guests went, as a receipt ledger: served against left angry.
-        Column(
-          key: const ValueKey('serve-bar'),
-          children: [
-            LedgerLine(
-              label: 'Served',
-              value: '${r.served}',
-              dim: Pal.teal,
-              ink: Pal.teal,
-            ),
-            LedgerLine(
-              label: 'Left angry',
-              value: '${r.walkouts}',
-              dim: Pal.teal,
-              ink: r.walkouts == 0 ? Pal.creamDim : Pal.rust,
-            ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        Container(height: 1, color: Pal.creamDark),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Stars((r.reputation / 20).round(), of: 5),
-            const SizedBox(width: 8),
-            Expanded(
-              child: PxText(
-                '${(r.reputationBefore / 20).toStringAsFixed(1)} to '
-                '${(r.reputation / 20).toStringAsFixed(1)}',
-                key: const ValueKey('rating-line'),
-                style: TextStyle(color: ratingColour, fontSize: 14),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        () {
-          final c = DailyChallenge.forDay(
-            r.day,
-            progress.level,
-            hasWindow: diner.window != null,
-          );
-          if (c == null) return const SizedBox.shrink();
-          final done = diner.challengeDayDone == r.day;
-          return PxText(
-            done
-                ? 'Challenge done: ${c.description}. +${c.reward}'
-                : 'Challenge missed: ${c.description}',
-            key: const ValueKey('challenge-line'),
-            style: TextStyle(
-              color: done ? Pal.teal : Pal.creamDim,
-              fontSize: 14,
-            ),
-          );
-        }(),
-        const SizedBox(height: 8),
-        if (r.unpaid > 0)
-          PxText(
-            r.quit.isEmpty
-                ? 'Wages short by ${r.unpaid}. Staff are unhappy.'
-                : '${r.quit.join(', ')} quit over unpaid wages.',
-            key: const ValueKey('unpaid-line'),
-            style: const TextStyle(color: Pal.rust, fontSize: 14),
-          )
-        else if (r.catering != null && r.cateringState != ContractState.open)
-          PxText(
-            switch (r.cateringState) {
-              ContractState.done =>
-                'Catering sent to ${r.catering!.client}: +${r.cateringReward}.',
-              ContractState.missed =>
-                'The catering order was not ready. The ingredients are lost '
-                    'and the rating dropped ${ContractBook.missedRating}.',
-              _ => 'The catering order was called off.',
-            },
-            key: const ValueKey('catering-line'),
-            style: TextStyle(
-              color: r.cateringState == ContractState.done
-                  ? Pal.teal
-                  : r.cateringState == ContractState.missed
-                  ? Pal.rust
-                  : Pal.creamDim,
-              fontSize: 14,
-            ),
-          )
-        else if (_dayGoals.isNotEmpty)
-          PxText(
-            _dayGoals.length == 1
-                ? 'Goal done: ${_dayGoals.first.title}. '
-                      '+${_dayGoals.first.reward}'
-                : '${_dayGoals.length} goals done. '
-                      '+${_dayGoals.fold(0, (a, g) => a + g.reward)}',
-            key: const ValueKey('goal-line'),
-            style: const TextStyle(color: Pal.goldDark, fontSize: 14),
-          )
-        else if (r.levelsGained > 0)
-          PxText(
-            'Level ${progress.level}!'
-            '${unlocked.isEmpty ? '' : ' New: ${unlocked.join(', ')}.'}'
-            ' +${r.levelsGained * Diner.levelGems} gems.',
-            key: const ValueKey('level-line'),
-            style: const TextStyle(color: Pal.goldDark, fontSize: 14),
-          )
-        else if (best != null)
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(top: 5, right: 8),
-                child: SizedBox(
-                  width: 6,
-                  height: 6,
-                  child: ColoredBox(
-                    color: switch (best.tone) {
-                      Tone.good => Pal.teal,
-                      Tone.bad => Pal.rust,
-                      Tone.mixed => Pal.goldDark,
-                    },
-                  ),
-                ),
-              ),
-              Expanded(
-                child: PxText(
-                  best.text,
-                  key: const ValueKey('story-line'),
-                  style: const TextStyle(color: Pal.inkWarm, fontSize: 14),
-                ),
-              ),
-            ],
-          ),
-        if (fix != null) ...[
-          const SizedBox(height: 8),
-          PxText(
-            'Fix first: $fix',
-            key: const ValueKey('fix-first'),
-            style: const TextStyle(color: Pal.inkWarm, fontSize: 14),
-          ),
-        ],
-        if (_supplierHint != null) ...[
-          const SizedBox(height: 8),
-          PxText(
-            _supplierHint!,
-            key: const ValueKey('supplier-hint'),
-            style: const TextStyle(color: Pal.creamDim, fontSize: 14),
-          ),
-        ],
-        if (_cloudNote.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          PxText(
-            _cloudNote,
-            key: const ValueKey('cloud-note'),
-            style: const TextStyle(color: Pal.creamDim, fontSize: 14),
-          ),
-        ],
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              flex: 7,
-              child: DinerButton(
-                key: const ValueKey('details'),
-                label: 'Details',
-                filled: false,
-                fontSize: 15,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) =>
-                        DayReportScreen(report: r, progress: progress),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              flex: 5,
-              child: DinerButton(
-                key: const ValueKey('next-day'),
-                label: 'Next day',
-                fontSize: 15,
-                onTap: _nextDay,
-              ),
-            ),
-          ],
-        ),
-      ],
+    return SettlementPanel(
+      key: ValueKey(r.day),
+      report: r,
+      diner: diner,
+      onConfirm: _onSettlementConfirm,
     );
   }
+
+
 
   // --------------------------------------------------------------- board
 

@@ -17,6 +17,7 @@ import 'vending.dart';
 import 'recipes.dart';
 import 'regulars.dart';
 import 'staff.dart';
+import 'traits.dart';
 
 part 'layout_group.dart';
 
@@ -1484,12 +1485,22 @@ class Diner {
   static const premiumLevel = 3;
 
   /// The ingredients used for [d]. Premium needs a well-developed recipe.
+  /// The highest tier this supplier can source. Budget market can't source
+  /// premium ingredients; standard can't either — only farm can.
+  Tier get supplierMaxTier => switch (supplier) {
+    Supplier.farm => Tier.premium,
+    Supplier.standard => Tier.standard,
+    Supplier.market => Tier.budget,
+  };
+
   Tier tierOf(Dish d) {
     final t = tiers[d] ?? Tier.standard;
-    if (t == Tier.premium && progress.recipeLvl(d) < premiumLevel) {
+    // Cap by supplier first, then by recipe mastery.
+    final capped = Tier.values[t.index.clamp(0, supplierMaxTier.index)];
+    if (capped == Tier.premium && progress.recipeLvl(d) < premiumLevel) {
       return Tier.standard;
     }
-    return t;
+    return capped;
   }
 
   /// The kinds of machine in the restaurant that nobody on the team is set
@@ -2058,6 +2069,57 @@ class Diner {
     if (!roster.employees.remove(s)) return StaffResult.gone;
     coins -= coins < s.severance ? coins : s.severance;
     return StaffResult.ok;
+  }
+
+  /// Applies end-of-day settlement: pays or skips each staff member's wages,
+  /// updates their morale, removes anyone whose morale hit zero, and sets the
+  /// supplier for tomorrow. Updates the most recent DayLog with the final wages.
+  int applySettlement(Map<int, bool> paid, Supplier nextSupplier) {
+    var totalPaid = 0;
+    for (final st in roster.employees.toList()) {
+      if (paid[st.id] == true) {
+        coins -= st.salary;
+        totalPaid += st.salary;
+        st.morale = math.min(Staff.maxMorale, st.morale + 1);
+        st.grudge = 0;
+        st.lastPay = Pay.paid;
+      } else {
+        st.lastPay = Pay.missed;
+        var loss = 1;
+        if (st.has(Trait.hotHeaded)) {
+          loss = 2;
+        } else if (st.has(Trait.loyal)) {
+          st.grudge++;
+          loss = st.grudge >= 2 ? 1 : 0;
+          if (loss > 0) st.grudge = 0;
+        }
+        st.morale -= loss;
+        if (st.morale <= 0) {
+          st.quit = true;
+          roster.employees.remove(st);
+        }
+      }
+    }
+    supplier = nextSupplier;
+    if (history.isNotEmpty) {
+      final last = history.last;
+      history[history.length - 1] = DayLog(
+        day: last.day,
+        kept: last.income - last.ingredients - totalPaid,
+        served: last.served,
+        walkouts: last.walkouts,
+        rating: last.rating,
+        event: last.event,
+        detailed: last.detailed,
+        income: last.income,
+        ingredients: last.ingredients,
+        wages: totalPaid,
+        leftover: last.leftover,
+        spoiled: last.spoiled,
+        supplier: last.supplier,
+      );
+    }
+    return totalPaid;
   }
 
   /// Raises one of their stats by a point, once a day.

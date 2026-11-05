@@ -47,6 +47,23 @@ class MoodChange {
   bool get worse => after < before;
 }
 
+/// One staff member's unpaid wages, shown on the settlement screen.
+class PendingWage {
+  const PendingWage({
+    required this.id,
+    required this.name,
+    required this.salary,
+    this.willQuitIfUnpaid = false,
+  });
+
+  final int id;
+  final String name;
+  final int salary;
+
+  /// True when skipping this wage will cause morale to hit zero.
+  final bool willQuitIfUnpaid;
+}
+
 /// One thing that happened today, told as a sentence.
 class StoryLine {
   const StoryLine(this.tick, this.text, this.tone);
@@ -429,6 +446,7 @@ class DayReport {
     this.cars = 0,
     this.items = 0,
     this.franchiseIncome = 0,
+    this.pendingWages = const [],
   });
 
   final int day;
@@ -513,6 +531,9 @@ class DayReport {
 
   /// Coins earned by franchise investments this day.
   final int franchiseIncome;
+
+  /// Staff members whose wages are pending settlement.
+  final List<PendingWage> pendingWages;
 
   /// What the day made after the ingredients.
   int get profit => earned - ingredients;
@@ -1240,6 +1261,8 @@ class DinerSim {
     for (final w in workers) {
       final others = helpers.where((h) => h != w.staff).length;
       w.paceMul = 1 + 0.05 * others;
+      // Low morale slows a worker down: full speed at morale 10, 90% at 0.
+      w.paceMul *= 0.9 + 0.01 * w.staff.morale;
     }
     _setupCatering();
   }
@@ -3312,64 +3335,23 @@ class DinerSim {
         key: 'vending',
       );
     }
-    // Wages come out of the takings. Anyone who can't be paid loses heart, and
-    // goes if it happens again. Some take it harder than others.
-    var paid = 0;
-    var unpaid = 0;
-    final quit = <String>[];
+    // Record who worked today; wages are settled on the end-of-day screen.
+    final pendingWages = <PendingWage>[];
     final moods = <MoodChange>[];
     final day = progress.day;
     for (final st in diner.roster.employees.toList()) {
       moods.add(MoodChange(st.name, st.morale, st.morale));
-      if (diner.coins >= st.salary) {
-        diner.coins -= st.salary;
-        paid += st.salary;
-        st.morale = math.min(Staff.maxMorale, st.morale + 1);
-        st.grudge = 0;
-        st.lastPay = Pay.paid;
-      } else {
-        unpaid += st.salary;
-        st.lastPay = Pay.missed;
-        var loss = 1;
-        if (st.has(Trait.hotHeaded)) {
-          loss = 2;
-        } else if (st.has(Trait.loyal)) {
-          // They put up with it once.
-          st.grudge++;
-          loss = st.grudge >= 2 ? 1 : 0;
-          if (loss > 0) st.grudge = 0;
-          if (loss == 0) {
-            _tell(
-              _say([
-                '{a} is owed money but stayed anyway. "We\'ll sort it out."',
-                '{a} missed a payday and did not say a word.',
-              ], a: st.name),
-              Tone.mixed,
-              about: st,
-              memory: 'stayed on, unpaid',
-            );
-          }
-        }
-        st.morale -= loss;
-        if (st.morale <= 0) {
-          quit.add(st.name);
-          diner.roster.employees.remove(st);
-          _tell(
-            st.has(Trait.hotHeaded)
-                ? _say([
-                    '{a} threw down the apron and walked out.',
-                    '{a} slammed the door on the way out.',
-                  ], a: st.name)
-                : _say([
-                    '{a} quit. Rent does not pay itself.',
-                    '{a} has found a job that pays on time.',
-                  ], a: st.name),
-            Tone.bad,
-          );
-          st.reveal(Trait.hotHeaded);
-        }
-      }
-      moods.last = MoodChange(st.name, moods.last.before, st.morale);
+      final moraleHit = st.has(Trait.hotHeaded)
+          ? 2
+          : (st.has(Trait.loyal) && st.grudge < 1)
+          ? 0
+          : 1;
+      pendingWages.add(PendingWage(
+        id: st.id,
+        name: st.name,
+        salary: st.salary,
+        willQuitIfUnpaid: st.morale - moraleHit <= 0,
+      ));
       st.daysWorked++;
       st.trainedToday = false;
       // A few days in, you know what they are like.
@@ -3392,6 +3374,9 @@ class DinerSim {
         );
       }
     }
+    const paid = 0;
+    const unpaid = 0;
+    final quit = <String>[];
     // The star of the day.
     final star = workers
         .where(
@@ -3451,7 +3436,7 @@ class DinerSim {
       ..add(
         DayLog(
           day: day,
-          kept: earned - ingredientCost - paid,
+          kept: earned - ingredientCost,
           served: served,
           walkouts: walkouts,
           rating: progress.reputation,
@@ -3459,7 +3444,7 @@ class DinerSim {
           detailed: true,
           income: earned,
           ingredients: ingredientCost,
-          wages: paid,
+          wages: 0,
           leftover: leftoverCost,
           spoiled: spoiled,
           supplier: diner.supplier.name,
@@ -3508,6 +3493,7 @@ class DinerSim {
       cars: carsServed,
       items: itemsServed,
       franchiseIncome: franchiseIncome,
+      pendingWages: pendingWages,
     );
   }
 

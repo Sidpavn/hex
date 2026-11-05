@@ -108,6 +108,10 @@ class Staff {
   int grudge;
   bool bloomed;
 
+  /// Set by the settlement screen when this person's wages were skipped and
+  /// their morale hit zero. Cleared at the start of the next day's sim.
+  bool quit = false;
+
   /// The last few things that happened to them, newest first.
   final List<String> memories;
 
